@@ -1,0 +1,27 @@
+Obtaining JSON from switch...
+Done
+Control utility for runtime P4 table manipulation
+RuntimeCmd: Setting default action of ipv4_lpm
+action:              drop
+runtime data:        
+RuntimeCmd: Adding entry to lpm match table ipv4_lpm
+match key:           LPM-0a:00:01:01/32
+action:              set_nhop
+runtime data:        02:5d:bc:1e:a5:75	00:01
+Entry has been added with handle 0
+RuntimeCmd: Adding entry to lpm match table ipv4_lpm
+match key:           LPM-0a:00:01:02/32
+action:              set_nhop
+runtime data:        02:5d:bc:1e:a5:75	00:01
+Entry has been added with handle 1
+RuntimeCmd: Adding entry to lpm match table ipv4_lpm
+match key:           LPM-0a:00:02:03/32
+action:              set_nhop
+runtime data:        5e:e6:cc:b2:50:59	00:02
+Entry has been added with handle 2
+RuntimeCmd: Adding entry to lpm match table ipv4_lpm
+match key:           LPM-0a:00:02:04/32
+action:              set_nhop
+runtime data:        5e:e6:cc:b2:50:59	00:02
+Entry has been added with handle 3
+RuntimeCmd: 

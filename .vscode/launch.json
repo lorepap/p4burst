@@ -1,0 +1,25 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "RUNNER",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "runner.py",
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            // run as a root
+            "sudo": true,
+            "args": [
+                "-t", "leafspine",
+                "-n", "4",
+                "-l", "2",
+                "-s", "2",
+                "--cli"
+            ]
+        }
+    ]
+}
