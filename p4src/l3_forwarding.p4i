@@ -1,7 +1,7 @@
-# 1 "/home/ubuntu/p4bursty/p4src/l3_forwarding.p4"
+# 1 "/home/ubuntu/p4burst/p4src/l3_forwarding.p4"
 # 1 "<built-in>"
 # 1 "<command-line>"
-# 1 "/home/ubuntu/p4bursty/p4src/l3_forwarding.p4"
+# 1 "/home/ubuntu/p4burst/p4src/l3_forwarding.p4"
 /* -*- P4_16 -*- */
 # 1 "/usr/local/share/p4c/p4include/core.p4" 1
 /*
@@ -97,7 +97,7 @@ extern bool static_assert(bool check, string message);
 
 /// Like the above but using a default message.
 extern bool static_assert(bool check);
-# 3 "/home/ubuntu/p4bursty/p4src/l3_forwarding.p4" 2
+# 3 "/home/ubuntu/p4burst/p4src/l3_forwarding.p4" 2
 # 1 "/usr/local/share/p4c/p4include/v1model.p4" 1
 /*
 Copyright 2013-present Barefoot Networks, Inc.
@@ -883,7 +883,7 @@ package V1Switch<H, M>(Parser<H, M> p,
                        ComputeChecksum<H, M> ck,
                        Deparser<H> dep
                        );
-# 4 "/home/ubuntu/p4bursty/p4src/l3_forwarding.p4" 2
+# 4 "/home/ubuntu/p4burst/p4src/l3_forwarding.p4" 2
 
 const bit<16> TYPE_IPV4 = 0x800;
 

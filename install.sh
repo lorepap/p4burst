@@ -3,7 +3,7 @@
 # Author: Edgar Costa Molero
 # Email: cedgar@ethz.ch
 
-/home/ubuntu20/p4-tools/p4-utils# This scripts installs all the required software to learn and prototype P4
+/home/ubuntu/p4-tools/p4-utils# This scripts installs all the required software to learn and prototype P4
 # programs using the p4lang software suite. 
 
 # Furthermore, we install p4-utils and p4-learning and ffr routers.
@@ -14,13 +14,16 @@
 
 # Configuration variables
 # Currently loaded linux kernel
+USER_HOME=$(eval echo ~${SUDO_USER})
+
 KERNEL=$(uname -r)
 # non interactive install
 DEBIAN_FRONTEND=noninteractive sudo apt-get -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" upgrade
 # username
 USER_NAME=$(whoami)
 # building directory
-BUILD_DIR=~/p4-tools
+BUILD_DIR="${USER_HOME}/p4-tools"
+mkdir -p "${BUILD_DIR}"
 # number of cores
 NUM_CORES=`grep -c ^processor /proc/cpuinfo`
 DEBUG_FLAGS=true

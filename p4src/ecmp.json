@@ -289,7 +289,7 @@
       "name" : "deparser",
       "id" : 0,
       "source_info" : {
-        "filename" : "/home/ubuntu/p4bursty/p4src/ecmp.p4",
+        "filename" : "/home/ubuntu/p4burst/p4src/ecmp.p4",
         "line" : 205,
         "column" : 8,
         "source_fragment" : "MyDeparser"
@@ -333,7 +333,7 @@
       "name" : "calc_0",
       "id" : 1,
       "source_info" : {
-        "filename" : "/home/ubuntu/p4bursty/p4src/ecmp.p4",
+        "filename" : "/home/ubuntu/p4burst/p4src/ecmp.p4",
         "line" : 187,
         "column" : 8,
         "source_fragment" : "update_checksum( ..."
@@ -415,7 +415,7 @@
             }
           ],
           "source_info" : {
-            "filename" : "/home/ubuntu/p4bursty/p4src/ecmp.p4",
+            "filename" : "/home/ubuntu/p4burst/p4src/ecmp.p4",
             "line" : 109,
             "column" : 8,
             "source_fragment" : "mark_to_drop(standard_metadata)"
@@ -437,7 +437,7 @@
             }
           ],
           "source_info" : {
-            "filename" : "/home/ubuntu/p4bursty/p4src/ecmp.p4",
+            "filename" : "/home/ubuntu/p4burst/p4src/ecmp.p4",
             "line" : 109,
             "column" : 8,
             "source_fragment" : "mark_to_drop(standard_metadata)"
@@ -459,7 +459,7 @@
             }
           ],
           "source_info" : {
-            "filename" : "/home/ubuntu/p4bursty/p4src/ecmp.p4",
+            "filename" : "/home/ubuntu/p4burst/p4src/ecmp.p4",
             "line" : 109,
             "column" : 8,
             "source_fragment" : "mark_to_drop(standard_metadata)"
@@ -494,7 +494,7 @@
             }
           ],
           "source_info" : {
-            "filename" : "/home/ubuntu/p4bursty/p4src/ecmp.p4",
+            "filename" : "/home/ubuntu/p4burst/p4src/ecmp.p4",
             "line" : 116,
             "column" : 14,
             "source_fragment" : "hdr.ipv4.srcAddr"
@@ -513,7 +513,7 @@
             }
           ],
           "source_info" : {
-            "filename" : "/home/ubuntu/p4bursty/p4src/ecmp.p4",
+            "filename" : "/home/ubuntu/p4burst/p4src/ecmp.p4",
             "line" : 117,
             "column" : 14,
             "source_fragment" : "hdr.ipv4.dstAddr"
@@ -532,7 +532,7 @@
             }
           ],
           "source_info" : {
-            "filename" : "/home/ubuntu/p4bursty/p4src/ecmp.p4",
+            "filename" : "/home/ubuntu/p4burst/p4src/ecmp.p4",
             "line" : 118,
             "column" : 14,
             "source_fragment" : "hdr.ipv4.protocol"
@@ -551,7 +551,7 @@
             }
           ],
           "source_info" : {
-            "filename" : "/home/ubuntu/p4bursty/p4src/ecmp.p4",
+            "filename" : "/home/ubuntu/p4burst/p4src/ecmp.p4",
             "line" : 119,
             "column" : 14,
             "source_fragment" : "hdr.tcp.srcPort"
@@ -570,7 +570,7 @@
             }
           ],
           "source_info" : {
-            "filename" : "/home/ubuntu/p4bursty/p4src/ecmp.p4",
+            "filename" : "/home/ubuntu/p4burst/p4src/ecmp.p4",
             "line" : 120,
             "column" : 14,
             "source_fragment" : "hdr.tcp.dstPort"
@@ -597,7 +597,7 @@
             }
           ],
           "source_info" : {
-            "filename" : "/home/ubuntu/p4bursty/p4src/ecmp.p4",
+            "filename" : "/home/ubuntu/p4burst/p4src/ecmp.p4",
             "line" : 113,
             "column" : 8,
             "source_fragment" : "hash(meta.ecmp_hash, ..."
@@ -616,7 +616,7 @@
             }
           ],
           "source_info" : {
-            "filename" : "/home/ubuntu/p4bursty/p4src/ecmp.p4",
+            "filename" : "/home/ubuntu/p4burst/p4src/ecmp.p4",
             "line" : 123,
             "column" : 8,
             "source_fragment" : "meta.ecmp_group_id = ecmp_group_id"
@@ -651,7 +651,7 @@
             }
           ],
           "source_info" : {
-            "filename" : "/home/ubuntu/p4bursty/p4src/ecmp.p4",
+            "filename" : "/home/ubuntu/p4burst/p4src/ecmp.p4",
             "line" : 127,
             "column" : 8,
             "source_fragment" : "standard_metadata.egress_spec = port"
@@ -670,7 +670,7 @@
             }
           ],
           "source_info" : {
-            "filename" : "/home/ubuntu/p4bursty/p4src/ecmp.p4",
+            "filename" : "/home/ubuntu/p4burst/p4src/ecmp.p4",
             "line" : 128,
             "column" : 8,
             "source_fragment" : "hdr.ethernet.srcAddr = hdr.ethernet.dstAddr"
@@ -689,7 +689,7 @@
             }
           ],
           "source_info" : {
-            "filename" : "/home/ubuntu/p4bursty/p4src/ecmp.p4",
+            "filename" : "/home/ubuntu/p4burst/p4src/ecmp.p4",
             "line" : 129,
             "column" : 8,
             "source_fragment" : "hdr.ethernet.dstAddr = dstAddr"
@@ -731,7 +731,7 @@
             }
           ],
           "source_info" : {
-            "filename" : "/home/ubuntu/p4bursty/p4src/ecmp.p4",
+            "filename" : "/home/ubuntu/p4burst/p4src/ecmp.p4",
             "line" : 130,
             "column" : 8,
             "source_fragment" : "hdr.ipv4.ttl = hdr.ipv4.ttl - 1"
@@ -766,7 +766,7 @@
             }
           ],
           "source_info" : {
-            "filename" : "/home/ubuntu/p4bursty/p4src/ecmp.p4",
+            "filename" : "/home/ubuntu/p4burst/p4src/ecmp.p4",
             "line" : 127,
             "column" : 8,
             "source_fragment" : "standard_metadata.egress_spec = port"
@@ -785,7 +785,7 @@
             }
           ],
           "source_info" : {
-            "filename" : "/home/ubuntu/p4bursty/p4src/ecmp.p4",
+            "filename" : "/home/ubuntu/p4burst/p4src/ecmp.p4",
             "line" : 128,
             "column" : 8,
             "source_fragment" : "hdr.ethernet.srcAddr = hdr.ethernet.dstAddr"
@@ -804,7 +804,7 @@
             }
           ],
           "source_info" : {
-            "filename" : "/home/ubuntu/p4bursty/p4src/ecmp.p4",
+            "filename" : "/home/ubuntu/p4burst/p4src/ecmp.p4",
             "line" : 129,
             "column" : 8,
             "source_fragment" : "hdr.ethernet.dstAddr = dstAddr"
@@ -846,7 +846,7 @@
             }
           ],
           "source_info" : {
-            "filename" : "/home/ubuntu/p4bursty/p4src/ecmp.p4",
+            "filename" : "/home/ubuntu/p4burst/p4src/ecmp.p4",
             "line" : 130,
             "column" : 8,
             "source_fragment" : "hdr.ipv4.ttl = hdr.ipv4.ttl - 1"
@@ -860,7 +860,7 @@
       "name" : "ingress",
       "id" : 0,
       "source_info" : {
-        "filename" : "/home/ubuntu/p4bursty/p4src/ecmp.p4",
+        "filename" : "/home/ubuntu/p4burst/p4src/ecmp.p4",
         "line" : 105,
         "column" : 8,
         "source_fragment" : "MyIngress"
@@ -871,7 +871,7 @@
           "name" : "MyIngress.ipv4_lpm",
           "id" : 0,
           "source_info" : {
-            "filename" : "/home/ubuntu/p4bursty/p4src/ecmp.p4",
+            "filename" : "/home/ubuntu/p4burst/p4src/ecmp.p4",
             "line" : 156,
             "column" : 10,
             "source_fragment" : "ipv4_lpm"
@@ -908,7 +908,7 @@
           "name" : "MyIngress.ecmp_group",
           "id" : 1,
           "source_info" : {
-            "filename" : "/home/ubuntu/p4bursty/p4src/ecmp.p4",
+            "filename" : "/home/ubuntu/p4burst/p4src/ecmp.p4",
             "line" : 133,
             "column" : 10,
             "source_fragment" : "ecmp_group"
@@ -946,7 +946,7 @@
           "name" : "MyIngress.ecmp_nhop",
           "id" : 2,
           "source_info" : {
-            "filename" : "/home/ubuntu/p4bursty/p4src/ecmp.p4",
+            "filename" : "/home/ubuntu/p4burst/p4src/ecmp.p4",
             "line" : 144,
             "column" : 10,
             "source_fragment" : "ecmp_nhop"
@@ -993,7 +993,7 @@
           "name" : "node_2",
           "id" : 0,
           "source_info" : {
-            "filename" : "/home/ubuntu/p4bursty/p4src/ecmp.p4",
+            "filename" : "/home/ubuntu/p4burst/p4src/ecmp.p4",
             "line" : 169,
             "column" : 12,
             "source_fragment" : "hdr.ipv4.isValid() && hdr.ipv4.ttl > 0"
@@ -1038,7 +1038,7 @@
       "name" : "egress",
       "id" : 1,
       "source_info" : {
-        "filename" : "/home/ubuntu/p4bursty/p4src/ecmp.p4",
+        "filename" : "/home/ubuntu/p4burst/p4src/ecmp.p4",
         "line" : 179,
         "column" : 8,
         "source_fragment" : "MyEgress"
@@ -1054,7 +1054,7 @@
       "name" : "cksum",
       "id" : 0,
       "source_info" : {
-        "filename" : "/home/ubuntu/p4bursty/p4src/ecmp.p4",
+        "filename" : "/home/ubuntu/p4burst/p4src/ecmp.p4",
         "line" : 187,
         "column" : 8,
         "source_fragment" : "update_checksum( ..."
@@ -1117,7 +1117,7 @@
       ["standard_metadata", "priority"]
     ]
   ],
-  "program" : "/home/ubuntu/p4bursty/p4src/ecmp.p4i",
+  "program" : "/home/ubuntu/p4burst/p4src/ecmp.p4i",
   "__meta__" : {
     "version" : [2, 23],
     "compiler" : "https://github.com/p4lang/p4c"

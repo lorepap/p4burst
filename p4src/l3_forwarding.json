@@ -175,7 +175,7 @@
       "name" : "deparser",
       "id" : 0,
       "source_info" : {
-        "filename" : "/home/ubuntu/p4bursty/p4src/l3_forwarding.p4",
+        "filename" : "/home/ubuntu/p4burst/p4src/l3_forwarding.p4",
         "line" : 159,
         "column" : 8,
         "source_fragment" : "MyDeparser"
@@ -192,7 +192,7 @@
       "name" : "calc",
       "id" : 0,
       "source_info" : {
-        "filename" : "/home/ubuntu/p4bursty/p4src/l3_forwarding.p4",
+        "filename" : "/home/ubuntu/p4burst/p4src/l3_forwarding.p4",
         "line" : 136,
         "column" : 8,
         "source_fragment" : "update_checksum( ..."
@@ -268,7 +268,7 @@
             }
           ],
           "source_info" : {
-            "filename" : "/home/ubuntu/p4bursty/p4src/l3_forwarding.p4",
+            "filename" : "/home/ubuntu/p4burst/p4src/l3_forwarding.p4",
             "line" : 90,
             "column" : 8,
             "source_fragment" : "mark_to_drop(standard_metadata)"
@@ -303,7 +303,7 @@
             }
           ],
           "source_info" : {
-            "filename" : "/home/ubuntu/p4bursty/p4src/l3_forwarding.p4",
+            "filename" : "/home/ubuntu/p4burst/p4src/l3_forwarding.p4",
             "line" : 94,
             "column" : 8,
             "source_fragment" : "standard_metadata.egress_spec = port"
@@ -322,7 +322,7 @@
             }
           ],
           "source_info" : {
-            "filename" : "/home/ubuntu/p4bursty/p4src/l3_forwarding.p4",
+            "filename" : "/home/ubuntu/p4burst/p4src/l3_forwarding.p4",
             "line" : 95,
             "column" : 8,
             "source_fragment" : "hdr.ethernet.srcAddr = hdr.ethernet.dstAddr"
@@ -341,7 +341,7 @@
             }
           ],
           "source_info" : {
-            "filename" : "/home/ubuntu/p4bursty/p4src/l3_forwarding.p4",
+            "filename" : "/home/ubuntu/p4burst/p4src/l3_forwarding.p4",
             "line" : 96,
             "column" : 8,
             "source_fragment" : "hdr.ethernet.dstAddr = dstAddr"
@@ -383,7 +383,7 @@
             }
           ],
           "source_info" : {
-            "filename" : "/home/ubuntu/p4bursty/p4src/l3_forwarding.p4",
+            "filename" : "/home/ubuntu/p4burst/p4src/l3_forwarding.p4",
             "line" : 97,
             "column" : 8,
             "source_fragment" : "hdr.ipv4.ttl = hdr.ipv4.ttl - 1"
@@ -397,7 +397,7 @@
       "name" : "ingress",
       "id" : 0,
       "source_info" : {
-        "filename" : "/home/ubuntu/p4bursty/p4src/l3_forwarding.p4",
+        "filename" : "/home/ubuntu/p4burst/p4src/l3_forwarding.p4",
         "line" : 86,
         "column" : 8,
         "source_fragment" : "MyIngress"
@@ -408,7 +408,7 @@
           "name" : "MyIngress.ipv4_lpm",
           "id" : 0,
           "source_info" : {
-            "filename" : "/home/ubuntu/p4bursty/p4src/l3_forwarding.p4",
+            "filename" : "/home/ubuntu/p4burst/p4src/l3_forwarding.p4",
             "line" : 100,
             "column" : 10,
             "source_fragment" : "ipv4_lpm"
@@ -449,7 +449,7 @@
           "name" : "node_2",
           "id" : 0,
           "source_info" : {
-            "filename" : "/home/ubuntu/p4bursty/p4src/l3_forwarding.p4",
+            "filename" : "/home/ubuntu/p4burst/p4src/l3_forwarding.p4",
             "line" : 114,
             "column" : 12,
             "source_fragment" : "hdr.ipv4.isValid()"
@@ -474,7 +474,7 @@
       "name" : "egress",
       "id" : 1,
       "source_info" : {
-        "filename" : "/home/ubuntu/p4bursty/p4src/l3_forwarding.p4",
+        "filename" : "/home/ubuntu/p4burst/p4src/l3_forwarding.p4",
         "line" : 124,
         "column" : 8,
         "source_fragment" : "MyEgress"
@@ -490,7 +490,7 @@
       "name" : "cksum",
       "id" : 0,
       "source_info" : {
-        "filename" : "/home/ubuntu/p4bursty/p4src/l3_forwarding.p4",
+        "filename" : "/home/ubuntu/p4burst/p4src/l3_forwarding.p4",
         "line" : 136,
         "column" : 8,
         "source_fragment" : "update_checksum( ..."
@@ -553,7 +553,7 @@
       ["standard_metadata", "priority"]
     ]
   ],
-  "program" : "/home/ubuntu/p4bursty/p4src/l3_forwarding.p4i",
+  "program" : "/home/ubuntu/p4burst/p4src/l3_forwarding.p4i",
   "__meta__" : {
     "version" : [2, 23],
     "compiler" : "https://github.com/p4lang/p4c"

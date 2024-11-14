@@ -5,6 +5,14 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "stress_test_dumbbell",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "test_gbps_traffic.py",
+            "console": "integratedTerminal",
+            "sudo": true,
+        },
+        {
             "name": "RUNNER",
             "type": "debugpy",
             "request": "launch",
@@ -14,10 +22,14 @@
             // run as a root
             "sudo": true,
             "args": [
-                "-t", "leafspine",
-                "-n", "4",
-                "-l", "2",
-                "-s", "2",
+                "-t",
+                "leafspine",
+                "-n",
+                "4",
+                "-l",
+                "2",
+                "-s",
+                "2",
                 "--cli"
             ]
         }

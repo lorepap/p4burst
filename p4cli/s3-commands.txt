@@ -1,5 +1,0 @@
-table_set_default ipv4_lpm drop
-table_add ipv4_lpm set_nhop 10.0.1.1/32 => e6:9b:f7:e7:99:6c 1
-table_add ipv4_lpm set_nhop 10.0.1.2/32 => e6:9b:f7:e7:99:6c 1
-table_add ipv4_lpm set_nhop 10.0.2.3/32 => 9a:b2:97:87:09:21 2
-table_add ipv4_lpm set_nhop 10.0.2.4/32 => 9a:b2:97:87:09:21 2
