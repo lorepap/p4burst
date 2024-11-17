@@ -23,8 +23,8 @@ class SimpleTopo(NetworkAPI):
     def create_topo(self):
         # Create a BMv2 switch
         # switch = self.addSwitch('s1', cls=OVSSwitch) # TODO: replace with bmv2
-        self.addP4Switch('s1', cli_input=os.path.join('p4cli/s1-commands.txt'))
-        self.addP4Switch('s2', cli_input=os.path.join('p4cli/s2-commands.txt'))
+        self.addP4Switch('s1', cli_input=os.path.join('p4cli/s1-commands.txt'), max_queue_size=1000)
+        self.addP4Switch('s2', cli_input=os.path.join('p4cli/s2-commands.txt'), max_queue_size=1000)
         self.setP4SourceAll(os.path.join(P4_PATH, 'l3_forwarding.p4'))
         
         # Create hosts
@@ -32,9 +32,9 @@ class SimpleTopo(NetworkAPI):
         server = self.addHost('h2')
 
         # Add links with Gbps bandwidth
-        self.addLink('h1', 's1', bw=10000, cls=TCHighBwLink)
-        self.addLink('h2', 's1', bw=10000, cls=TCHighBwLink)
-        self.addLink('s1', 's2', bw=10000, cls=TCHighBwLink)
+        self.addLink('h1', 's1', bw=10000, delay=0.0001, cls=TCHighBwLink)
+        self.addLink('h2', 's1', bw=10000, delay=0.0001, cls=TCHighBwLink)
+        self.addLink('s1', 's2', bw=10000, delay=0.0001, cls=TCHighBwLink)
 
     def run_network(self):
         print("Retrieving hosts...")
@@ -54,7 +54,7 @@ class SimpleTopo(NetworkAPI):
         print("Sending Gbps traffic from h1 to h2 and logging to {}".format(log_file))
         print("h1 IP: {}".format(client.IP()))
         print("h2 IP: {}".format(server.IP()))
-        client.cmd('iperf3 -P 2 -c {} -t 30  > {} 2>&1'.format(server.IP(), log_file))
+        client.cmd('iperf3 -w 8M -c {} -t 30  > {} 2>&1'.format(server.IP(), log_file))
 
         # Display the iperf3 log content
         with open(log_file, 'r') as f:

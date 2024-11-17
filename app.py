@@ -3,8 +3,8 @@ import socket
 import time
 import random
 from abc import ABC, abstractmethod
-from client import BurstyClient, BackgroundClient
-from server import BurstyServer, BackgroundServer
+from client import BaseClient, BurstyClient, BackgroundClient, IperfClient
+from server import BaseServer, BurstyServer, BackgroundServer, IperfServer
 import logging
 import os
 import csv
@@ -69,13 +69,14 @@ class BurstyApp(App):
         if self.mode == 'server':
             self.server.start()
         elif self.mode == 'client':
-            self.client.run()
+            self.client.start()
 
 class BackgroundApp(App):
     def __init__(self, args):
         super().__init__(args.mode)
         mode = args.mode
         # host_id = args.host_id
+        host_ip = args.host_ip
         server_ips = args.server_ips
         flow_ids = args.flow_ids
         flow_sizes = args.flow_sizes
@@ -84,7 +85,7 @@ class BackgroundApp(App):
         print("CONG CONTROL", congestion_control)
 
         if mode == 'server':
-            self.server = BackgroundServer()
+            self.server = BackgroundServer(ip=host_ip)
         elif mode == 'client':
             # Pass necessary flow data for the client
             self.client = BackgroundClient(
@@ -99,42 +100,57 @@ class BackgroundApp(App):
 
     def run(self):
         if self.mode == 'client':
-            self.client.run()
+            self.client.start()
         elif self.mode == 'server':
             self.server.start()
 
+class SimplePacketApp(App):
+    def __init__(self, args):
+        mode = args.mode
+        server_ip = args.server_ips
+        # packet_size = args.packet_size
+        super().__init__(mode)
+        if mode == 'server':
+            self.server = BaseServer(port=12345, ip=args.host_ip)  # Use a basic server listener
+        elif mode == 'client':
+            if server_ip is None:
+                raise ValueError("server_ip must be provided for client mode")
+            self.client = BaseClient(server_ip[0])
+        else:
+            raise ValueError("Invalid mode. Choose 'server' or 'client'.")
+
     def run(self):
-        if self.mode == 'client':
-            self.client.run()
-        elif self.mode == 'server':
-            self.server.start()  # Blocking call, usually you'd use threading for multiple servers
+        if self.mode == 'server':
+            self.server.start()  # Blocking call to start listening for packets
+        elif self.mode == 'client':
+            self.client.start()  # Send a single packet and then exit
 
-    # def collect_and_write_metrics(self, output_file):
-    #     """Aggregate metrics from all servers and write to a CSV file."""
-    #     all_metrics = []
+class IperfApp(App):
+    def __init__(self, args):
+        mode = args.mode
+        server_ip = args.server_ips
+        super().__init__(mode)
+        if mode == 'server':
+            self.server = IperfServer(port=12345, ip=args.host_ip)  # Use a basic server listener
+        elif mode == 'client':
+            if server_ip is None:
+                raise ValueError("server_ip must be provided for client mode")
+            self.client = IperfClient(server_ip[0], duration=10)
+        else:
+            raise ValueError("Invalid mode. Choose 'server' or 'client'.")
 
-    #     # Collect metrics from each server
-    #     for server in self.servers:
-    #         all_metrics.extend(server.get_metrics())
+    def run(self):
+        if self.mode == 'server':
+            self.server.start()  # Blocking call to start listening for packets
+        elif self.mode == 'client':
+            self.client.start()  # Send a single packet and then exit
 
-    #     # Write aggregated metrics to a CSV file
-    #     with open(output_file, mode='w', newline='') as file:
-    #         writer = csv.writer(file)
-    #         writer.writerow(["server_id", "client_id", "bytes_received", "flow_completion_time", "throughput_mbps"])
-    #         for metric in all_metrics:
-    #             writer.writerow([
-    #                 metric["server_id"],
-    #                 metric["client_id"],
-    #                 metric["bytes_received"],
-    #                 metric["flow_completion_time"],
-    #                 metric["throughput_mbps"]
-    #             ])
-    #     logging.info(f"All metrics written to {output_file}")
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--mode', choices=['server', 'client'], required=True)
-    parser.add_argument('--type', choices=['bursty', 'background'], required=True)
+    parser.add_argument('--type', choices=['bursty', 'background', 'single'], required=True)
+    parser.add_argument('--host_ip', type=str, required=False, help="host IP address (required for servers)")
     # parser.add_argument('--host_id', type=str, required=False, help="sender id: required only for a sender")
     parser.add_argument('--server_ips', required=False, nargs='+', help="List of server IPs (bursty app)")
     parser.add_argument('--reply_size', required=False, type=int, default=40000)
@@ -148,6 +164,8 @@ def main():
         app = BurstyApp(args)
     elif args.type == 'background':
         app = BackgroundApp(args)
+    elif args.type == 'single':
+        app = SimplePacketApp(args)
     else:
         raise ValueError("Invalid application type. Choose 'bursty' or 'background'.")
     app.run()

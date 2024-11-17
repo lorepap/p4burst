@@ -37,7 +37,7 @@ class BaseTopology(ABC):
         self.net.enableLogAll()
 
         # Assignment strategy
-        self.net.mixed()
+        self.net.l3_large()
 
         # Start the network
         self.net.startNetwork()

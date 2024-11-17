@@ -7,16 +7,32 @@ import math
 import csv
 from metrics import FlowMetricsManager
 import threading
+import os
 
 class BaseServer(ABC):
-    def __init__(self, port=12345):
+    def __init__(self, port=12345, ip=None):
         self.port = port
-        self.ip = self.get_host_ip()
+        # self.ip = self.get_host_ip()
+        if ip:
+            self.ip = ip 
+        else: raise ValueError("IP address must be specified")
         self.flowtracker = FlowMetricsManager()
 
-    @abstractmethod
     def handle_request(self, conn):
-        pass
+        try:
+            # Receive data in chunks
+            data = conn.recv(1024)
+            logging.info(f"[{self.ip}]: Received {len(data)} bytes of data")
+            
+            # Echo back an acknowledgment or the received data
+            if data:
+                conn.sendall(b"ACK")  # Acknowledge the receipt of data
+
+        except Exception as e:
+            logging.error(f"[{self.ip}]: Error handling request: {e}")
+        finally:
+            logging.info(f"[{self.ip}]: Closing connection")
+            conn.close()
 
     def start(self):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -29,22 +45,10 @@ class BaseServer(ABC):
                     logging.info(f"[{self.ip}]: Accepted connection from {addr}")
                     with conn:
                         print(f"Connected by {addr}")
-                        self.handle_request(conn, addr)
+                        self.handle_request(conn)
                 except Exception as e:
                     logging.error(f"[{self.ip}]: Error accepting connection: {e}")
                     logging.error(traceback.format_exc())
-
-    def get_host_ip(self):
-        # try:
-            # Create a socket to determine the outgoing IP address
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(("8.8.8.8", 80))  # Doesn't actually send any data
-        ip = s.getsockname()[0]
-        s.close()
-        return ip
-        # except Exception:
-        #     traceback.print_exc()
-        #     sys.exit(1) 
 
 
 class BurstyServer(BaseServer):
@@ -83,8 +87,8 @@ class BurstyServer(BaseServer):
 
 
 class BackgroundServer(BaseServer):
-    def __init__(self, port=12345):
-        super().__init__(port)
+    def __init__(self, ip=None, port=12345):
+        super().__init__(port, ip)
 
     def start(self):
         """Start the server with multi-threading support."""
@@ -121,9 +125,7 @@ class BackgroundServer(BaseServer):
             # Mark the flow as complete in FlowMetricsManager
             if flow_id is not None:
                 FlowMetricsManager().complete_flow(flow_id)
-                logging.info(f"Flow {flow_id} completed. Total bytes received: {total_bytes_received}")
-                logging.info(f"Metrics: {FlowMetricsManager().get_metrics()}")
-                print("Metrics:", FlowMetricsManager().get_metrics())
+                logging.info(f"Flow {flow_id} from {addr} completed. Total bytes received: {total_bytes_received}")
 
         except Exception as e:
             logging.error(f"[{self.ip}]: Error receiving data from {addr[0]}:{addr[1]}: {e}")
@@ -131,3 +133,12 @@ class BackgroundServer(BaseServer):
     def get_metrics(self):
         """Retrieve collected flow metrics."""
         return FlowMetricsManager().get_metrics()
+
+class IperfServer(BaseServer):
+    def __init__(self, port=5201):
+        self.port = port
+
+    def start(self):
+        cmd = f'iperf3 -s &'
+        os.system(cmd)
+

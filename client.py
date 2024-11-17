@@ -14,21 +14,47 @@ import threading
 import numpy as np
 import traceback
 from metrics import FlowMetricsManager
-
+import subprocess
 
 class BaseClient(ABC):
-    def __init__(self):
+    def __init__(self, server_ip=None):
         self.ip = self.get_host_ip()
+        self.server_ip = server_ip
 
-    @abstractmethod
-    def send_request(self, server_ip):
-        pass
+    def send_request(self, server_ip=None, packet_size=1024):
+        """
+        Sends a single packet to the server.
+        
+        Args:
+            server_ip (str, optional): Server IP to send the packet to. Defaults to self.server_ip.
+        """
+        if not self.server_ip:
+            self.server_ip = server_ip
+        if self.server_ip is None:
+            raise ValueError("Server IP must be specified")
 
-    def run(self):
-        while True:
-            for server_ip in self.server_ips:
-                self.send_request(server_ip)
-            time.sleep(random.uniform(1, 5)) 
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            try:
+                # Connect to the server
+                s.connect((server_ip, 12345))
+                logging.info(f"[{self.ip}]: Sending single packet to {server_ip}:12345")
+
+                # Prepare the data packet with a specified size
+                data = b'P' * packet_size  # Placeholder byte array for the packet
+                print("Sending packet...")
+                s.sendall(data)  # Send all data in one go
+
+                # Read the response from the server
+                response = s.recv(1024)
+                print(f"Received response: {response}")
+
+                logging.info(f"[{self.ip}]: Sent {len(data)} bytes to {server_ip}:12345")
+            except Exception as e:
+                logging.error(f"[{self.ip}]: Error sending single packet to {server_ip}: {e}")
+                traceback.print_exc()
+
+    def start(self):
+        self.send_request(self.server_ip, 1024)
 
     # TODO: move this to a base host class (for both server and client)
     def get_host_ip(self):
@@ -40,7 +66,7 @@ class BaseClient(ABC):
             s.close()
             return ip
         except Exception:
-            raise ValueError("Could not determine host IP address")
+            print ("Warning: Could not determine host IP address - setting to None")
 
 
 class BurstyClient(BaseClient):
@@ -91,7 +117,7 @@ class BurstyClient(BaseClient):
         self.qct_stats.append(qct)
         logging.info(f"[{self.ip}]: Query completed. QCT: {qct:.6f} seconds")
 
-    def run(self):
+    def start(self):
         while True:
             self.send_query()
             time.sleep(random.uniform(1, 5))
@@ -153,10 +179,21 @@ class BackgroundClient(BaseClient):
                 logging.error(f"[{self.ip}]: Error sending traffic to {server_ip}: {e}")
                 traceback.print_exc()
 
-    def run(self):
+    def start(self):
         """Send flows to each server based on inter-arrival times and flow sizes."""
+        print(f"Client {self.ip} sending {len(self.flow_ids)} flows")
         for flow_id, inter_arrival_time, flow_size, server_ip in zip(
             self.flow_ids, self.inter_arrival_times, self.flow_sizes, self.server_ips
         ):
             self.send_request(flow_id, server_ip, flow_size)
-            time.sleep(float(inter_arrival_time))
+            time.sleep(float(inter_arrival_time)) # debug
+
+class IperfClient(BaseClient):
+    def __init__(self, server_ip, duration):
+        super().__init__()
+        self.server_ip = server_ip
+        self.duration = duration
+
+    def start(self):
+        cmd = f'iperf3 -c {self.server_ip} -t {self.duration} &'
+        os.system(cmd)

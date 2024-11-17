@@ -166,6 +166,9 @@ log/
 pcap/
 tmp/
 test/
+p4cli/*
+*.log
+*.db
 *.pyc
 *.pcap
 results/

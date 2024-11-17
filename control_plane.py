@@ -99,20 +99,38 @@ class DumbbellControlPlane(BaseControlPlane):
         for switch in self.net_api.switches():
             commands = []
             commands.append("table_set_default MyIngress.ipv4_lpm drop")
+            host_entries = {}  # Track individual host entries for each switch
+
             for host in self.net_api.hosts():
-                remote = True
-                host_ip = self.get_host_ip(host)
+                is_remote = True
+                host_ip = self.get_host_ip(host).split('/')[0]
                 other_switch = 's2' if switch == 's1' else 's1'
+
+                # Find local hosts and add entry for each specific host IP
                 for port, nodes in self.net_api.node_ports()[switch].items():
                     if host in nodes:
-                        remote = False
-                        host_mac = self.get_host_mac(host)
-                        commands.append(f"table_add MyIngress.ipv4_lpm ipv4_forward {host_ip} => {host_mac} {port}")
-                # host is remote -> forward to other switch
-                if remote:
+                        is_remote = False
+                        # Only add a new entry if this host IP hasn't been added yet
+                        if host_ip not in host_entries:
+                            host_mac = self.get_host_mac(host)
+                            commands.append(
+                                f"table_add MyIngress.ipv4_lpm ipv4_forward {host_ip}/32 => {host_mac} {port}"
+                            )
+                            host_entries[host_ip] = (host_mac, port)
+                        break  # Stop after adding entry for this host IP
+
+                # If the host is remote, add forwarding rule for the other switch
+                if is_remote:
                     for port, nodes in self.net_api.node_ports()[switch].items():
                         if other_switch in nodes:
-                            host_mac = self.get_host_mac(host)
-                            commands.append(f"table_add MyIngress.ipv4_lpm ipv4_forward {host_ip} => 00:00:00:00:00:00 {port}") # broadcast
+                            # Only add remote subnet entry if it hasn't been added yet
+                            subnet = '.'.join(host_ip.split('.')[:3]) + ".0/24"
+                            if subnet not in host_entries:
+                                commands.append(
+                                    f"table_add MyIngress.ipv4_lpm ipv4_forward {subnet} => 00:00:00:00:00:00 {port}"
+                                )
+                                host_entries[subnet] = ("00:00:00:00:00:00", port)
+                            break  # Stop after adding one entry per subnet
 
+            # Save generated commands for each switch
             self.save_commands(switch[1:], commands)

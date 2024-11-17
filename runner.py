@@ -24,6 +24,26 @@ class ExperimentRunner:
         self.flowtracker = FlowMetricsManager()
 
     def setup_experiment(self):
+        # topo_dict = {
+        #     'leafspine': LeafSpineTopology,
+        #     'dumbbell': DumbbellTopology
+        # }
+        # cp_dict = {
+        #     'leafspine': LeafSpineControlPlane,
+        #     'dumbbell': DumbbellControlPlane
+        # }
+
+        # if self.args.topology not in topo_dict:
+        #     raise ValueError(f"Unsupported topology: {self.args.topology}")
+        
+        # self.topology = topo_dict[self.args.topology](
+        #     self.args.hosts, 
+        #     self.args.leaf, 
+        #     self.args.spine, 
+        #     self.args.bw, 
+        #     self.args.latency
+        # )
+
         if self.args.topology == 'leafspine':
             self.topology = LeafSpineTopology(
                 self.args.hosts, 
@@ -61,7 +81,7 @@ class ExperimentRunner:
         for server in servers:
             if server.IP() != client.IP():
                 print(f"Starting server on {server.name} ({server.IP()})...")
-                server.cmd(f'python3 -m app --mode server --type bursty --reply_size {self.args.reply_size} &')
+                server.cmd(f'python3 -m app --mode server --host_ip {server.IP()} --type bursty --reply_size {self.args.reply_size} &')
                 server_ips.append(server.IP())
         
         time.sleep(2)  # Give the servers some time to start up
@@ -72,8 +92,16 @@ class ExperimentRunner:
     def run_background_app(self):
         servers = self.topology.net.net.hosts
         print(f"Servers: {[server.name for server in servers]}")
+        
+        # Starting servers
         for server in servers:
             print(f"Starting server on {server.name} ({server.IP()})...")
+            server.cmd(f'python3 -m app --mode server --type background --host_ip {server.IP()} &')
+        
+        time.sleep(1)
+        
+        # Starting clients
+        for server in  servers:
             flow_data = self.load_background_flow_data(server.name, 'cache', 1.0, 11.85) # TODO: use the config file for params
             # params for client traffic -> this looks bad TODO improvements
             # this block should go somewhere else and the params shoul be passed differently
@@ -85,8 +113,7 @@ class ExperimentRunner:
             flow_sizes = [flow['flow_size'] for flow in flow_data]
             inter_arrival_times = [flow['inter_arrival_time'] for flow in flow_data]
             host_id = server.name # parsed in the client
-            print(f"[DEBUG] Client {host_id} Server IPs: {server_ips} | Server IDs: {server_ids}")
-            server.cmd(f'python3 -m app --mode server --type background &')
+            print(f"[DEBUG] Client {host_id} flow ids: {flow_ids}")
             server.cmd(f'python3 -m app --mode client \
                 --server_ips {" ".join(server_ips)} \
                 --flow_ids {" ".join(map(str, flow_ids))} \
@@ -94,6 +121,53 @@ class ExperimentRunner:
                 --iat {" ".join(map(str, inter_arrival_times))} \
                 --type background &') # I'm not convinced how server_ips are passed to the client
 
+    def run_simple_app(self):
+        """
+        Run a simple client-server application that sends one single packet from a client to a server.
+        """
+        # Get hosts
+        h1 = self.topology.net.net.get('h1')
+        h3 = self.topology.net.net.get('h3')
+    
+        # Set congestion control
+        h1.cmd('sysctl -w net.ipv4.tcp_congestion_control=cubic')
+    
+        # h1.cmd('ifconfig h1-eth0 txqueuelen 1000')
+    
+        # Start server on h3
+        print(f"Starting server on h3 ({h3.IP()})...")
+        h3.cmd(f'python3 -m app --mode server --host_ip {h3.IP()} --type single &')
+        time.sleep(2)
+        print(f"Starting client on h1 ({h1.IP()})...")
+        h1.cmd(f'python3 -m app --mode client --type single --server_ips {h3.IP()} &')
+
+    def run_iperf_app(self):
+        # Two clients send iperf flows to two servers
+        h1 = self.topology.net.net.get('h1')
+        h2 = self.topology.net.net.get('h2')
+        h3 = self.topology.net.net.get('h3')
+        h4 = self.topology.net.net.get('h4')
+
+        # Capture senders pcap
+        pcap_dir = 'pcap'
+        for host in [h1, h2, h3]:
+            for intf in host.intfList():
+                if intf.name != 'lo':
+                    cmd = f'tcpdump -i {intf} -w {pcap_dir}/{intf}.pcap &'
+                    host.cmd(cmd)
+
+        # Start servers
+        print(f"Starting server on h3 ({h3.IP()})...")
+        h3.cmd('iperf3 -s &')
+        print(f"Starting server on h4 ({h4.IP()})...")
+        h4.cmd('iperf3 -s -p 5202 &')
+        time.sleep(2)
+
+        # Start clients
+        print(f"Starting client on h1 ({h1.IP()})...")
+        h1.cmd(f'iperf3 -c {h3.IP()} -t {self.args.duration} -p 5201 &')
+        print(f"Starting client on h2 ({h2.IP()})...")
+        h2.cmd(f'iperf3 -c {h3.IP()} -t {self.args.duration} -p 5202 &')
   
     def select_servers(self, n):
         return random.sample(self.topology.net.net.hosts, n)
@@ -153,8 +227,8 @@ class ExperimentRunner:
                 raise ValueError(f"Column {server_column} not found in {file_path}")
             
         # Combine the data from each database into flow data entries
-        for flow_id, (inter_arrival_time, flow_size, server_idx) in enumerate(
-                zip(data["inter_arrival_times"], data["flow_sizes"], data["server_indices"])):
+        for (flow_id, inter_arrival_time, flow_size, server_idx) in zip(data['flow_ids'], 
+                        data["inter_arrival_times"], data["flow_sizes"], data["server_indices"]):
             flow_data.append({
                 'flow_id': flow_id,
                 'inter_arrival_time': inter_arrival_time,
@@ -165,13 +239,22 @@ class ExperimentRunner:
         return flow_data
 
     def run_experiment(self):
+        
+        exp_dict = {
+                'bursty': self.run_bursty_app,
+                'background': self.run_background_app,
+                'simple': self.run_simple_app,
+                'iperf': self.run_iperf_app
+            }
+        
         try:
             self.setup_experiment()
             self.start_network() # will run cli if specified
-            # self.run_bursty_app()
-            self.run_background_app()            
+            if self.args.host_pcap:
+                self.enable_pcap_hosts()
+            exp_dict[self.args.app]()
             # Let the experiment run for a specified duration
-            print(f"Experiment running for {self.args.duration} seconds...")
+            print(f"Experiment running for {self.args.duration+5} seconds...")
             time.sleep(self.args.duration)
 
         except Exception as e:
@@ -180,17 +263,31 @@ class ExperimentRunner:
         finally:
             self.stop_network()
 
+    def enable_pcap_hosts(self):
+        pcap_dir = 'pcap'
+        if not os.path.exists(pcap_dir):
+            os.makedirs(pcap_dir)
+
+        for host in self.topology.net.net.hosts:
+            for intf in host.intfList():
+                if intf.name != 'lo':
+                    cmd = f'tcpdump -i {intf} -w {pcap_dir}/{intf}.pcap &'
+                    host.cmd(cmd)
+
+
 def get_args():
     parser = argparse.ArgumentParser(description='Run network experiment')
     parser.add_argument('--topology', '-t', type=str, required=True, choices=['leafspine', 'dumbbell'], help='Topology type')
     parser.add_argument('--hosts', '-n', type=int, required=True, help='Number of hosts')
     parser.add_argument('--leaf', '-l', type=int, help='Number of leaf switches (for leaf-spine topology)', default=2)
     parser.add_argument('--spine', '-s', type=int, help='Number of spine switches (for leaf-spine topology)', default=2)
-    parser.add_argument('--bw', '-b', type=int, help='Bandwidth in Mbps', default=10)
-    parser.add_argument('--latency', '-d', type=float, help='Latency in ms', default=10)
+    parser.add_argument('--bw', '-b', type=int, help='Bandwidth in Mbps', default=1000)
+    parser.add_argument('--latency', '-d', type=float, help='Latency in ms', default=0.1)
     parser.add_argument('--reply_size', type=int, default=40000, help='Size of the burst response in bytes')
     parser.add_argument('--n_bursty_servers', type=int, default=2, help='Number of bursty servers')
     parser.add_argument('--duration', type=int, default=10, help='Duration of the experiment in seconds')
+    parser.add_argument('--app', type=str, required=True, choices=['bursty', 'background', 'simple', 'iperf'], help='Type of application')
+    parser.add_argument('--host_pcap', action='store_true', help='Enable pcap on hosts')
     parser.add_argument('--cli', action='store_true', help='Enable Mininet CLI')
     return parser.parse_args()
 

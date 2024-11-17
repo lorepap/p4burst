@@ -2935,3 +2935,135 @@ class NetworkAPI(Topo):
                 self.setIntfIp(node1, node2, sw1_ip)
                 # Fake and real IPs are handled by the same method setIntfIp.
                 self.setIntfIp(node2, node1, sw2_ip)
+
+    def mixed_multi_host(self):
+        debug('"mixed" assignment strategy selected.\n')
+        reserved_ips = {}
+        assigned_ips = set()
+        sw_to_generator = {}
+        sw_to_id = {}
+
+        for node, info in self.nodes(withInfo=True):
+            if node == 'sw-cpu':
+                continue
+            if self.isSwitch(node):
+                if self.isP4Switch(node):
+                    sw_id = info.get('device_id') or self.auto_switch_id()
+                    self.setP4SwitchId(node, sw_id)
+                else:
+                    dpid = info.get('dpid') or dpidToStr(self.auto_switch_id())
+                    sw_id = int(dpid, 16)
+                    self.setSwitchDpid(node, dpid)
+                
+                net = f'10.{(sw_id >> 8) & 0xff}.{sw_id & 0xff}.0/24'
+                sw_to_generator[node] = IPv4Network(str(net)).hosts()
+                sw_to_id[node] = sw_id
+
+        for node1, node2 in self.links():
+            if node1 == 'sw-cpu' or node2 == 'sw-cpu':
+                continue
+
+            if self.isHost(node1):
+                host, switch = node1, node2
+            elif self.isHost(node2):
+                host, switch = node2, node1
+            else:
+                continue
+
+            sw_id = sw_to_id[switch]
+            upper_byte, lower_byte = (sw_id >> 8) & 0xff, sw_id & 0xff
+            host_ip = reserved_ips.get(host) or f"10.{upper_byte}.{lower_byte}.{len(reserved_ips) + 1}"
+            
+            if host_ip not in assigned_ips:
+                assigned_ips.add(host_ip)
+                reserved_ips[host] = host_ip
+            else:
+                host_ip = next(sw_to_generator[switch]).compressed
+                while host_ip in assigned_ips:
+                    host_ip = next(sw_to_generator[switch]).compressed
+                assigned_ips.add(host_ip)
+
+            host_gw = f'10.{upper_byte}.{lower_byte}.254'
+            host_mac = ip_address_to_mac(host_ip) % 0
+            switch_mac = ip_address_to_mac(host_ip) % 1
+
+            self.setIntfMac(host, switch, host_mac)
+            self.setIntfMac(switch, host, switch_mac)
+            self.setIntfIp(host, switch, f"{host_ip}/24")
+            self.setIntfIp(switch, host, f"{host_gw}/24")
+            self.setDefaultRoute(host, host_gw)
+
+    def l3_large(self):
+        assigned_ips = set()
+        sw_to_next_available_host_id = {}
+        sw_to_id = {}
+        sw_to_subnets = {}
+        subnet_base = 10  # Starting base for subnets (e.g., 10.x.x.x/22)
+
+        # Assign IDs and subnets to switches
+        for node, info in self.nodes(withInfo=True):
+            # Skip CPU switch
+            if node == 'sw-cpu':
+                continue
+            if self.isSwitch(node):
+                # Assign a unique ID to the switch
+                if self.isP4Switch(node):
+                    sw_id = info.get('device_id', self.auto_switch_id())
+                    self.setP4SwitchId(node, sw_id)
+                else:
+                    dpid = info.get('dpid', self.auto_switch_id())
+                    sw_id = int(dpid, 16)
+                    self.setSwitchDpid(node, sw_id)
+
+                sw_to_id[node] = sw_id
+                sw_to_next_available_host_id[node] = []
+                # Assign the first /22 subnet for this switch
+                sw_to_subnets[node] = [f"{subnet_base}.{sw_id}.0.0/22"]
+                subnet_base += 1
+
+        # Ensure the graph is not a multigraph
+        assert not self.is_multigraph()
+
+        # Assign IPs and MACs to hosts based on their connection
+        for node1, node2 in self.links():
+            # Skip CPU switch
+            if node1 == 'sw-cpu' or node2 == 'sw-cpu':
+                continue
+
+            # Identify host and connected switch
+            if self.isHost(node1):
+                host_name, direct_sw = node1, node2
+            elif self.isHost(node2):
+                host_name, direct_sw = node2, node1
+            else:
+                continue  # Skip switch-switch links
+
+            assert self.isSwitch(direct_sw)
+
+            # Assign IPs only to valid hosts
+            if self.check_host_valid_ip_from_name(host_name):
+                sw_id = sw_to_id[direct_sw]
+                subnets = sw_to_subnets[direct_sw]
+
+                # Use the first available subnet for the switch
+                current_subnet = subnets[0].split('/')[0]
+                base_ip = current_subnet.split('.')[:3]  # First 3 octets of the subnet
+                next_host_num = len(sw_to_next_available_host_id[direct_sw]) + 1
+
+                # If the current subnet is full, allocate a new subnet
+                if next_host_num > 1022:  # /22 allows 1022 usable IPs
+                    new_subnet = f"{subnet_base}.{sw_id}.0.0/22"
+                    subnets.append(new_subnet)
+                    subnet_base += 1
+                    next_host_num = 1
+                    base_ip = new_subnet.split('.')[:3]
+
+                ip_address = f"{'.'.join(base_ip)}.{next_host_num}"
+                mac_address = f"00:00:{base_ip[1]}:{base_ip[2]}:{next_host_num:02x}:00"
+
+                # Record assigned IP
+                sw_to_next_available_host_id[direct_sw].append(next_host_num)
+                assigned_ips.add(ip_address)
+
+                # Debug or output assignment
+                print(f"Assigned IP {ip_address} and MAC {mac_address} to host {host_name}")
