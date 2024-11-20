@@ -80,7 +80,11 @@ class BurstyServer(BaseServer):
             data = conn.recv(1024)
             if data:
                 # Decode flow ID (optional, for metrics tracking)
-                flow_id = int(data[:8].decode('utf-8')) if len(data) >= 8 else None
+                flow_id = data[:8].decode('utf-8') if len(data) >= 8 else None
+                # TODO - This is not entirely accurate, as the QCT is computed at client side taking the minimum fct
+                # In other words, the flow start time should be started at the client side
+                # The problem is that the servers should send flows at the same time to properly simulate an incast event
+                # TODO - Understand if the incast event is happening without the servers synchronization
                 self.flowtracker.start_flow(flow_id, self.ip, addr[0], self.reply_size, flow_type='bursty')
                 # Send the full reply size as one data stream
                 conn.sendall(b'x' * self.reply_size)
@@ -119,8 +123,9 @@ class BackgroundServer(BaseServer):
         try:
             data = conn.recv(4096)
             if data:
-                flow_id = int(data[:8].decode('utf-8'))
+                flow_id = data[:8].decode('utf-8').strip().split()[0]
                 total_bytes_received += len(data) - 8
+                # print(f"Received data from {addr[0]}:{addr[1]} | Flow ID: {flow_id} | Bytes: {len(data) - 8}")
                 # logging.info(f"Started Flow ID: {flow_id} | Bytes received: {total_bytes_received}")
             while data:
                 data = conn.recv(4096)

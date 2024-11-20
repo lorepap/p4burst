@@ -2,10 +2,12 @@ from abc import ABC, abstractmethod
 from p4utils.mininetlib.network_API import NetworkAPI
 import os 
 import ipaddress
+from topology import LeafSpineTopology, DumbbellTopology  # Add this line to import topology classes
 
 class BaseControlPlane(ABC):
-    def __init__(self, net, cmd_path='p4cli'):
-        self.net_api = net
+    def __init__(self, topology, cmd_path='p4cli'):
+        self.topology = topology
+        self.net_api = topology.net
         self.path = cmd_path
 
     @abstractmethod
@@ -33,14 +35,15 @@ class BaseControlPlane(ABC):
         with open(f'{self.path}/s{switch}-commands.txt', 'w') as f:
             f.write('\n'.join(commands))
 
-
-class LeafSpineControlPlane(BaseControlPlane):
-    def __init__(self, net, num_leaf, num_spine):
-        super().__init__(net)
-        self.num_leaf = num_leaf
-        self.num_spine = num_spine
+class ECMPControlPlane(BaseControlPlane):
+    def __init__(self, topology, leaf_switches, spine_switches):
+        super().__init__(topology)
+        self.num_leaf = leaf_switches
+        self.num_spine = spine_switches
 
     def generate_control_plane(self):
+        if not isinstance(self.topology, LeafSpineTopology):
+            raise ValueError("ECMPControlPlane can only be used with LeafSpineTopology")
         for switch in self.net_api.switches():
             commands = []
             switch_num = int(switch[1:])
@@ -94,7 +97,7 @@ class LeafSpineControlPlane(BaseControlPlane):
                 return True
         return False
 
-class DumbbellControlPlane(BaseControlPlane):
+class L3ForwardingControlPlane(BaseControlPlane):
     def generate_control_plane(self):
         for switch in self.net_api.switches():
             commands = []
@@ -133,4 +136,14 @@ class DumbbellControlPlane(BaseControlPlane):
                             break  # Stop after adding one entry per subnet
 
             # Save generated commands for each switch
+            self.save_commands(switch[1:], commands)
+
+class SimpleDeflectionControlPlane(BaseControlPlane):
+    def generate_control_plane(self):
+        for switch in self.net_api.switches():
+            commands = []
+            commands.append("table_set_default MyIngress.ipv4_lpm drop")
+            # Add specific commands for simple deflection mechanism
+            # Example:
+            # commands.append("table_add MyIngress.deflect set_deflect_action ...")
             self.save_commands(switch[1:], commands)

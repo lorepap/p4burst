@@ -165,16 +165,14 @@ class BackgroundClient(BaseClient):
             try:
                 # Set congestion control and connect
                 s.setsockopt(socket.IPPROTO_TCP, socket.TCP_CONGESTION, self.congestion_control.encode())
-                logging.info(f"Connecting to {server_ip}:12345")
+                # logging.info(f"Connecting to {server_ip}:12345")
                 s.connect((server_ip, 12345))
                 # Prepare the data payload with the flow ID prefixed
-                flow_id_prefix = f"{int(flow_id):08d}".encode('utf-8')
+                flow_id_prefix = f"{str(flow_id):<8}".encode('utf-8')[:8]
                 data = flow_id_prefix + (b'x' * flow_size)
-                print('getting into the flowtracker')
-                self.flowtracker.start_flow(flow_id, self.ip, server_ip, flow_size, flow_type='background')
-                logging.info(f"Sending flow {flow_id} to {server_ip}:12345")
+                self.flowtracker.start_flow(str(flow_id), self.ip, server_ip, flow_size, flow_type='background')
+                # logging.info(f"Sending flow {flow_id} to {server_ip}:12345")
                 s.sendall(data)  # Send all data in one go
-
             except Exception as e:
                 logging.error(f"[{self.ip}]: Error sending traffic to {server_ip}: {e}")
                 traceback.print_exc()
@@ -186,9 +184,10 @@ class BackgroundClient(BaseClient):
             for flow_id, inter_arrival_time, flow_size, server_ip in zip(
                 self.flow_ids, self.inter_arrival_times, self.flow_sizes, self.server_ips
             ):
-                flow_id = str(flow_id) + '/' + str(self.flow_id_counter)
+                if self.flow_id_counter > 0:
+                    flow_id = str(flow_id) + '-' + str(self.flow_id_counter)
                 self.flow_id_counter += 1
-                self.send_request(flow_id, server_ip, flow_size)
+                self.send_request(str(flow_id), server_ip, flow_size)
                 time.sleep(float(inter_arrival_time))
 
 class IperfClient(BaseClient):

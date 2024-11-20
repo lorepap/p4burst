@@ -42,7 +42,7 @@ class FlowMetricsManager:
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute('''CREATE TABLE IF NOT EXISTS flow_metrics (
-                                flow_id INTEGER PRIMARY KEY,
+                                flow_id TEXT PRIMARY KEY,
                                 sender_ip TEXT,
                                 receiver_ip TEXT,
                                 flow_size INTEGER,
@@ -60,8 +60,7 @@ class FlowMetricsManager:
                                 qct REAL,
                                 num_flows INTEGER,
                                 avg_fct REAL,
-                                total_throughput_mbps REAL,
-                                type TEXT)''')
+                                total_throughput_mbps REAL)''')
             conn.commit()
 
     def start_flow(self, flow_id, sender_ip, receiver_ip, flow_size, flow_type):
@@ -71,7 +70,7 @@ class FlowMetricsManager:
             cursor = conn.cursor()
             cursor.execute('''INSERT OR REPLACE INTO flow_metrics 
                               (flow_id, sender_ip, receiver_ip, flow_size, start_time, type)
-                              VALUES (?, ?, ?, ?, ?)''', 
+                              VALUES (?, ?, ?, ?, ?, ?)''', 
                            (flow_id, sender_ip, receiver_ip, flow_size, start_time, flow_type))
             conn.commit()
 

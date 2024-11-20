@@ -13,6 +13,7 @@ class BaseTopology(ABC):
         self.net = NetworkAPI()
         self.path = 'p4cli' # path to output dir for the p4cli commands
         self.p4_program = None
+        self.pcap = False
         # Create log, src and p4cli directories
         os.makedirs('p4src', exist_ok=True)
         os.makedirs('p4cli', exist_ok=True)
@@ -33,7 +34,8 @@ class BaseTopology(ABC):
 
     def start_network(self):
         # Nodes general options
-        self.net.enablePcapDumpAll()
+        if self.pcap:
+            self.net.enablePcapDumpAll()
         self.net.enableLogAll()
 
         # Assignment strategy
@@ -41,6 +43,9 @@ class BaseTopology(ABC):
 
         # Start the network
         self.net.startNetwork()
+
+    def enable_switch_pcap(self):
+        self.pcap = True
 
 
 class LeafSpineTopology(BaseTopology):

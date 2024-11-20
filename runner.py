@@ -12,7 +12,7 @@ from datetime import datetime
 
 from metrics import FlowMetricsManager
 from topology import LeafSpineTopology, DumbbellTopology
-from control_plane import LeafSpineControlPlane, DumbbellControlPlane
+from control_plane import BaseControlPlane, ECMPControlPlane, L3ForwardingControlPlane, SimpleDeflectionControlPlane
 
 class ExperimentRunner:
     def __init__(self, args):
@@ -33,15 +33,24 @@ class ExperimentRunner:
                 self.args.bw, 
                 self.args.latency
             )
-            self.control_plane = LeafSpineControlPlane(self.topology.net, self.args.leaf, self.args.spine)
         elif self.args.topology == 'dumbbell':
             self.topology = DumbbellTopology(self.args.hosts, self.args.bw, self.args.latency)
-            self.control_plane = DumbbellControlPlane(self.topology.net)
         else:
             raise ValueError(f"Unsupported topology: {self.args.topology}")
 
+        if self.args.control_plane == 'ecmp':
+            self.control_plane = ECMPControlPlane(self.topology, self.args.leaf, self.args.spine)
+        elif self.args.control_plane == 'l3':
+            self.control_plane = L3ForwardingControlPlane(self.topology)
+        elif self.args.control_plane == 'simple_deflection':
+            self.control_plane = SimpleDeflectionControlPlane(self.topology)
+        else:
+            raise ValueError(f"Unsupported control plane: {self.args.control_plane}")
+
     def start_network(self):
         self.topology.generate_topology()
+        if self.args.switch_pcap:
+            self.topology.enable_switch_pcap()
         self.topology.start_network()
         self.control_plane.generate_control_plane()
         self.topology.net.program_switches() # insert the rules
@@ -55,7 +64,7 @@ class ExperimentRunner:
     def run_bursty_app(self):
         server_ips = []
         client = self.topology.net.net.get('h1') # TODO generalize with more clients
-        servers = self.select_servers(n=self.args.n_bursty_servers)
+        servers = self.select_servers(n=self.args.incast_degree)
         
         print(f"Selected servers: {[server.name for server in servers]}")
 
@@ -267,16 +276,18 @@ class ExperimentRunner:
 def get_args():
     parser = argparse.ArgumentParser(description='Run network experiment')
     parser.add_argument('--topology', '-t', type=str, required=True, choices=['leafspine', 'dumbbell'], help='Topology type')
+    parser.add_argument('--control_plane', '-c', type=str, required=False, choices=['ecmp', 'l3', 'simple_deflection'], help='Control plane protocol', default='ecmp')
     parser.add_argument('--hosts', '-n', type=int, required=True, help='Number of hosts')
     parser.add_argument('--leaf', '-l', type=int, help='Number of leaf switches (for leaf-spine topology)', default=2)
     parser.add_argument('--spine', '-s', type=int, help='Number of spine switches (for leaf-spine topology)', default=2)
     parser.add_argument('--bw', '-b', type=int, help='Bandwidth in Mbps', default=1000)
     parser.add_argument('--latency', '-d', type=float, help='Latency in ms', default=0.1)
     parser.add_argument('--reply_size', type=int, default=40000, help='Size of the burst response in bytes')
-    parser.add_argument('--n_bursty_servers', type=int, default=2, help='Number of bursty servers')
+    parser.add_argument('--incast_degree', type=int, default=5, help='Number of bursty servers')
     parser.add_argument('--duration', type=int, default=10, help='Duration of the experiment in seconds')
     parser.add_argument('--app', type=str, required=False, choices=['bursty', 'background', 'simple', 'iperf'], help='Type of application')
     parser.add_argument('--host_pcap', action='store_true', help='Enable pcap on hosts')
+    parser.add_argument('--switch_pcap', action='store_true', help='Enable pcap on switches')
     parser.add_argument('--cli', action='store_true', help='Enable Mininet CLI')
     return parser.parse_args()
 
