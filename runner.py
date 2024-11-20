@@ -4,15 +4,15 @@ import argparse
 import os
 import time
 import random
-from p4utils.mininetlib.network_API import NetworkAPI
-from topology import LeafSpineTopology, DumbbellTopology
-from control_plane import LeafSpineControlPlane, DumbbellControlPlane
-from app import BurstyServer, BurstyClient
 import traceback
 import sqlite3
 import pandas as pd
 import numpy as np
+from datetime import datetime
+
 from metrics import FlowMetricsManager
+from topology import LeafSpineTopology, DumbbellTopology
+from control_plane import LeafSpineControlPlane, DumbbellControlPlane
 
 class ExperimentRunner:
     def __init__(self, args):
@@ -21,29 +21,10 @@ class ExperimentRunner:
         self.control_plane = None
         # Path
         self.db_path = 'data/distributions'
-        self.flowtracker = FlowMetricsManager()
+        self.exp_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+        flowtracker = FlowMetricsManager(self.exp_id) # create a new database for tracking simulation metrics
 
     def setup_experiment(self):
-        # topo_dict = {
-        #     'leafspine': LeafSpineTopology,
-        #     'dumbbell': DumbbellTopology
-        # }
-        # cp_dict = {
-        #     'leafspine': LeafSpineControlPlane,
-        #     'dumbbell': DumbbellControlPlane
-        # }
-
-        # if self.args.topology not in topo_dict:
-        #     raise ValueError(f"Unsupported topology: {self.args.topology}")
-        
-        # self.topology = topo_dict[self.args.topology](
-        #     self.args.hosts, 
-        #     self.args.leaf, 
-        #     self.args.spine, 
-        #     self.args.bw, 
-        #     self.args.latency
-        # )
-
         if self.args.topology == 'leafspine':
             self.topology = LeafSpineTopology(
                 self.args.hosts, 
@@ -73,21 +54,23 @@ class ExperimentRunner:
 
     def run_bursty_app(self):
         server_ips = []
-        client = self.topology.net.net.get('h1')
+        client = self.topology.net.net.get('h1') # TODO generalize with more clients
         servers = self.select_servers(n=self.args.n_bursty_servers)
         
         print(f"Selected servers: {[server.name for server in servers]}")
-        
-        for server in servers:
+
+        # for server in servers:
+        for server in self.topology.net.net.hosts:
+            # flow_data = self.load_bursty_data(server.name, 'web_bursty', 1.0, 0.11) # TODO: use the config file for params
             if server.IP() != client.IP():
                 print(f"Starting server on {server.name} ({server.IP()})...")
-                server.cmd(f'python3 -m app --mode server --host_ip {server.IP()} --type bursty --reply_size {self.args.reply_size} &')
+                server.cmd(f'python3 -m app --mode server --host_ip {server.IP()} --type bursty --reply_size {self.args.reply_size} --exp_id {self.exp_id} &')
                 server_ips.append(server.IP())
         
         time.sleep(2)  # Give the servers some time to start up
 
         print(f"Starting client on {client.name} ({client.IP()})...")
-        client.cmd(f'python3 -m app --mode client --type bursty --server_ips {" ".join(server_ips)} &')
+        client.cmd(f'python3 -m app --mode client --type bursty --server_ips {" ".join(server_ips)} --exp_id {self.exp_id}&')
 
     def run_background_app(self):
         servers = self.topology.net.net.hosts
@@ -96,7 +79,7 @@ class ExperimentRunner:
         # Starting servers
         for server in servers:
             print(f"Starting server on {server.name} ({server.IP()})...")
-            server.cmd(f'python3 -m app --mode server --type background --host_ip {server.IP()} &')
+            server.cmd(f'python3 -m app --mode server --type background --host_ip {server.IP()} --exp_id {self.exp_id} &')
         
         time.sleep(1)
         
@@ -119,7 +102,8 @@ class ExperimentRunner:
                 --flow_ids {" ".join(map(str, flow_ids))} \
                 --flow_sizes {" ".join(map(str, flow_sizes))} \
                 --iat {" ".join(map(str, inter_arrival_times))} \
-                --type background &') # I'm not convinced how server_ips are passed to the client
+                --type background \
+                --exp_id {self.exp_id} &') # I'm not convinced how server_ips are passed to the client
 
     def run_simple_app(self):
         """
@@ -252,7 +236,12 @@ class ExperimentRunner:
             self.start_network() # will run cli if specified
             if self.args.host_pcap:
                 self.enable_pcap_hosts()
-            exp_dict[self.args.app]()
+            if self.args.app:
+                exp_dict[self.args.app]()
+            else: # Run experiment with background + incast
+                self.run_background_app()
+                self.run_bursty_app()
+
             # Let the experiment run for a specified duration
             print(f"Experiment running for {self.args.duration+5} seconds...")
             time.sleep(self.args.duration)
@@ -286,7 +275,7 @@ def get_args():
     parser.add_argument('--reply_size', type=int, default=40000, help='Size of the burst response in bytes')
     parser.add_argument('--n_bursty_servers', type=int, default=2, help='Number of bursty servers')
     parser.add_argument('--duration', type=int, default=10, help='Duration of the experiment in seconds')
-    parser.add_argument('--app', type=str, required=True, choices=['bursty', 'background', 'simple', 'iperf'], help='Type of application')
+    parser.add_argument('--app', type=str, required=False, choices=['bursty', 'background', 'simple', 'iperf'], help='Type of application')
     parser.add_argument('--host_pcap', action='store_true', help='Enable pcap on hosts')
     parser.add_argument('--cli', action='store_true', help='Enable Mininet CLI')
     return parser.parse_args()

@@ -37,7 +37,7 @@ class BaseTopology(ABC):
         self.net.enableLogAll()
 
         # Assignment strategy
-        self.net.l3_large()
+        self.net.mixed()
 
         # Start the network
         self.net.startNetwork()
@@ -65,8 +65,10 @@ class LeafSpineTopology(BaseTopology):
 
         # Connect hosts to leaf switches
         for i in range(1, self.num_hosts + 1):
-            leaf_num = ((i - 1) // hosts_per_leaf) + 1
-            self.net.addLink(f'h{i}', f's{leaf_num}', bw=self.bw, delay=f'{self.latency}ms')
+            # leaf_num = ((i - 1) // hosts_per_leaf) + 1
+            leaf_id = ((i - 1) % self.num_leaf) + 1
+            print(f'Connecting h{i} to s{leaf_id}')
+            self.net.addLink(f'h{i}', f's{leaf_id}', bw=self.bw, delay=f'{self.latency}ms')
 
         # Connect leaf switches to spine switches
         for leaf in range(1, self.num_leaf + 1):

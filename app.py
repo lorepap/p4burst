@@ -12,9 +12,7 @@ import configparser
 import sqlite3
 import pandas as pd
 import numpy as np
-from metrics import FlowMetricsManager
 
-flowtracker = FlowMetricsManager()
 
 class App(ABC):
     def __init__(self, mode, log=True):
@@ -53,15 +51,18 @@ class App(ABC):
 class BurstyApp(App):
     def __init__(self, args):
         mode = args.mode
+        host_ip = args.host_ip
         server_ips = args.server_ips
         reply_size = args.reply_size
+        incast_scale = args.incast_scale
+        qps = args.qps
         super().__init__(mode)
         if mode == 'server':
-            self.server = BurstyServer(reply_size)
+            self.server = BurstyServer(reply_size=reply_size, ip=args.host_ip, exp_id=args.exp_id)
         elif mode == 'client':
             if server_ips is None:
                 raise ValueError("server_ips must be provided for client mode")
-            self.client = BurstyClient(server_ips, reply_size)
+            self.client = BurstyClient(server_ips, reply_size, qps=qps, incast_scale=incast_scale, exp_id=args.exp_id)
         else:
             raise ValueError("Invalid mode. Choose 'server' or 'client'.")
 
@@ -85,7 +86,7 @@ class BackgroundApp(App):
         print("CONG CONTROL", congestion_control)
 
         if mode == 'server':
-            self.server = BackgroundServer(ip=host_ip)
+            self.server = BackgroundServer(ip=host_ip, exp_id=args.exp_id)
         elif mode == 'client':
             # Pass necessary flow data for the client
             self.client = BackgroundClient(
@@ -93,7 +94,8 @@ class BackgroundApp(App):
                 flow_ids,
                 flow_sizes,
                 inter_arrival_times,
-                congestion_control=congestion_control
+                congestion_control=congestion_control,
+                exp_id=args.exp_id
             )
         else:
             raise ValueError("Invalid mode. Choose 'server' or 'client'.")
@@ -157,6 +159,9 @@ def main():
     parser.add_argument('--flow_ids',  required=False, nargs='+', type=int, help="List of flow IDs (background app)")
     parser.add_argument('--flow_sizes', required=False, nargs='+', type=int, help="List of flow sizes (background app)")
     parser.add_argument('--iat', required=False, nargs='+', type=float, help="List of inter-arrival times (background app)")
+    parser.add_argument('--incast_scale', required=False, type=int, default=5, help="Number of servers to send requests to in a single query (bursty app)")
+    parser.add_argument('--qps', required=False, type=int, default=4000, help="Queries per second (bursty app)")
+    parser.add_argument('--exp_id', required=True, type=str, help="Experiment ID")
     args = parser.parse_args()
 
     # TODO input validation

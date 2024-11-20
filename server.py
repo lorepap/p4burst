@@ -10,13 +10,15 @@ import threading
 import os
 
 class BaseServer(ABC):
-    def __init__(self, port=12345, ip=None):
+    def __init__(self, port=12345, ip=None, congestion_control='cubic', exp_id=''):
         self.port = port
+        self.congestion_control = congestion_control
+        self.exp_id = exp_id
         # self.ip = self.get_host_ip()
         if ip:
             self.ip = ip 
         else: raise ValueError("IP address must be specified")
-        self.flowtracker = FlowMetricsManager()
+        self.flowtracker = FlowMetricsManager(self.exp_id)
 
     def handle_request(self, conn):
         try:
@@ -42,7 +44,7 @@ class BaseServer(ABC):
             while True:
                 try:
                     conn, addr = s.accept()
-                    logging.info(f"[{self.ip}]: Accepted connection from {addr}")
+                    # logging.info(f"[{self.ip}]: Accepted connection from {addr}")
                     with conn:
                         print(f"Connected by {addr}")
                         self.handle_request(conn)
@@ -52,43 +54,9 @@ class BaseServer(ABC):
 
 
 class BurstyServer(BaseServer):
-    def __init__(self, reply_size=40000, port=12345, mtu=1500, iat=0.001):
-        super().__init__(port)
+    def __init__(self, ip=None, reply_size=40000, port=12346, exp_id='', cong_control='cubic'):
+        super().__init__(port, ip, exp_id=exp_id, congestion_control=cong_control)
         self.reply_size = reply_size
-        self.mtu = mtu
-        self.iat = iat  # Inter-Arrival Time in seconds
-
-    def handle_request(self, conn, addr):
-        data = conn.recv(1024)
-        if data:
-            logging.info(f"[{self.ip}]: Received request from {addr[0]}:{addr[1]}")
-            
-            # Calculate number of packets
-            payload_size = self.mtu - 40  # Assuming 20 bytes for IP header and 20 for TCP header
-            num_packets = math.ceil(self.reply_size / payload_size)
-            
-            bytes_sent = 0
-            for i in range(num_packets):
-                if i == num_packets - 1:  # Last packet
-                    packet_size = self.reply_size - bytes_sent
-                else:
-                    packet_size = payload_size
-                
-                packet = b'X' * packet_size
-                conn.sendall(packet)
-                bytes_sent += packet_size
-                
-                logging.info(f"[{self.ip}]: Sent packet {i+1}/{num_packets} of {packet_size} bytes to {addr[0]}:{addr[1]}")
-                
-                if i < num_packets - 1:  # Don't sleep after the last packet
-                    time.sleep(self.iat)
-
-            logging.info(f"[{self.ip}]: Completed sending response of {bytes_sent} bytes in {num_packets} packets to {addr[0]}:{addr[1]}")
-
-
-class BackgroundServer(BaseServer):
-    def __init__(self, ip=None, port=12345):
-        super().__init__(port, ip)
 
     def start(self):
         """Start the server with multi-threading support."""
@@ -99,7 +67,45 @@ class BackgroundServer(BaseServer):
 
             while True:
                 conn, addr = s.accept()
-                logging.info(f"[{self.ip}]: Accepted connection from {addr}")
+                # logging.info(f"[{self.ip}]: Accepted connection from {addr}")
+
+                # Start a new thread for each client connection
+                client_thread = threading.Thread(target=self.handle_request, args=(conn, addr))
+                client_thread.daemon = True  # Daemon thread will exit when main program exits
+                client_thread.start()
+
+    def handle_request(self, conn, addr):
+        """Handle a client request and send the response."""
+        try:
+            data = conn.recv(1024)
+            if data:
+                # Decode flow ID (optional, for metrics tracking)
+                flow_id = int(data[:8].decode('utf-8')) if len(data) >= 8 else None
+                self.flowtracker.start_flow(flow_id, self.ip, addr[0], self.reply_size, flow_type='bursty')
+                # Send the full reply size as one data stream
+                conn.sendall(b'x' * self.reply_size)
+        except Exception as e:
+            logging.error(f"[{self.ip}]: Error handling request from {addr[0]}:{addr[1]}: {e}")
+            print(traceback.format_exc())
+        finally:
+            conn.close()
+
+
+class BackgroundServer(BaseServer):
+    def __init__(self, ip=None, port=12345, exp_id='', cong_control='cubic'):
+        super().__init__(port, ip, cong_control, exp_id)
+
+    def start(self):
+        """Start the server with multi-threading support."""
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.setsockopt(socket.IPPROTO_TCP, socket.TCP_CONGESTION, self.congestion_control.encode())
+            s.bind(('0.0.0.0', self.port))
+            s.listen()
+            # logging.info(f"[{self.ip}]: Server listening on port {self.port}")
+
+            while True:
+                conn, addr = s.accept()
+                # logging.info(f"[{self.ip}]: Accepted connection from {addr}")
 
                 # Start a new thread for each client connection
                 client_thread = threading.Thread(target=self.handle_request, args=(conn, addr))
@@ -115,7 +121,7 @@ class BackgroundServer(BaseServer):
             if data:
                 flow_id = int(data[:8].decode('utf-8'))
                 total_bytes_received += len(data) - 8
-                logging.info(f"Started Flow ID: {flow_id} | Bytes received: {total_bytes_received}")
+                # logging.info(f"Started Flow ID: {flow_id} | Bytes received: {total_bytes_received}")
             while data:
                 data = conn.recv(4096)
                 if not data:
@@ -124,15 +130,15 @@ class BackgroundServer(BaseServer):
 
             # Mark the flow as complete in FlowMetricsManager
             if flow_id is not None:
-                FlowMetricsManager().complete_flow(flow_id)
-                logging.info(f"Flow {flow_id} from {addr} completed. Total bytes received: {total_bytes_received}")
+                self.flowtracker.complete_flow(flow_id)
+                # logging.info(f"Flow {flow_id} from {addr} completed. Total bytes received: {total_bytes_received}")
 
         except Exception as e:
             logging.error(f"[{self.ip}]: Error receiving data from {addr[0]}:{addr[1]}: {e}")
 
     def get_metrics(self):
         """Retrieve collected flow metrics."""
-        return FlowMetricsManager().get_metrics()
+        return self.flowtracker.get_metrics()
 
 class IperfServer(BaseServer):
     def __init__(self, port=5201):

@@ -17,9 +17,12 @@ from metrics import FlowMetricsManager
 import subprocess
 
 class BaseClient(ABC):
-    def __init__(self, server_ip=None):
+    def __init__(self, congestion_control='cubic', exp_id='', server_ip=None):
         self.ip = self.get_host_ip()
         self.server_ip = server_ip
+        self.congestion_control = congestion_control
+        self.exp_id = exp_id
+        self.flowtracker = FlowMetricsManager(self.exp_id)
 
     def send_request(self, server_ip=None, packet_size=1024):
         """
@@ -70,94 +73,91 @@ class BaseClient(ABC):
 
 
 class BurstyClient(BaseClient):
-    def __init__(self, server_ips, reply_size=40000):
-        super().__init__()
-        self.server_ips = server_ips # only burst app needs a subset of servers
+    """
+    TODO Should integrate the web bursty traffic to generate realistic queries?
+    qps: queries per second
+    incast_scale: number of servers to send requests to in a single query
+    """
+    def __init__(self, server_ips, reply_size=40000, qps=4000, incast_scale=5, congestion_control='cubic', exp_id=''):
+        super().__init__(congestion_control, exp_id)
+        self.server_ips = server_ips
         self.reply_size = reply_size
+        self.qps = qps
+        self.incast_scale = incast_scale
         self.fct_stats = defaultdict(list)
         self.qct_stats = []
 
-    def send_request(self, server_ip):
+    def send_request(self, server_ip, flow_id):
+        """Send a request to the server and wait for the response."""
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             try:
-                start_time = time.time()
-                s.connect((server_ip, 12345))
-                logging.info(f"[{self.ip}]: Sending request to {server_ip}:12345")
-                s.sendall(b'Request')
+                s.setsockopt(socket.IPPROTO_TCP, socket.TCP_CONGESTION, self.congestion_control.encode())
+                s.connect((server_ip, 12346))
+                # Send the flow ID as part of the data
+                flow_id_prefix = f"{int(flow_id):08d}".encode('utf-8')
+                s.sendall(flow_id_prefix + b'x')  # Include flow ID and some data
+                # self.flowtracker.start_flow(flow_id, self.ip, self.server_ip, len(flow_id_prefix) + 1)
+                # Receive the full response
                 data = b''
-                while len(data) < self.reply_size:
+                while len(data) < int(self.reply_size):
                     chunk = s.recv(4096)
                     if not chunk:
                         break
                     data += chunk
-                end_time = time.time()
-                fct = end_time - start_time
-                self.fct_stats[server_ip].append(fct)
-                logging.info(f"[{self.ip}]: Received {len(data)} bytes from {server_ip}:12345. FCT: {fct:.6f} seconds")
-                return fct
+                # Mark the flow as complete
+                self.flowtracker.complete_flow(flow_id)
             except Exception as e:
                 logging.error(f"[{self.ip}]: Error connecting to {server_ip}: {e}")
+                traceback.print_exc()
                 return None
+            return 1
 
     def send_query(self):
-        start_time = time.time()
-        with concurrent.futures.ThreadPoolExecutor(max_workers=len(self.server_ips)) as executor: # parallel requests
-            future_to_server = {executor.submit(self.send_request, server_ip): server_ip for server_ip in self.server_ips}
+        """Simulate an incast event by sending requests to multiple servers."""
+        # Generate unique flow IDs for this query's flows
+        flow_ids = {server_ip: random.randint(10000000, 99999999) for server_ip in self.server_ips}
+        query_id = random.randint(1, 1000000)
+        # Select servers for the incast event
+        selected_servers = random.sample(self.server_ips, self.incast_scale)
+        
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(selected_servers)) as executor:
+            future_to_server = {
+                executor.submit(self.send_request, server_ip, flow_ids[server_ip]): server_ip
+                for server_ip in selected_servers
+            }
+            
             for future in concurrent.futures.as_completed(future_to_server):
                 server_ip = future_to_server[future]
                 try:
-                    fct = future.result()
-                    if fct is not None:
+                    res = future.result()
+                    if res is not None:
                         logging.info(f"[{self.ip}]: Completed request to {server_ip}")
                 except Exception as e:
                     logging.error(f"[{self.ip}]: Request to {server_ip} generated an exception: {e}")
                     logging.error(traceback.format_exc())
-        end_time = time.time()
-        qct = end_time - start_time
-        self.qct_stats.append(qct)
-        logging.info(f"[{self.ip}]: Query completed. QCT: {qct:.6f} seconds")
+
+        self.flowtracker.complete_query(query_id, list(flow_ids.values()))
 
     def start(self):
+        """Generate incast queries at the specified QPS."""
+        interval = 1 / self.qps  # Interval between queries
         while True:
             self.send_query()
-            time.sleep(random.uniform(1, 5))
-
-    def print_stats(self):
-        logging.info(f"[{self.ip}]: FCT stats:")
-        all_fcts = []
-        for server_ip, fcts in self.fct_stats.items():
-            if fcts:
-                avg_fct = statistics.mean(fcts)
-                min_fct = min(fcts)
-                max_fct = max(fcts)
-                all_fcts.extend(fcts)
-                logging.info(f"  {server_ip}: min={min_fct:.6f}s, max={max_fct:.6f}s, avg={avg_fct:.6f}s")
-            else:
-                logging.info(f"  {server_ip}: No successful requests")
-        
-        if all_fcts:
-            overall_avg_fct = statistics.mean(all_fcts)
-            logging.info(f"[{self.ip}]: Overall average FCT: {overall_avg_fct:.6f}s")
-        else:
-            logging.info(f"[{self.ip}]: No successful requests to any server")
-
-        if self.qct_stats:
-            avg_qct = statistics.mean(self.qct_stats)
-            min_qct = min(self.qct_stats)
-            max_qct = max(self.qct_stats)
-            logging.info(f"[{self.ip}]: QCT stats: min={min_qct:.6f}s, max={max_qct:.6f}s, avg={avg_qct:.6f}s")
-        else:
-            logging.info(f"[{self.ip}]: No queries completed")
+            time.sleep(interval)
 
 
 class BackgroundClient(BaseClient):
-    def __init__(self, server_ips, flow_ids, flow_sizes, inter_arrival_times, congestion_control='cubic'):
-        super().__init__()
-        self.congestion_control = congestion_control
+    """
+    TODO scale the inter arrival times (sending rate) to match the background load
+    We should input the background load and compute the inter arrival rate accordingly starting from the given db file 
+    """
+    def __init__(self, server_ips, flow_ids, flow_sizes, inter_arrival_times, congestion_control='cubic', exp_id=''):
+        super().__init__(congestion_control, exp_id)
         self.server_ips = server_ips
         self.flow_ids = flow_ids
         self.flow_sizes = flow_sizes
         self.inter_arrival_times = inter_arrival_times
+        self.flow_id_counter = 0
 
     def send_request(self, flow_id, server_ip, flow_size):
         """Send a single flow (request) of data to a server and wait for acknowledgment."""
@@ -171,7 +171,7 @@ class BackgroundClient(BaseClient):
                 flow_id_prefix = f"{int(flow_id):08d}".encode('utf-8')
                 data = flow_id_prefix + (b'x' * flow_size)
                 print('getting into the flowtracker')
-                FlowMetricsManager().start_flow(flow_id, self.ip, server_ip, flow_size)
+                self.flowtracker.start_flow(flow_id, self.ip, server_ip, flow_size, flow_type='background')
                 logging.info(f"Sending flow {flow_id} to {server_ip}:12345")
                 s.sendall(data)  # Send all data in one go
 
@@ -182,11 +182,14 @@ class BackgroundClient(BaseClient):
     def start(self):
         """Send flows to each server based on inter-arrival times and flow sizes."""
         print(f"Client {self.ip} sending {len(self.flow_ids)} flows")
-        for flow_id, inter_arrival_time, flow_size, server_ip in zip(
-            self.flow_ids, self.inter_arrival_times, self.flow_sizes, self.server_ips
-        ):
-            self.send_request(flow_id, server_ip, flow_size)
-            time.sleep(float(inter_arrival_time)) # debug
+        while True:
+            for flow_id, inter_arrival_time, flow_size, server_ip in zip(
+                self.flow_ids, self.inter_arrival_times, self.flow_sizes, self.server_ips
+            ):
+                flow_id = str(flow_id) + '/' + str(self.flow_id_counter)
+                self.flow_id_counter += 1
+                self.send_request(flow_id, server_ip, flow_size)
+                time.sleep(float(inter_arrival_time))
 
 class IperfClient(BaseClient):
     def __init__(self, server_ip, duration):
