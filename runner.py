@@ -12,7 +12,7 @@ from datetime import datetime
 
 from metrics import FlowMetricsManager
 from topology import LeafSpineTopology, DumbbellTopology
-from control_plane import BaseControlPlane, ECMPControlPlane, L3ForwardingControlPlane, SimpleDeflectionControlPlane
+from control_plane import ECMPControlPlane, L3ForwardingControlPlane, SimpleDeflectionControlPlane, TestControlPlane
 
 class ExperimentRunner:
     def __init__(self, args):
@@ -23,6 +23,18 @@ class ExperimentRunner:
         self.db_path = 'data/distributions'
         self.exp_id = datetime.now().strftime("%Y%m%d_%H%M%S")
         flowtracker = FlowMetricsManager(self.exp_id) # create a new database for tracking simulation metrics
+        self.p4_program=self.set_p4_program(args.control_plane)
+
+    # TODO refactor
+    def set_p4_program(self, control_plane):
+        if control_plane == 'ecmp':
+            return 'ecmp.p4'
+        elif control_plane == 'l3':
+            return 'l3_forwarding.p4'
+        elif control_plane == 'simple_deflection':
+            return 'sd.p4'
+        else:
+            raise ValueError(f"Unsupported control plane: {control_plane}")
 
     def setup_experiment(self):
         if self.args.topology == 'leafspine':
@@ -31,10 +43,11 @@ class ExperimentRunner:
                 self.args.leaf, 
                 self.args.spine, 
                 self.args.bw, 
-                self.args.latency
+                self.args.latency,
+                self.p4_program
             )
         elif self.args.topology == 'dumbbell':
-            self.topology = DumbbellTopology(self.args.hosts, self.args.bw, self.args.latency)
+            self.topology = DumbbellTopology(self.args.hosts, self.args.bw, self.args.latency, self.p4_program)
         else:
             raise ValueError(f"Unsupported topology: {self.args.topology}")
 
@@ -43,7 +56,8 @@ class ExperimentRunner:
         elif self.args.control_plane == 'l3':
             self.control_plane = L3ForwardingControlPlane(self.topology)
         elif self.args.control_plane == 'simple_deflection':
-            self.control_plane = SimpleDeflectionControlPlane(self.topology)
+            # self.control_plane = SimpleDeflectionControlPlane(self.topology)
+            self.control_plane = TestControlPlane(self.topology) # TODO replace with simpledeflection
         else:
             raise ValueError(f"Unsupported control plane: {self.args.control_plane}")
 
@@ -256,7 +270,7 @@ class ExperimentRunner:
             time.sleep(self.args.duration)
 
         except Exception as e:
-            # traceback.print_exc()
+            traceback.print_exc()
             raise e
         finally:
             self.stop_network()

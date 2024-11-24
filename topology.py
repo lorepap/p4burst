@@ -6,14 +6,15 @@ P4_PATH = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'p4src')
 
 
 class BaseTopology(ABC):
-    def __init__(self, num_hosts, bw, latency):
+    def __init__(self, num_hosts, bw, latency, p4_program):
         self.num_hosts = num_hosts
         self.bw = bw
         self.latency = latency
         self.net = NetworkAPI()
-        self.path = 'p4cli' # path to output dir for the p4cli commands
+        self.path = 'p4cli'
         self.p4_program = None
         self.pcap = False
+        self.p4_program=p4_program
         # Create log, src and p4cli directories
         os.makedirs('p4src', exist_ok=True)
         os.makedirs('p4cli', exist_ok=True)
@@ -49,11 +50,10 @@ class BaseTopology(ABC):
 
 
 class LeafSpineTopology(BaseTopology):
-    def __init__(self, num_hosts, num_leaf, num_spine, bw, latency):
-        super().__init__(num_hosts, bw, latency)
+    def __init__(self, num_hosts, num_leaf, num_spine, bw, latency, p4_program='ecmp.p4'):
+        super().__init__(num_hosts, bw, latency, p4_program)
         self.num_leaf = num_leaf
         self.num_spine = num_spine
-        self.p4_program = 'ecmp.p4'
         self.create_switch_commands(num_leaf + num_spine)
 
     def generate_topology(self):
@@ -62,7 +62,16 @@ class LeafSpineTopology(BaseTopology):
         # Generate switches
         for i in range(1, self.num_leaf + self.num_spine + 1):
             self.net.addP4Switch(f's{i}', cli_input=os.path.join(self.path, f's{i}-commands.txt'))
-        self.net.setP4SourceAll(os.path.join(P4_PATH, self.p4_program))
+        
+        # self.net.setP4SourceAll(os.path.join(P4_PATH, self.p4_program))
+        
+        # Set p4 source depending on the switch type (leaf or spine)
+        # Input program (e.g. deflection) for the leaf
+        # Simple forwarding for the spine 
+        for i in range(1, self.num_leaf + 1):
+            self.net.setP4Source(f's{i}', os.path.join(P4_PATH, self.p4_program))
+        for i in range(self.num_leaf + 1, self.num_leaf + self.num_spine + 1):
+            self.net.setP4Source(f's{i}', os.path.join(P4_PATH, 'l3_forwarding.p4'))
 
         # Generate hosts
         for i in range(1, self.num_hosts + 1):
@@ -82,9 +91,8 @@ class LeafSpineTopology(BaseTopology):
 
 
 class DumbbellTopology(BaseTopology):
-    def __init__(self, num_hosts, bw, latency):
-        super().__init__(num_hosts, bw, latency)
-        self.p4_program = 'l3_forwarding.p4' # TODO: parametrize this
+    def __init__(self, num_hosts, bw, latency, p4_program='l3_forwarding.p4'):
+        super().__init__(num_hosts, bw, latency, p4_program)
         self.create_switch_commands(2)
         if self.num_hosts < 2:
             raise ValueError("DumbbellTopology requires at least 2 hosts")
@@ -93,7 +101,10 @@ class DumbbellTopology(BaseTopology):
         # Generate switches
         self.net.addP4Switch('s1', cli_input=os.path.join(self.path, 's1-commands.txt'))
         self.net.addP4Switch('s2', cli_input=os.path.join(self.path, 's2-commands.txt'))
-        self.net.setP4SourceAll(os.path.join(P4_PATH, self.p4_program))
+        
+        # Set different p4 sources for the  switches
+        self.net.setP4Source('s1', os.path.join(P4_PATH, self.p4_program))
+        self.net.setP4Source('s2', os.path.join(P4_PATH, 'l3_forwarding.p4'))
 
         # Generate hosts
         hosts_per_switch = self.num_hosts // 2

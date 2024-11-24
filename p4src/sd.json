@@ -1,0 +1,2276 @@
+{
+  "header_types" : [
+    {
+      "name" : "scalars_0",
+      "id" : 0,
+      "fields" : [
+        ["tmp", 32, false],
+        ["tmp_0", 32, false],
+        ["tmp_1", 32, false],
+        ["tmp_2", 32, false],
+        ["try_status_0", 8, false],
+        ["port_status_0", 8, false],
+        ["dst_port_status_0", 8, false],
+        ["tmp_3", 32, false],
+        ["tmp_4", 32, false],
+        ["metadata.fw_port_idx", 16, false],
+        ["metadata.is_fw_port_full", 1, false],
+        ["metadata.random_number", 5, false],
+        ["metadata.output_port_idx", 16, false],
+        ["metadata.need_deflection", 1, false],
+        ["metadata.current_try_port", 9, false],
+        ["metadata.is_queue_full", 8, false],
+        ["metadata.is_queue_full_0", 8, false],
+        ["metadata.is_queue_full_1", 8, false],
+        ["metadata.is_queue_full_2", 8, false],
+        ["metadata.is_queue_full_3", 8, false],
+        ["metadata.is_queue_full_4", 8, false],
+        ["metadata.is_queue_full_5", 8, false],
+        ["metadata.is_queue_full_6", 8, false],
+        ["metadata.is_recirculated", 1, false],
+        ["_padding_0", 7, false]
+      ]
+    },
+    {
+      "name" : "standard_metadata",
+      "id" : 1,
+      "fields" : [
+        ["ingress_port", 9, false],
+        ["egress_spec", 9, false],
+        ["egress_port", 9, false],
+        ["instance_type", 32, false],
+        ["packet_length", 32, false],
+        ["enq_timestamp", 32, false],
+        ["enq_qdepth", 19, false],
+        ["deq_timedelta", 32, false],
+        ["deq_qdepth", 19, false],
+        ["ingress_global_timestamp", 48, false],
+        ["egress_global_timestamp", 48, false],
+        ["mcast_grp", 16, false],
+        ["egress_rid", 16, false],
+        ["checksum_error", 1, false],
+        ["parser_error", 32, false],
+        ["priority", 3, false],
+        ["_padding", 3, false]
+      ]
+    },
+    {
+      "name" : "ethernet_t",
+      "id" : 2,
+      "fields" : [
+        ["dstAddr", 48, false],
+        ["srcAddr", 48, false],
+        ["etherType", 16, false]
+      ]
+    },
+    {
+      "name" : "ipv4_t",
+      "id" : 3,
+      "fields" : [
+        ["version", 4, false],
+        ["ihl", 4, false],
+        ["diffserv", 8, false],
+        ["totalLen", 16, false],
+        ["identification", 16, false],
+        ["flags", 3, false],
+        ["fragOffset", 13, false],
+        ["ttl", 8, false],
+        ["protocol", 8, false],
+        ["hdrChecksum", 16, false],
+        ["srcAddr", 32, false],
+        ["dstAddr", 32, false]
+      ]
+    },
+    {
+      "name" : "tcp_t",
+      "id" : 4,
+      "fields" : [
+        ["srcPort", 16, false],
+        ["dstPort", 16, false],
+        ["seqNo", 32, false],
+        ["ackNo", 32, false],
+        ["dataOffset", 4, false],
+        ["res", 4, false],
+        ["flags", 8, false],
+        ["window", 16, false],
+        ["checksum", 16, false],
+        ["urgentPtr", 16, false]
+      ]
+    },
+    {
+      "name" : "udp_t",
+      "id" : 5,
+      "fields" : [
+        ["srcPort", 16, false],
+        ["dstPort", 16, false],
+        ["length_", 16, false],
+        ["checksum", 16, false]
+      ]
+    },
+    {
+      "name" : "bee_t",
+      "id" : 6,
+      "fields" : [
+        ["port_idx_in_reg", 8, false],
+        ["queue_occ_info", 8, false]
+      ]
+    }
+  ],
+  "headers" : [
+    {
+      "name" : "scalars",
+      "id" : 0,
+      "header_type" : "scalars_0",
+      "metadata" : true,
+      "pi_omit" : true
+    },
+    {
+      "name" : "standard_metadata",
+      "id" : 1,
+      "header_type" : "standard_metadata",
+      "metadata" : true,
+      "pi_omit" : true
+    },
+    {
+      "name" : "ethernet",
+      "id" : 2,
+      "header_type" : "ethernet_t",
+      "metadata" : false,
+      "pi_omit" : true
+    },
+    {
+      "name" : "ipv4",
+      "id" : 3,
+      "header_type" : "ipv4_t",
+      "metadata" : false,
+      "pi_omit" : true
+    },
+    {
+      "name" : "tcp",
+      "id" : 4,
+      "header_type" : "tcp_t",
+      "metadata" : false,
+      "pi_omit" : true
+    },
+    {
+      "name" : "udp",
+      "id" : 5,
+      "header_type" : "udp_t",
+      "metadata" : false,
+      "pi_omit" : true
+    },
+    {
+      "name" : "bee",
+      "id" : 6,
+      "header_type" : "bee_t",
+      "metadata" : false,
+      "pi_omit" : true
+    }
+  ],
+  "header_stacks" : [],
+  "header_union_types" : [],
+  "header_unions" : [],
+  "header_union_stacks" : [],
+  "field_lists" : [
+    {
+      "id" : 1,
+      "name" : "field_list1",
+      "elements" : [
+        {
+          "type" : "field",
+          "value" : ["scalars", "metadata.is_recirculated"]
+        }
+      ]
+    }
+  ],
+  "errors" : [
+    ["NoError", 0],
+    ["PacketTooShort", 1],
+    ["NoMatch", 2],
+    ["StackOutOfBounds", 3],
+    ["HeaderTooShort", 4],
+    ["ParserTimeout", 5],
+    ["ParserInvalidArgument", 6]
+  ],
+  "enums" : [],
+  "parsers" : [
+    {
+      "name" : "parser",
+      "id" : 0,
+      "init_state" : "start",
+      "parse_states" : [
+        {
+          "name" : "start",
+          "id" : 0,
+          "parser_ops" : [
+            {
+              "parameters" : [
+                {
+                  "type" : "regular",
+                  "value" : "ethernet"
+                }
+              ],
+              "op" : "extract"
+            }
+          ],
+          "transitions" : [
+            {
+              "type" : "hexstr",
+              "value" : "0x0800",
+              "mask" : null,
+              "next_state" : "parse_ipv4"
+            },
+            {
+              "type" : "default",
+              "value" : null,
+              "mask" : null,
+              "next_state" : null
+            }
+          ],
+          "transition_key" : [
+            {
+              "type" : "field",
+              "value" : ["ethernet", "etherType"]
+            }
+          ]
+        },
+        {
+          "name" : "parse_ipv4",
+          "id" : 1,
+          "parser_ops" : [
+            {
+              "parameters" : [
+                {
+                  "type" : "regular",
+                  "value" : "ipv4"
+                }
+              ],
+              "op" : "extract"
+            }
+          ],
+          "transitions" : [
+            {
+              "type" : "hexstr",
+              "value" : "0x06",
+              "mask" : null,
+              "next_state" : "parse_tcp"
+            },
+            {
+              "type" : "hexstr",
+              "value" : "0x11",
+              "mask" : null,
+              "next_state" : "parse_udp"
+            },
+            {
+              "type" : "default",
+              "value" : null,
+              "mask" : null,
+              "next_state" : null
+            }
+          ],
+          "transition_key" : [
+            {
+              "type" : "field",
+              "value" : ["ipv4", "protocol"]
+            }
+          ]
+        },
+        {
+          "name" : "parse_tcp",
+          "id" : 2,
+          "parser_ops" : [
+            {
+              "parameters" : [
+                {
+                  "type" : "regular",
+                  "value" : "tcp"
+                }
+              ],
+              "op" : "extract"
+            }
+          ],
+          "transitions" : [
+            {
+              "type" : "default",
+              "value" : null,
+              "mask" : null,
+              "next_state" : null
+            }
+          ],
+          "transition_key" : []
+        },
+        {
+          "name" : "parse_udp",
+          "id" : 3,
+          "parser_ops" : [
+            {
+              "parameters" : [
+                {
+                  "type" : "regular",
+                  "value" : "udp"
+                }
+              ],
+              "op" : "extract"
+            }
+          ],
+          "transitions" : [
+            {
+              "type" : "hexstr",
+              "value" : "0x270f",
+              "mask" : null,
+              "next_state" : "parse_bee"
+            },
+            {
+              "type" : "default",
+              "value" : null,
+              "mask" : null,
+              "next_state" : null
+            }
+          ],
+          "transition_key" : [
+            {
+              "type" : "field",
+              "value" : ["udp", "dstPort"]
+            }
+          ]
+        },
+        {
+          "name" : "parse_bee",
+          "id" : 4,
+          "parser_ops" : [
+            {
+              "parameters" : [
+                {
+                  "type" : "regular",
+                  "value" : "bee"
+                }
+              ],
+              "op" : "extract"
+            }
+          ],
+          "transitions" : [
+            {
+              "type" : "default",
+              "value" : null,
+              "mask" : null,
+              "next_state" : null
+            }
+          ],
+          "transition_key" : []
+        }
+      ]
+    }
+  ],
+  "parse_vsets" : [],
+  "deparsers" : [
+    {
+      "name" : "deparser",
+      "id" : 0,
+      "source_info" : {
+        "filename" : "/home/ubuntu/p4burst/p4src/sd.p4",
+        "line" : 319,
+        "column" : 8,
+        "source_fragment" : "MyDeparser"
+      },
+      "order" : ["ethernet", "ipv4", "tcp", "udp", "bee"],
+      "primitives" : []
+    }
+  ],
+  "meter_arrays" : [],
+  "counter_arrays" : [],
+  "register_arrays" : [
+    {
+      "name" : "MyIngress.queue_status",
+      "id" : 0,
+      "source_info" : {
+        "filename" : "/home/ubuntu/p4burst/p4src/sd.p4",
+        "line" : 150,
+        "column" : 24,
+        "source_fragment" : "queue_status"
+      },
+      "size" : 8,
+      "bitwidth" : 8
+    },
+    {
+      "name" : "MyEgress.queue_status",
+      "id" : 1,
+      "source_info" : {
+        "filename" : "/home/ubuntu/p4burst/p4src/sd.p4",
+        "line" : 287,
+        "column" : 24,
+        "source_fragment" : "queue_status"
+      },
+      "size" : 8,
+      "bitwidth" : 8
+    }
+  ],
+  "calculations" : [
+    {
+      "name" : "calc",
+      "id" : 0,
+      "source_info" : {
+        "filename" : "/home/ubuntu/p4burst/p4src/sd.p4",
+        "line" : 301,
+        "column" : 8,
+        "source_fragment" : "update_checksum( ..."
+      },
+      "algo" : "csum16",
+      "input" : [
+        {
+          "type" : "field",
+          "value" : ["ipv4", "version"]
+        },
+        {
+          "type" : "field",
+          "value" : ["ipv4", "ihl"]
+        },
+        {
+          "type" : "field",
+          "value" : ["ipv4", "diffserv"]
+        },
+        {
+          "type" : "field",
+          "value" : ["ipv4", "totalLen"]
+        },
+        {
+          "type" : "field",
+          "value" : ["ipv4", "identification"]
+        },
+        {
+          "type" : "field",
+          "value" : ["ipv4", "flags"]
+        },
+        {
+          "type" : "field",
+          "value" : ["ipv4", "fragOffset"]
+        },
+        {
+          "type" : "field",
+          "value" : ["ipv4", "ttl"]
+        },
+        {
+          "type" : "field",
+          "value" : ["ipv4", "protocol"]
+        },
+        {
+          "type" : "field",
+          "value" : ["ipv4", "srcAddr"]
+        },
+        {
+          "type" : "field",
+          "value" : ["ipv4", "dstAddr"]
+        }
+      ]
+    },
+    {
+      "name" : "calc_0",
+      "id" : 1,
+      "source_info" : {
+        "filename" : "/home/ubuntu/p4burst/p4src/sd.p4",
+        "line" : 127,
+        "column" : 8,
+        "source_fragment" : "verify_checksum( ..."
+      },
+      "algo" : "csum16",
+      "input" : [
+        {
+          "type" : "field",
+          "value" : ["ipv4", "version"]
+        },
+        {
+          "type" : "field",
+          "value" : ["ipv4", "ihl"]
+        },
+        {
+          "type" : "field",
+          "value" : ["ipv4", "diffserv"]
+        },
+        {
+          "type" : "field",
+          "value" : ["ipv4", "totalLen"]
+        },
+        {
+          "type" : "field",
+          "value" : ["ipv4", "identification"]
+        },
+        {
+          "type" : "field",
+          "value" : ["ipv4", "flags"]
+        },
+        {
+          "type" : "field",
+          "value" : ["ipv4", "fragOffset"]
+        },
+        {
+          "type" : "field",
+          "value" : ["ipv4", "ttl"]
+        },
+        {
+          "type" : "field",
+          "value" : ["ipv4", "protocol"]
+        },
+        {
+          "type" : "field",
+          "value" : ["ipv4", "srcAddr"]
+        },
+        {
+          "type" : "field",
+          "value" : ["ipv4", "dstAddr"]
+        }
+      ]
+    }
+  ],
+  "learn_lists" : [],
+  "actions" : [
+    {
+      "name" : "MyIngress.drop",
+      "id" : 0,
+      "runtime_data" : [],
+      "primitives" : [
+        {
+          "op" : "mark_to_drop",
+          "parameters" : [
+            {
+              "type" : "header",
+              "value" : "standard_metadata"
+            }
+          ],
+          "source_info" : {
+            "filename" : "/home/ubuntu/p4burst/p4src/sd.p4",
+            "line" : 153,
+            "column" : 8,
+            "source_fragment" : "mark_to_drop(standard_metadata)"
+          }
+        }
+      ]
+    },
+    {
+      "name" : "MyIngress.drop",
+      "id" : 1,
+      "runtime_data" : [],
+      "primitives" : [
+        {
+          "op" : "mark_to_drop",
+          "parameters" : [
+            {
+              "type" : "header",
+              "value" : "standard_metadata"
+            }
+          ],
+          "source_info" : {
+            "filename" : "/home/ubuntu/p4burst/p4src/sd.p4",
+            "line" : 153,
+            "column" : 8,
+            "source_fragment" : "mark_to_drop(standard_metadata)"
+          }
+        }
+      ]
+    },
+    {
+      "name" : "MyIngress.drop",
+      "id" : 2,
+      "runtime_data" : [],
+      "primitives" : [
+        {
+          "op" : "mark_to_drop",
+          "parameters" : [
+            {
+              "type" : "header",
+              "value" : "standard_metadata"
+            }
+          ],
+          "source_info" : {
+            "filename" : "/home/ubuntu/p4burst/p4src/sd.p4",
+            "line" : 153,
+            "column" : 8,
+            "source_fragment" : "mark_to_drop(standard_metadata)"
+          }
+        }
+      ]
+    },
+    {
+      "name" : "MyIngress.drop",
+      "id" : 3,
+      "runtime_data" : [],
+      "primitives" : [
+        {
+          "op" : "mark_to_drop",
+          "parameters" : [
+            {
+              "type" : "header",
+              "value" : "standard_metadata"
+            }
+          ],
+          "source_info" : {
+            "filename" : "/home/ubuntu/p4burst/p4src/sd.p4",
+            "line" : 153,
+            "column" : 8,
+            "source_fragment" : "mark_to_drop(standard_metadata)"
+          }
+        }
+      ]
+    },
+    {
+      "name" : "MyIngress.get_fw_port_idx_action",
+      "id" : 4,
+      "runtime_data" : [
+        {
+          "name" : "port",
+          "bitwidth" : 9
+        },
+        {
+          "name" : "fw_port_idx",
+          "bitwidth" : 16
+        }
+      ],
+      "primitives" : [
+        {
+          "op" : "assign",
+          "parameters" : [
+            {
+              "type" : "field",
+              "value" : ["standard_metadata", "egress_spec"]
+            },
+            {
+              "type" : "runtime_data",
+              "value" : 0
+            }
+          ],
+          "source_info" : {
+            "filename" : "/home/ubuntu/p4burst/p4src/sd.p4",
+            "line" : 162,
+            "column" : 8,
+            "source_fragment" : "standard_metadata.egress_spec = port"
+          }
+        },
+        {
+          "op" : "assign",
+          "parameters" : [
+            {
+              "type" : "field",
+              "value" : ["scalars", "metadata.fw_port_idx"]
+            },
+            {
+              "type" : "runtime_data",
+              "value" : 1
+            }
+          ],
+          "source_info" : {
+            "filename" : "/home/ubuntu/p4burst/p4src/sd.p4",
+            "line" : 163,
+            "column" : 8,
+            "source_fragment" : "meta.fw_port_idx = fw_port_idx"
+          }
+        }
+      ]
+    },
+    {
+      "name" : "MyIngress.fw_l2_action",
+      "id" : 5,
+      "runtime_data" : [
+        {
+          "name" : "port",
+          "bitwidth" : 9
+        }
+      ],
+      "primitives" : [
+        {
+          "op" : "assign",
+          "parameters" : [
+            {
+              "type" : "field",
+              "value" : ["standard_metadata", "egress_spec"]
+            },
+            {
+              "type" : "runtime_data",
+              "value" : 0
+            }
+          ],
+          "source_info" : {
+            "filename" : "/home/ubuntu/p4burst/p4src/sd.p4",
+            "line" : 168,
+            "column" : 8,
+            "source_fragment" : "standard_metadata.egress_spec = port"
+          }
+        }
+      ]
+    },
+    {
+      "name" : "MyIngress.broadcast",
+      "id" : 6,
+      "runtime_data" : [],
+      "primitives" : [
+        {
+          "op" : "assign",
+          "parameters" : [
+            {
+              "type" : "field",
+              "value" : ["standard_metadata", "mcast_grp"]
+            },
+            {
+              "type" : "hexstr",
+              "value" : "0x0001"
+            }
+          ],
+          "source_info" : {
+            "filename" : "/home/ubuntu/p4burst/p4src/sd.p4",
+            "line" : 173,
+            "column" : 8,
+            "source_fragment" : "standard_metadata.mcast_grp = 1"
+          }
+        }
+      ]
+    },
+    {
+      "name" : "MyIngress.generate_random",
+      "id" : 7,
+      "runtime_data" : [],
+      "primitives" : [
+        {
+          "op" : "modify_field_rng_uniform",
+          "parameters" : [
+            {
+              "type" : "field",
+              "value" : ["scalars", "metadata.random_number"]
+            },
+            {
+              "type" : "hexstr",
+              "value" : "0x00"
+            },
+            {
+              "type" : "hexstr",
+              "value" : "0x07"
+            }
+          ],
+          "source_info" : {
+            "filename" : "/home/ubuntu/p4burst/p4src/sd.p4",
+            "line" : 178,
+            "column" : 8,
+            "source_fragment" : "random(meta.random_number, 0, 7)"
+          }
+        }
+      ]
+    },
+    {
+      "name" : "MyIngress.try_port",
+      "id" : 8,
+      "runtime_data" : [
+        {
+          "name" : "port_num",
+          "bitwidth" : 9
+        }
+      ],
+      "primitives" : [
+        {
+          "op" : "assign",
+          "parameters" : [
+            {
+              "type" : "field",
+              "value" : ["scalars", "tmp"]
+            },
+            {
+              "type" : "expression",
+              "value" : {
+                "type" : "expression",
+                "value" : {
+                  "op" : "&",
+                  "left" : {
+                    "type" : "local",
+                    "value" : 0
+                  },
+                  "right" : {
+                    "type" : "hexstr",
+                    "value" : "0xffffffff"
+                  }
+                }
+              }
+            }
+          ],
+          "source_info" : {
+            "filename" : "/home/ubuntu/p4burst/p4src/sd.p4",
+            "line" : 183,
+            "column" : 38,
+            "source_fragment" : "(bit<32>)port_num"
+          }
+        },
+        {
+          "op" : "register_read",
+          "parameters" : [
+            {
+              "type" : "field",
+              "value" : ["scalars", "try_status_0"]
+            },
+            {
+              "type" : "register_array",
+              "value" : "MyIngress.queue_status"
+            },
+            {
+              "type" : "field",
+              "value" : ["scalars", "tmp"]
+            }
+          ],
+          "source_info" : {
+            "filename" : "/home/ubuntu/p4burst/p4src/sd.p4",
+            "line" : 183,
+            "column" : 8,
+            "source_fragment" : "queue_status.read(try_status, (bit<32>)port_num)"
+          }
+        },
+        {
+          "op" : "assign",
+          "parameters" : [
+            {
+              "type" : "field",
+              "value" : ["standard_metadata", "egress_spec"]
+            },
+            {
+              "type" : "expression",
+              "value" : {
+                "type" : "expression",
+                "value" : {
+                  "op" : "?",
+                  "left" : {
+                    "type" : "local",
+                    "value" : 0
+                  },
+                  "right" : {
+                    "type" : "field",
+                    "value" : ["standard_metadata", "egress_spec"]
+                  },
+                  "cond" : {
+                    "type" : "expression",
+                    "value" : {
+                      "op" : "==",
+                      "left" : {
+                        "type" : "field",
+                        "value" : ["scalars", "try_status_0"]
+                      },
+                      "right" : {
+                        "type" : "hexstr",
+                        "value" : "0x00"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "op" : "assign",
+          "parameters" : [
+            {
+              "type" : "field",
+              "value" : ["scalars", "metadata.need_deflection"]
+            },
+            {
+              "type" : "expression",
+              "value" : {
+                "type" : "expression",
+                "value" : {
+                  "op" : "?",
+                  "left" : {
+                    "type" : "hexstr",
+                    "value" : "0x00"
+                  },
+                  "right" : {
+                    "type" : "field",
+                    "value" : ["scalars", "metadata.need_deflection"]
+                  },
+                  "cond" : {
+                    "type" : "expression",
+                    "value" : {
+                      "op" : "==",
+                      "left" : {
+                        "type" : "field",
+                        "value" : ["scalars", "try_status_0"]
+                      },
+                      "right" : {
+                        "type" : "hexstr",
+                        "value" : "0x00"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name" : "MyIngress.deflect",
+      "id" : 9,
+      "runtime_data" : [],
+      "primitives" : [
+        {
+          "op" : "assign",
+          "parameters" : [
+            {
+              "type" : "field",
+              "value" : ["scalars", "tmp_0"]
+            },
+            {
+              "type" : "expression",
+              "value" : {
+                "type" : "expression",
+                "value" : {
+                  "op" : "&",
+                  "left" : {
+                    "type" : "expression",
+                    "value" : {
+                      "op" : "&",
+                      "left" : {
+                        "type" : "expression",
+                        "value" : {
+                          "op" : "&",
+                          "left" : {
+                            "type" : "field",
+                            "value" : ["scalars", "metadata.random_number"]
+                          },
+                          "right" : {
+                            "type" : "hexstr",
+                            "value" : "0x07"
+                          }
+                        }
+                      },
+                      "right" : {
+                        "type" : "hexstr",
+                        "value" : "0x07"
+                      }
+                    }
+                  },
+                  "right" : {
+                    "type" : "hexstr",
+                    "value" : "0xffffffff"
+                  }
+                }
+              }
+            }
+          ],
+          "source_info" : {
+            "filename" : "/home/ubuntu/p4burst/p4src/sd.p4",
+            "line" : 195,
+            "column" : 39,
+            "source_fragment" : "(bit<32>)port"
+          }
+        },
+        {
+          "op" : "register_read",
+          "parameters" : [
+            {
+              "type" : "field",
+              "value" : ["scalars", "port_status_0"]
+            },
+            {
+              "type" : "register_array",
+              "value" : "MyIngress.queue_status"
+            },
+            {
+              "type" : "field",
+              "value" : ["scalars", "tmp_0"]
+            }
+          ],
+          "source_info" : {
+            "filename" : "/home/ubuntu/p4burst/p4src/sd.p4",
+            "line" : 195,
+            "column" : 8,
+            "source_fragment" : "queue_status.read(port_status, (bit<32>)port)"
+          }
+        },
+        {
+          "op" : "assign",
+          "parameters" : [
+            {
+              "type" : "field",
+              "value" : ["standard_metadata", "egress_spec"]
+            },
+            {
+              "type" : "expression",
+              "value" : {
+                "type" : "expression",
+                "value" : {
+                  "op" : "?",
+                  "left" : {
+                    "type" : "expression",
+                    "value" : {
+                      "op" : "&",
+                      "left" : {
+                        "type" : "expression",
+                        "value" : {
+                          "op" : "&",
+                          "left" : {
+                            "type" : "expression",
+                            "value" : {
+                              "op" : "&",
+                              "left" : {
+                                "type" : "field",
+                                "value" : ["scalars", "metadata.random_number"]
+                              },
+                              "right" : {
+                                "type" : "hexstr",
+                                "value" : "0x07"
+                              }
+                            }
+                          },
+                          "right" : {
+                            "type" : "hexstr",
+                            "value" : "0x07"
+                          }
+                        }
+                      },
+                      "right" : {
+                        "type" : "hexstr",
+                        "value" : "0x01ff"
+                      }
+                    }
+                  },
+                  "right" : {
+                    "type" : "field",
+                    "value" : ["standard_metadata", "egress_spec"]
+                  },
+                  "cond" : {
+                    "type" : "expression",
+                    "value" : {
+                      "op" : "==",
+                      "left" : {
+                        "type" : "field",
+                        "value" : ["scalars", "port_status_0"]
+                      },
+                      "right" : {
+                        "type" : "hexstr",
+                        "value" : "0x00"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "op" : "assign",
+          "parameters" : [
+            {
+              "type" : "field",
+              "value" : ["scalars", "metadata.need_deflection"]
+            },
+            {
+              "type" : "expression",
+              "value" : {
+                "type" : "expression",
+                "value" : {
+                  "op" : "?",
+                  "left" : {
+                    "type" : "field",
+                    "value" : ["scalars", "metadata.need_deflection"]
+                  },
+                  "right" : {
+                    "type" : "hexstr",
+                    "value" : "0x01"
+                  },
+                  "cond" : {
+                    "type" : "expression",
+                    "value" : {
+                      "op" : "==",
+                      "left" : {
+                        "type" : "field",
+                        "value" : ["scalars", "port_status_0"]
+                      },
+                      "right" : {
+                        "type" : "hexstr",
+                        "value" : "0x00"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "op" : "assign",
+          "parameters" : [
+            {
+              "type" : "field",
+              "value" : ["scalars", "metadata.current_try_port"]
+            },
+            {
+              "type" : "expression",
+              "value" : {
+                "type" : "expression",
+                "value" : {
+                  "op" : "?",
+                  "left" : {
+                    "type" : "field",
+                    "value" : ["scalars", "metadata.current_try_port"]
+                  },
+                  "right" : {
+                    "type" : "expression",
+                    "value" : {
+                      "op" : "&",
+                      "left" : {
+                        "type" : "expression",
+                        "value" : {
+                          "op" : "&",
+                          "left" : {
+                            "type" : "expression",
+                            "value" : {
+                              "op" : "&",
+                              "left" : {
+                                "type" : "field",
+                                "value" : ["scalars", "metadata.random_number"]
+                              },
+                              "right" : {
+                                "type" : "hexstr",
+                                "value" : "0x07"
+                              }
+                            }
+                          },
+                          "right" : {
+                            "type" : "hexstr",
+                            "value" : "0x07"
+                          }
+                        }
+                      },
+                      "right" : {
+                        "type" : "hexstr",
+                        "value" : "0x01ff"
+                      }
+                    }
+                  },
+                  "cond" : {
+                    "type" : "expression",
+                    "value" : {
+                      "op" : "==",
+                      "left" : {
+                        "type" : "field",
+                        "value" : ["scalars", "port_status_0"]
+                      },
+                      "right" : {
+                        "type" : "hexstr",
+                        "value" : "0x00"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name" : "sd255",
+      "id" : 10,
+      "runtime_data" : [],
+      "primitives" : [
+        {
+          "op" : "assign",
+          "parameters" : [
+            {
+              "type" : "field",
+              "value" : ["scalars", "tmp_1"]
+            },
+            {
+              "type" : "expression",
+              "value" : {
+                "type" : "expression",
+                "value" : {
+                  "op" : "&",
+                  "left" : {
+                    "type" : "field",
+                    "value" : ["bee", "port_idx_in_reg"]
+                  },
+                  "right" : {
+                    "type" : "hexstr",
+                    "value" : "0xffffffff"
+                  }
+                }
+              }
+            }
+          ],
+          "source_info" : {
+            "filename" : "/home/ubuntu/p4burst/p4src/sd.p4",
+            "line" : 255,
+            "column" : 31,
+            "source_fragment" : "(bit<32>)hdr.bee.port_idx_in_reg"
+          }
+        },
+        {
+          "op" : "register_write",
+          "parameters" : [
+            {
+              "type" : "register_array",
+              "value" : "MyIngress.queue_status"
+            },
+            {
+              "type" : "field",
+              "value" : ["scalars", "tmp_1"]
+            },
+            {
+              "type" : "field",
+              "value" : ["bee", "queue_occ_info"]
+            }
+          ],
+          "source_info" : {
+            "filename" : "/home/ubuntu/p4burst/p4src/sd.p4",
+            "line" : 255,
+            "column" : 12,
+            "source_fragment" : "queue_status.write((bit<32>)hdr.bee.port_idx_in_reg, hdr.bee.queue_occ_info)"
+          }
+        },
+        {
+          "op" : "assign",
+          "parameters" : [
+            {
+              "type" : "field",
+              "value" : ["scalars", "metadata.is_recirculated"]
+            },
+            {
+              "type" : "hexstr",
+              "value" : "0x01"
+            }
+          ],
+          "source_info" : {
+            "filename" : "/home/ubuntu/p4burst/p4src/sd.p4",
+            "line" : 256,
+            "column" : 12,
+            "source_fragment" : "meta.is_recirculated = 1"
+          }
+        },
+        {
+          "op" : "resubmit",
+          "parameters" : [
+            {
+              "type" : "hexstr",
+              "value" : "0x1"
+            }
+          ],
+          "source_info" : {
+            "filename" : "/home/ubuntu/p4burst/p4src/sd.p4",
+            "line" : 257,
+            "column" : 12,
+            "source_fragment" : "resubmit_preserving_field_list((bit<8>)1)"
+          }
+        }
+      ]
+    },
+    {
+      "name" : "sd266",
+      "id" : 11,
+      "runtime_data" : [],
+      "primitives" : [
+        {
+          "op" : "assign",
+          "parameters" : [
+            {
+              "type" : "field",
+              "value" : ["scalars", "tmp_2"]
+            },
+            {
+              "type" : "expression",
+              "value" : {
+                "type" : "expression",
+                "value" : {
+                  "op" : "&",
+                  "left" : {
+                    "type" : "field",
+                    "value" : ["standard_metadata", "egress_spec"]
+                  },
+                  "right" : {
+                    "type" : "hexstr",
+                    "value" : "0xffffffff"
+                  }
+                }
+              }
+            }
+          ],
+          "source_info" : {
+            "filename" : "/home/ubuntu/p4burst/p4src/sd.p4",
+            "line" : 266,
+            "column" : 55,
+            "source_fragment" : "(bit<32>)standard_metadata.egress_spec"
+          }
+        },
+        {
+          "op" : "register_read",
+          "parameters" : [
+            {
+              "type" : "field",
+              "value" : ["scalars", "dst_port_status_0"]
+            },
+            {
+              "type" : "register_array",
+              "value" : "MyIngress.queue_status"
+            },
+            {
+              "type" : "field",
+              "value" : ["scalars", "tmp_2"]
+            }
+          ],
+          "source_info" : {
+            "filename" : "/home/ubuntu/p4burst/p4src/sd.p4",
+            "line" : 266,
+            "column" : 20,
+            "source_fragment" : "queue_status.read(dst_port_status, (bit<32>)standard_metadata.egress_spec)"
+          }
+        }
+      ]
+    },
+    {
+      "name" : "sd260",
+      "id" : 12,
+      "runtime_data" : [],
+      "primitives" : [
+        {
+          "op" : "assign",
+          "parameters" : [
+            {
+              "type" : "field",
+              "value" : ["ipv4", "ttl"]
+            },
+            {
+              "type" : "expression",
+              "value" : {
+                "type" : "expression",
+                "value" : {
+                  "op" : "&",
+                  "left" : {
+                    "type" : "expression",
+                    "value" : {
+                      "op" : "+",
+                      "left" : {
+                        "type" : "field",
+                        "value" : ["ipv4", "ttl"]
+                      },
+                      "right" : {
+                        "type" : "hexstr",
+                        "value" : "0xff"
+                      }
+                    }
+                  },
+                  "right" : {
+                    "type" : "hexstr",
+                    "value" : "0xff"
+                  }
+                }
+              }
+            }
+          ],
+          "source_info" : {
+            "filename" : "/home/ubuntu/p4burst/p4src/sd.p4",
+            "line" : 260,
+            "column" : 16,
+            "source_fragment" : "hdr.ipv4.ttl = hdr.ipv4.ttl - 1"
+          }
+        }
+      ]
+    },
+    {
+      "name" : "sd292",
+      "id" : 13,
+      "runtime_data" : [],
+      "primitives" : [
+        {
+          "op" : "assign",
+          "parameters" : [
+            {
+              "type" : "field",
+              "value" : ["scalars", "tmp_3"]
+            },
+            {
+              "type" : "expression",
+              "value" : {
+                "type" : "expression",
+                "value" : {
+                  "op" : "&",
+                  "left" : {
+                    "type" : "field",
+                    "value" : ["standard_metadata", "egress_port"]
+                  },
+                  "right" : {
+                    "type" : "hexstr",
+                    "value" : "0xffffffff"
+                  }
+                }
+              }
+            }
+          ],
+          "source_info" : {
+            "filename" : "/home/ubuntu/p4burst/p4src/sd.p4",
+            "line" : 292,
+            "column" : 31,
+            "source_fragment" : "(bit<32>)standard_metadata.egress_port"
+          }
+        },
+        {
+          "op" : "register_write",
+          "parameters" : [
+            {
+              "type" : "register_array",
+              "value" : "MyEgress.queue_status"
+            },
+            {
+              "type" : "field",
+              "value" : ["scalars", "tmp_3"]
+            },
+            {
+              "type" : "hexstr",
+              "value" : "0x01"
+            }
+          ],
+          "source_info" : {
+            "filename" : "/home/ubuntu/p4burst/p4src/sd.p4",
+            "line" : 292,
+            "column" : 12,
+            "source_fragment" : "queue_status.write((bit<32>)standard_metadata.egress_port, 1)"
+          }
+        }
+      ]
+    },
+    {
+      "name" : "sd294",
+      "id" : 14,
+      "runtime_data" : [],
+      "primitives" : [
+        {
+          "op" : "assign",
+          "parameters" : [
+            {
+              "type" : "field",
+              "value" : ["scalars", "tmp_4"]
+            },
+            {
+              "type" : "expression",
+              "value" : {
+                "type" : "expression",
+                "value" : {
+                  "op" : "&",
+                  "left" : {
+                    "type" : "field",
+                    "value" : ["standard_metadata", "egress_port"]
+                  },
+                  "right" : {
+                    "type" : "hexstr",
+                    "value" : "0xffffffff"
+                  }
+                }
+              }
+            }
+          ],
+          "source_info" : {
+            "filename" : "/home/ubuntu/p4burst/p4src/sd.p4",
+            "line" : 294,
+            "column" : 31,
+            "source_fragment" : "(bit<32>)standard_metadata.egress_port"
+          }
+        },
+        {
+          "op" : "register_write",
+          "parameters" : [
+            {
+              "type" : "register_array",
+              "value" : "MyEgress.queue_status"
+            },
+            {
+              "type" : "field",
+              "value" : ["scalars", "tmp_4"]
+            },
+            {
+              "type" : "hexstr",
+              "value" : "0x00"
+            }
+          ],
+          "source_info" : {
+            "filename" : "/home/ubuntu/p4burst/p4src/sd.p4",
+            "line" : 294,
+            "column" : 12,
+            "source_fragment" : "queue_status.write((bit<32>)standard_metadata.egress_port, 0)"
+          }
+        }
+      ]
+    }
+  ],
+  "pipelines" : [
+    {
+      "name" : "ingress",
+      "id" : 0,
+      "source_info" : {
+        "filename" : "/home/ubuntu/p4burst/p4src/sd.p4",
+        "line" : 146,
+        "column" : 8,
+        "source_fragment" : "MyIngress"
+      },
+      "init_table" : "node_2",
+      "tables" : [
+        {
+          "name" : "tbl_sd255",
+          "id" : 0,
+          "source_info" : {
+            "filename" : "/home/ubuntu/p4burst/p4src/sd.p4",
+            "line" : 255,
+            "column" : 12,
+            "source_fragment" : "queue_status.write((bit<32>)hdr.bee.port_idx_in_reg, hdr.bee.queue_occ_info); ..."
+          },
+          "key" : [],
+          "match_type" : "exact",
+          "type" : "simple",
+          "max_size" : 1024,
+          "with_counters" : false,
+          "support_timeout" : false,
+          "direct_meters" : null,
+          "action_ids" : [10],
+          "actions" : ["sd255"],
+          "base_default_next" : null,
+          "next_tables" : {
+            "sd255" : null
+          },
+          "default_entry" : {
+            "action_id" : 10,
+            "action_const" : true,
+            "action_data" : [],
+            "action_entry_const" : true
+          }
+        },
+        {
+          "name" : "tbl_sd260",
+          "id" : 1,
+          "source_info" : {
+            "filename" : "/home/ubuntu/p4burst/p4src/sd.p4",
+            "line" : 260,
+            "column" : 29,
+            "source_fragment" : "="
+          },
+          "key" : [],
+          "match_type" : "exact",
+          "type" : "simple",
+          "max_size" : 1024,
+          "with_counters" : false,
+          "support_timeout" : false,
+          "direct_meters" : null,
+          "action_ids" : [12],
+          "actions" : ["sd260"],
+          "base_default_next" : "node_6",
+          "next_tables" : {
+            "sd260" : "node_6"
+          },
+          "default_entry" : {
+            "action_id" : 12,
+            "action_const" : true,
+            "action_data" : [],
+            "action_entry_const" : true
+          }
+        },
+        {
+          "name" : "tbl_drop",
+          "id" : 2,
+          "source_info" : {
+            "filename" : "/home/ubuntu/p4burst/p4src/sd.p4",
+            "line" : 262,
+            "column" : 20,
+            "source_fragment" : "drop()"
+          },
+          "key" : [],
+          "match_type" : "exact",
+          "type" : "simple",
+          "max_size" : 1024,
+          "with_counters" : false,
+          "support_timeout" : false,
+          "direct_meters" : null,
+          "action_ids" : [3],
+          "actions" : ["MyIngress.drop"],
+          "base_default_next" : null,
+          "next_tables" : {
+            "MyIngress.drop" : null
+          },
+          "default_entry" : {
+            "action_id" : 3,
+            "action_const" : true,
+            "action_data" : [],
+            "action_entry_const" : true
+          }
+        },
+        {
+          "name" : "MyIngress.get_fw_port_idx_table",
+          "id" : 3,
+          "source_info" : {
+            "filename" : "/home/ubuntu/p4burst/p4src/sd.p4",
+            "line" : 206,
+            "column" : 10,
+            "source_fragment" : "get_fw_port_idx_table"
+          },
+          "key" : [
+            {
+              "match_type" : "lpm",
+              "name" : "hdr.ipv4.dstAddr",
+              "target" : ["ipv4", "dstAddr"],
+              "mask" : null
+            }
+          ],
+          "match_type" : "lpm",
+          "type" : "simple",
+          "max_size" : 256,
+          "with_counters" : false,
+          "support_timeout" : false,
+          "direct_meters" : null,
+          "action_ids" : [4, 0],
+          "actions" : ["MyIngress.get_fw_port_idx_action", "MyIngress.drop"],
+          "base_default_next" : "tbl_sd266",
+          "next_tables" : {
+            "MyIngress.get_fw_port_idx_action" : "tbl_sd266",
+            "MyIngress.drop" : "tbl_sd266"
+          },
+          "default_entry" : {
+            "action_id" : 0,
+            "action_const" : false,
+            "action_data" : [],
+            "action_entry_const" : false
+          }
+        },
+        {
+          "name" : "tbl_sd266",
+          "id" : 4,
+          "source_info" : {
+            "filename" : "/home/ubuntu/p4burst/p4src/sd.p4",
+            "line" : 266,
+            "column" : 20,
+            "source_fragment" : "queue_status.read(dst_port_status, (bit<32>)standard_metadata.egress_spec)"
+          },
+          "key" : [],
+          "match_type" : "exact",
+          "type" : "simple",
+          "max_size" : 1024,
+          "with_counters" : false,
+          "support_timeout" : false,
+          "direct_meters" : null,
+          "action_ids" : [11],
+          "actions" : ["sd266"],
+          "base_default_next" : "node_10",
+          "next_tables" : {
+            "sd266" : "node_10"
+          },
+          "default_entry" : {
+            "action_id" : 11,
+            "action_const" : true,
+            "action_data" : [],
+            "action_entry_const" : true
+          }
+        },
+        {
+          "name" : "tbl_generate_random",
+          "id" : 5,
+          "source_info" : {
+            "filename" : "/home/ubuntu/p4burst/p4src/sd.p4",
+            "line" : 268,
+            "column" : 24,
+            "source_fragment" : "generate_random()"
+          },
+          "key" : [],
+          "match_type" : "exact",
+          "type" : "simple",
+          "max_size" : 1024,
+          "with_counters" : false,
+          "support_timeout" : false,
+          "direct_meters" : null,
+          "action_ids" : [7],
+          "actions" : ["MyIngress.generate_random"],
+          "base_default_next" : "tbl_deflect",
+          "next_tables" : {
+            "MyIngress.generate_random" : "tbl_deflect"
+          },
+          "default_entry" : {
+            "action_id" : 7,
+            "action_const" : true,
+            "action_data" : [],
+            "action_entry_const" : true
+          }
+        },
+        {
+          "name" : "tbl_deflect",
+          "id" : 6,
+          "source_info" : {
+            "filename" : "/home/ubuntu/p4burst/p4src/sd.p4",
+            "line" : 269,
+            "column" : 24,
+            "source_fragment" : "deflect()"
+          },
+          "key" : [],
+          "match_type" : "exact",
+          "type" : "simple",
+          "max_size" : 1024,
+          "with_counters" : false,
+          "support_timeout" : false,
+          "direct_meters" : null,
+          "action_ids" : [9],
+          "actions" : ["MyIngress.deflect"],
+          "base_default_next" : "node_13",
+          "next_tables" : {
+            "MyIngress.deflect" : "node_13"
+          },
+          "default_entry" : {
+            "action_id" : 9,
+            "action_const" : true,
+            "action_data" : [],
+            "action_entry_const" : true
+          }
+        },
+        {
+          "name" : "MyIngress.try_next_port",
+          "id" : 7,
+          "source_info" : {
+            "filename" : "/home/ubuntu/p4burst/p4src/sd.p4",
+            "line" : 232,
+            "column" : 12,
+            "source_fragment" : "try_next_port"
+          },
+          "key" : [
+            {
+              "match_type" : "exact",
+              "name" : "meta.current_try_port",
+              "target" : ["scalars", "metadata.current_try_port"],
+              "mask" : null
+            }
+          ],
+          "match_type" : "exact",
+          "type" : "simple",
+          "max_size" : 8,
+          "with_counters" : false,
+          "support_timeout" : false,
+          "direct_meters" : null,
+          "action_ids" : [8, 2],
+          "actions" : ["MyIngress.try_port", "MyIngress.drop"],
+          "base_default_next" : null,
+          "next_tables" : {
+            "MyIngress.try_port" : null,
+            "MyIngress.drop" : null
+          },
+          "default_entry" : {
+            "action_id" : 2,
+            "action_const" : false,
+            "action_data" : [],
+            "action_entry_const" : false
+          },
+          "entries" : [
+            {
+              "source_info" : {
+                "filename" : "/home/ubuntu/p4burst/p4src/sd.p4",
+                "line" : 241,
+                "column" : 12,
+                "source_fragment" : "0 : try_port(1)"
+              },
+              "match_key" : [
+                {
+                  "match_type" : "exact",
+                  "key" : "0x0000"
+                }
+              ],
+              "action_entry" : {
+                "action_id" : 8,
+                "action_data" : ["0x1"]
+              },
+              "priority" : 1
+            },
+            {
+              "source_info" : {
+                "filename" : "/home/ubuntu/p4burst/p4src/sd.p4",
+                "line" : 242,
+                "column" : 12,
+                "source_fragment" : "1 : try_port(2)"
+              },
+              "match_key" : [
+                {
+                  "match_type" : "exact",
+                  "key" : "0x0001"
+                }
+              ],
+              "action_entry" : {
+                "action_id" : 8,
+                "action_data" : ["0x2"]
+              },
+              "priority" : 2
+            },
+            {
+              "source_info" : {
+                "filename" : "/home/ubuntu/p4burst/p4src/sd.p4",
+                "line" : 243,
+                "column" : 12,
+                "source_fragment" : "2 : try_port(3)"
+              },
+              "match_key" : [
+                {
+                  "match_type" : "exact",
+                  "key" : "0x0002"
+                }
+              ],
+              "action_entry" : {
+                "action_id" : 8,
+                "action_data" : ["0x3"]
+              },
+              "priority" : 3
+            },
+            {
+              "source_info" : {
+                "filename" : "/home/ubuntu/p4burst/p4src/sd.p4",
+                "line" : 244,
+                "column" : 12,
+                "source_fragment" : "3 : try_port(4)"
+              },
+              "match_key" : [
+                {
+                  "match_type" : "exact",
+                  "key" : "0x0003"
+                }
+              ],
+              "action_entry" : {
+                "action_id" : 8,
+                "action_data" : ["0x4"]
+              },
+              "priority" : 4
+            },
+            {
+              "source_info" : {
+                "filename" : "/home/ubuntu/p4burst/p4src/sd.p4",
+                "line" : 245,
+                "column" : 12,
+                "source_fragment" : "4 : try_port(5)"
+              },
+              "match_key" : [
+                {
+                  "match_type" : "exact",
+                  "key" : "0x0004"
+                }
+              ],
+              "action_entry" : {
+                "action_id" : 8,
+                "action_data" : ["0x5"]
+              },
+              "priority" : 5
+            },
+            {
+              "source_info" : {
+                "filename" : "/home/ubuntu/p4burst/p4src/sd.p4",
+                "line" : 246,
+                "column" : 12,
+                "source_fragment" : "5 : try_port(6)"
+              },
+              "match_key" : [
+                {
+                  "match_type" : "exact",
+                  "key" : "0x0005"
+                }
+              ],
+              "action_entry" : {
+                "action_id" : 8,
+                "action_data" : ["0x6"]
+              },
+              "priority" : 6
+            },
+            {
+              "source_info" : {
+                "filename" : "/home/ubuntu/p4burst/p4src/sd.p4",
+                "line" : 247,
+                "column" : 12,
+                "source_fragment" : "6 : try_port(7)"
+              },
+              "match_key" : [
+                {
+                  "match_type" : "exact",
+                  "key" : "0x0006"
+                }
+              ],
+              "action_entry" : {
+                "action_id" : 8,
+                "action_data" : ["0x7"]
+              },
+              "priority" : 7
+            },
+            {
+              "source_info" : {
+                "filename" : "/home/ubuntu/p4burst/p4src/sd.p4",
+                "line" : 248,
+                "column" : 12,
+                "source_fragment" : "7 : try_port(0)"
+              },
+              "match_key" : [
+                {
+                  "match_type" : "exact",
+                  "key" : "0x0007"
+                }
+              ],
+              "action_entry" : {
+                "action_id" : 8,
+                "action_data" : ["0x0"]
+              },
+              "priority" : 8
+            }
+          ]
+        },
+        {
+          "name" : "MyIngress.fw_l2_table",
+          "id" : 8,
+          "source_info" : {
+            "filename" : "/home/ubuntu/p4burst/p4src/sd.p4",
+            "line" : 219,
+            "column" : 10,
+            "source_fragment" : "fw_l2_table"
+          },
+          "key" : [
+            {
+              "match_type" : "exact",
+              "name" : "hdr.ethernet.dstAddr",
+              "target" : ["ethernet", "dstAddr"],
+              "mask" : null
+            }
+          ],
+          "match_type" : "exact",
+          "type" : "simple",
+          "max_size" : 256,
+          "with_counters" : false,
+          "support_timeout" : false,
+          "direct_meters" : null,
+          "action_ids" : [5, 6, 1],
+          "actions" : ["MyIngress.fw_l2_action", "MyIngress.broadcast", "MyIngress.drop"],
+          "base_default_next" : null,
+          "next_tables" : {
+            "MyIngress.fw_l2_action" : null,
+            "MyIngress.broadcast" : null,
+            "MyIngress.drop" : null
+          },
+          "default_entry" : {
+            "action_id" : 6,
+            "action_const" : false,
+            "action_data" : [],
+            "action_entry_const" : false
+          }
+        }
+      ],
+      "action_profiles" : [],
+      "conditionals" : [
+        {
+          "name" : "node_2",
+          "id" : 0,
+          "source_info" : {
+            "filename" : "/home/ubuntu/p4burst/p4src/sd.p4",
+            "line" : 254,
+            "column" : 12,
+            "source_fragment" : "hdr.bee.isValid()"
+          },
+          "expression" : {
+            "type" : "expression",
+            "value" : {
+              "op" : "d2b",
+              "left" : null,
+              "right" : {
+                "type" : "field",
+                "value" : ["bee", "$valid$"]
+              }
+            }
+          },
+          "true_next" : "tbl_sd255",
+          "false_next" : "node_4"
+        },
+        {
+          "name" : "node_4",
+          "id" : 1,
+          "source_info" : {
+            "filename" : "/home/ubuntu/p4burst/p4src/sd.p4",
+            "line" : 259,
+            "column" : 16,
+            "source_fragment" : "hdr.ipv4.isValid()"
+          },
+          "expression" : {
+            "type" : "expression",
+            "value" : {
+              "op" : "d2b",
+              "left" : null,
+              "right" : {
+                "type" : "field",
+                "value" : ["ipv4", "$valid$"]
+              }
+            }
+          },
+          "true_next" : "tbl_sd260",
+          "false_next" : "MyIngress.fw_l2_table"
+        },
+        {
+          "name" : "node_6",
+          "id" : 2,
+          "source_info" : {
+            "filename" : "/home/ubuntu/p4burst/p4src/sd.p4",
+            "line" : 261,
+            "column" : 20,
+            "source_fragment" : "hdr.ipv4.ttl == 0"
+          },
+          "expression" : {
+            "type" : "expression",
+            "value" : {
+              "op" : "==",
+              "left" : {
+                "type" : "field",
+                "value" : ["ipv4", "ttl"]
+              },
+              "right" : {
+                "type" : "hexstr",
+                "value" : "0x00"
+              }
+            }
+          },
+          "true_next" : "tbl_drop",
+          "false_next" : "MyIngress.get_fw_port_idx_table"
+        },
+        {
+          "name" : "node_10",
+          "id" : 3,
+          "source_info" : {
+            "filename" : "/home/ubuntu/p4burst/p4src/sd.p4",
+            "line" : 267,
+            "column" : 24,
+            "source_fragment" : "dst_port_status == 1"
+          },
+          "expression" : {
+            "type" : "expression",
+            "value" : {
+              "op" : "==",
+              "left" : {
+                "type" : "field",
+                "value" : ["scalars", "dst_port_status_0"]
+              },
+              "right" : {
+                "type" : "hexstr",
+                "value" : "0x01"
+              }
+            }
+          },
+          "false_next" : null,
+          "true_next" : "tbl_generate_random"
+        },
+        {
+          "name" : "node_13",
+          "id" : 4,
+          "source_info" : {
+            "filename" : "/home/ubuntu/p4burst/p4src/sd.p4",
+            "line" : 270,
+            "column" : 28,
+            "source_fragment" : "meta.need_deflection == 1"
+          },
+          "expression" : {
+            "type" : "expression",
+            "value" : {
+              "op" : "==",
+              "left" : {
+                "type" : "field",
+                "value" : ["scalars", "metadata.need_deflection"]
+              },
+              "right" : {
+                "type" : "hexstr",
+                "value" : "0x01"
+              }
+            }
+          },
+          "false_next" : null,
+          "true_next" : "MyIngress.try_next_port"
+        }
+      ]
+    },
+    {
+      "name" : "egress",
+      "id" : 1,
+      "source_info" : {
+        "filename" : "/home/ubuntu/p4burst/p4src/sd.p4",
+        "line" : 283,
+        "column" : 8,
+        "source_fragment" : "MyEgress"
+      },
+      "init_table" : "node_18",
+      "tables" : [
+        {
+          "name" : "tbl_sd292",
+          "id" : 9,
+          "source_info" : {
+            "filename" : "/home/ubuntu/p4burst/p4src/sd.p4",
+            "line" : 292,
+            "column" : 12,
+            "source_fragment" : "queue_status.write((bit<32>)standard_metadata.egress_port, 1)"
+          },
+          "key" : [],
+          "match_type" : "exact",
+          "type" : "simple",
+          "max_size" : 1024,
+          "with_counters" : false,
+          "support_timeout" : false,
+          "direct_meters" : null,
+          "action_ids" : [13],
+          "actions" : ["sd292"],
+          "base_default_next" : null,
+          "next_tables" : {
+            "sd292" : null
+          },
+          "default_entry" : {
+            "action_id" : 13,
+            "action_const" : true,
+            "action_data" : [],
+            "action_entry_const" : true
+          }
+        },
+        {
+          "name" : "tbl_sd294",
+          "id" : 10,
+          "source_info" : {
+            "filename" : "/home/ubuntu/p4burst/p4src/sd.p4",
+            "line" : 294,
+            "column" : 12,
+            "source_fragment" : "queue_status.write((bit<32>)standard_metadata.egress_port, 0)"
+          },
+          "key" : [],
+          "match_type" : "exact",
+          "type" : "simple",
+          "max_size" : 1024,
+          "with_counters" : false,
+          "support_timeout" : false,
+          "direct_meters" : null,
+          "action_ids" : [14],
+          "actions" : ["sd294"],
+          "base_default_next" : null,
+          "next_tables" : {
+            "sd294" : null
+          },
+          "default_entry" : {
+            "action_id" : 14,
+            "action_const" : true,
+            "action_data" : [],
+            "action_entry_const" : true
+          }
+        }
+      ],
+      "action_profiles" : [],
+      "conditionals" : [
+        {
+          "name" : "node_18",
+          "id" : 5,
+          "source_info" : {
+            "filename" : "/home/ubuntu/p4burst/p4src/sd.p4",
+            "line" : 291,
+            "column" : 12,
+            "source_fragment" : "standard_metadata.enq_qdepth >= 1024"
+          },
+          "expression" : {
+            "type" : "expression",
+            "value" : {
+              "op" : ">=",
+              "left" : {
+                "type" : "field",
+                "value" : ["standard_metadata", "enq_qdepth"]
+              },
+              "right" : {
+                "type" : "hexstr",
+                "value" : "0x000400"
+              }
+            }
+          },
+          "true_next" : "tbl_sd292",
+          "false_next" : "tbl_sd294"
+        }
+      ]
+    }
+  ],
+  "checksums" : [
+    {
+      "name" : "cksum",
+      "id" : 0,
+      "source_info" : {
+        "filename" : "/home/ubuntu/p4burst/p4src/sd.p4",
+        "line" : 301,
+        "column" : 8,
+        "source_fragment" : "update_checksum( ..."
+      },
+      "target" : ["ipv4", "hdrChecksum"],
+      "type" : "generic",
+      "calculation" : "calc",
+      "verify" : false,
+      "update" : true,
+      "if_cond" : {
+        "type" : "expression",
+        "value" : {
+          "op" : "d2b",
+          "left" : null,
+          "right" : {
+            "type" : "field",
+            "value" : ["ipv4", "$valid$"]
+          }
+        }
+      }
+    },
+    {
+      "name" : "cksum_0",
+      "id" : 1,
+      "source_info" : {
+        "filename" : "/home/ubuntu/p4burst/p4src/sd.p4",
+        "line" : 127,
+        "column" : 8,
+        "source_fragment" : "verify_checksum( ..."
+      },
+      "target" : ["ipv4", "hdrChecksum"],
+      "type" : "generic",
+      "calculation" : "calc_0",
+      "verify" : true,
+      "update" : false,
+      "if_cond" : {
+        "type" : "expression",
+        "value" : {
+          "op" : "d2b",
+          "left" : null,
+          "right" : {
+            "type" : "field",
+            "value" : ["ipv4", "$valid$"]
+          }
+        }
+      }
+    }
+  ],
+  "force_arith" : [],
+  "extern_instances" : [],
+  "field_aliases" : [
+    [
+      "queueing_metadata.enq_timestamp",
+      ["standard_metadata", "enq_timestamp"]
+    ],
+    [
+      "queueing_metadata.enq_qdepth",
+      ["standard_metadata", "enq_qdepth"]
+    ],
+    [
+      "queueing_metadata.deq_timedelta",
+      ["standard_metadata", "deq_timedelta"]
+    ],
+    [
+      "queueing_metadata.deq_qdepth",
+      ["standard_metadata", "deq_qdepth"]
+    ],
+    [
+      "intrinsic_metadata.ingress_global_timestamp",
+      ["standard_metadata", "ingress_global_timestamp"]
+    ],
+    [
+      "intrinsic_metadata.egress_global_timestamp",
+      ["standard_metadata", "egress_global_timestamp"]
+    ],
+    [
+      "intrinsic_metadata.mcast_grp",
+      ["standard_metadata", "mcast_grp"]
+    ],
+    [
+      "intrinsic_metadata.egress_rid",
+      ["standard_metadata", "egress_rid"]
+    ],
+    [
+      "intrinsic_metadata.priority",
+      ["standard_metadata", "priority"]
+    ]
+  ],
+  "program" : "/home/ubuntu/p4burst/p4src/sd.p4i",
+  "__meta__" : {
+    "version" : [2, 23],
+    "compiler" : "https://github.com/p4lang/p4c"
+  }
+}

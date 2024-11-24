@@ -140,10 +140,216 @@ class L3ForwardingControlPlane(BaseControlPlane):
 
 class SimpleDeflectionControlPlane(BaseControlPlane):
     def generate_control_plane(self):
+        if isinstance(self.topology, LeafSpineTopology):
+            for switch in self.net_api.switches():
+                commands = []
+                is_spine = 'spine' in switch.lower()
+                
+                # Default actions
+                commands.append("table_set_default MyIngress.get_fw_port_idx_table drop")
+                commands.append("table_set_default MyIngress.fw_l2_table broadcast")
+                
+                # Process hosts and their IPs
+                host_entries = {}  # Track added entries to avoid duplicates
+                
+                for host in self.net_api.hosts():
+                    host_ip = self.get_host_ip(host).split('/')[0]
+                    host_mac = self.get_host_mac(host)
+                    # Find the switch connected to the host and the port
+                    connected_sw = None
+                    host_port = None
+                    for sw in self.net_api.switches():
+                        for port, nodes in self.net_api.node_ports()[sw].items():
+                            if host in nodes:
+                                connected_sw = sw
+                                host_port = port
+                                break
+                        if connected_sw:
+                            break
+                    
+                    is_remote = connected_sw != switch
+                    
+                    if not is_remote:
+                        # Direct host connection - add exact match rule
+                        port = host_port  # Use the port we found earlier instead of node_to_node_port
+                        commands.append(
+                            f"table_add MyIngress.get_fw_port_idx_table get_fw_port_idx_action {host_ip} => {port} {port}"
+                        )
+                        # Add L2 forwarding entry
+                        commands.append(
+                            f"table_add MyIngress.fw_l2_table fw_l2_action {host_mac} => {port}"
+                        )
+                    else:
+                        # Remote host - add route through spine/leaf
+                        if is_spine:
+                            # Spine switches: direct route to leaf
+                            leaf_sw = connected_sw
+                            for port, nodes in self.net_api.node_ports()[switch].items():
+                                if leaf_sw in nodes:
+                                    subnet = '.'.join(host_ip.split('.')[:3]) + ".0/24"
+                                    if subnet not in host_entries:
+                                        commands.append(
+                                            f"table_add MyIngress.get_fw_port_idx_table get_fw_port_idx_action {subnet} => {port} {port}"
+                                        )
+                                        host_entries[subnet] = port
+                                    break
+                        else:
+                            # Leaf switches: route to spine with deflection capability
+                            for spine in [sw for sw in self.net_api.switches() if 'spine' in sw.lower()]:
+                                for port, nodes in self.net_api.node_ports()[switch].items():
+                                    if spine in nodes:
+                                        subnet = '.'.join(host_ip.split('.')[:3]) + ".0/24"
+                                        if subnet not in host_entries:
+                                            commands.append(
+                                                f"table_add MyIngress.get_fw_port_idx_table get_fw_port_idx_action {subnet} => {port} {port}"
+                                            )
+                                            host_entries[subnet] = port
+                                        break
+                
+                # Configure try_next_port table entries for leaf switches
+                if not is_spine:
+                    # The entries are already const in the P4 program
+                    pass
+        
+        # TODO - we need to refactor the topology - control plane interaction
+        elif isinstance(self.topology, DumbbellTopology):
+            for switch in self.net_api.switches():
+                commands = []
+                
+                # Default actions
+                commands.append("table_set_default MyIngress.get_fw_port_idx_table drop")
+                commands.append("table_set_default MyIngress.fw_l2_table broadcast")
+                
+                # Track added entries
+                host_entries = {}
+                
+                # Get the other switch in dumbbell
+                other_switch = None
+                for sw in self.net_api.switches():
+                    if sw != switch: 
+                        other_switch = sw
+                        break
+                
+                # Find inter-switch port
+                interswitch_port = None
+                for port, nodes in self.net_api.node_ports()[switch].items():
+                    if other_switch in nodes:
+                        interswitch_port = port
+                        break
+                
+                # Process hosts
+                for host in self.net_api.hosts():
+                    host_ip = self.get_host_ip(host).split('/')[0]
+                    host_mac = self.get_host_mac(host)
+                    
+                    # Find the switch connected to the host
+                    connected_sw = None
+                    host_port = None
+                    for sw in self.net_api.switches():
+                        for port, nodes in self.net_api.node_ports()[sw].items():
+                            if host in nodes:
+                                connected_sw = sw
+                                host_port = port
+                                break
+                        if connected_sw:
+                            break
+                    
+                    is_remote = connected_sw != switch
+                    
+                    if not is_remote:
+                        # Directly connected host
+                        port = host_port  # Use the port we found earlier instead of node_to_node_port
+                        commands.append(
+                            f"table_add MyIngress.get_fw_port_idx_table get_fw_port_idx_action {host_ip} => {port} {port}"
+                        )
+                        commands.append(
+                            f"table_add MyIngress.fw_l2_table fw_l2_action {host_mac} => {port}"
+                        )
+                    else:
+                        # Remote host - route through other switch
+                        subnet = '.'.join(host_ip.split('.')[:3]) + ".0/24"
+                        if subnet not in host_entries:
+                            commands.append(
+                                f"table_add MyIngress.get_fw_port_idx_table get_fw_port_idx_action {subnet} => {interswitch_port} {interswitch_port}"
+                            )
+                            host_entries[subnet] = interswitch_port
+                
+                # Save commands for this switch (fix indentation - move inside the switch loop)
+                self.save_commands(switch[1:], commands)
+
+class TestControlPlane(BaseControlPlane):
+    """
+    Works only for dumbbell topology
+    For testing purposes
+    updates:
+    - 
+    """
+    def __init__(self, topology, deflection_switch='s1'):
+        super().__init__(topology)
+        self.deflection_switch = deflection_switch
+
+    def generate_control_plane(self):
+        if not isinstance(self.topology, DumbbellTopology):
+            raise ValueError("TestControlPlane can only be used with DumbbellTopology")
+
         for switch in self.net_api.switches():
             commands = []
-            commands.append("table_set_default MyIngress.ipv4_lpm drop")
-            # Add specific commands for simple deflection mechanism
-            # Example:
-            # commands.append("table_add MyIngress.deflect set_deflect_action ...")
+            if switch == self.deflection_switch:
+                # Use deflection routing on deflection_switch
+                commands.append("table_set_default MyIngress.get_fw_port_idx_table drop")
+                commands.append("table_set_default MyIngress.fw_l2_table broadcast")
+            else:
+                # Use simple L3 forwarding on other switch
+                commands.append("table_set_default MyIngress.ipv4_lpm drop")
+
+            # Get the other switch and inter-switch port
+            other_switch = [sw for sw in self.net_api.switches() if sw != switch][0]
+            interswitch_port = None
+            for port, nodes in self.net_api.node_ports()[switch].items():
+                if other_switch in nodes:
+                    interswitch_port = port
+                    break
+
+            # Process all hosts
+            for host in self.net_api.hosts():
+                host_ip = self.get_host_ip(host).split('/')[0]
+                host_mac = self.get_host_mac(host)
+                is_local = False
+                local_port = None
+
+                # Find if host is local to this switch
+                for port, nodes in self.net_api.node_ports()[switch].items():
+                    if host in nodes:
+                        is_local = True
+                        local_port = port
+                        break
+
+                if is_local:
+                    if switch == self.deflection_switch:
+                        # Local host on deflection switch - use deflection tables
+                        commands.append(
+                            f"table_add MyIngress.get_fw_port_idx_table get_fw_port_idx_action {host_ip}/32 => {local_port} {local_port}"
+                        )
+                        commands.append(
+                            f"table_add MyIngress.fw_l2_table fw_l2_action {host_mac} => {local_port}"
+                        )
+                    else:
+                        # Local host on L3 switch - use L3 forwarding
+                        commands.append(
+                            f"table_add MyIngress.ipv4_lpm ipv4_forward {host_ip}/32 => {host_mac} {local_port}"
+                        )
+                else:
+                    # Remote hosts
+                    subnet = '.'.join(host_ip.split('.')[:3]) + ".0/24"
+                    if switch == self.deflection_switch:
+                        # Remote on deflection switch - use deflection with interswitch port
+                        commands.append(
+                            f"table_add MyIngress.get_fw_port_idx_table get_fw_port_idx_action {subnet} => {interswitch_port} {interswitch_port}"
+                        )
+                    else:
+                        # Remote on L3 switch - use simple forwarding through interswitch port
+                        commands.append(
+                            f"table_add MyIngress.ipv4_lpm ipv4_forward {subnet} => 00:00:00:00:00:00 {interswitch_port}"
+                        )
+
             self.save_commands(switch[1:], commands)

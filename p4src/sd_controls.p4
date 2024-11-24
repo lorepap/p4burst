@@ -70,14 +70,17 @@ control Forward(inout header_t hdr,
 
 // worker packets
 
-control BeeRecirculate(inout header_t hdr, 
-                        inout ingress_intrinsic_metadata_for_tm_t ig_intr_tm_md, 
-                        in ingress_intrinsic_metadata_t ig_intr_md) {
+control BeeRecirculate(inout headers_t hdr,
+    inout standard_metadata_t standard_metadata) {
 
     action bee_recirculate_action() {
-        ig_intr_tm_md.ucast_egress_port[8:7] = ig_intr_md.ingress_port[8:7];
-        ig_intr_tm_md.ucast_egress_port[6:0] = 68;
-    }
+    // Extract bits [8:7] from ingress_port
+    bit<9> ingress_port = standard_metadata.ingress_port;
+    bit<2> ingress_port_bits_8_7 = (ingress_port >> 7) & 0b11;
+
+    // Combine bits [8:7] with 68 to form egress_spec
+    standard_metadata.egress_spec = (ingress_port_bits_8_7 << 7) | 68;
+}
 
     table bee_recirculate_table {
         actions = {
