@@ -66,8 +66,8 @@ class ECMPControlPlane(BaseControlPlane):
                     for host in self.net_api.hosts():
                         if self.is_host_connected_to_leaf(host, leaf_switch):
                             host_ip = f'10.0.{leaf}.{host[1:]}/32'
-                            commands.append(f"table_add ipv4_lpm set_nhop {host_ip} => {leaf_mac} {port}")
-
+                            commands.append(f"table_add ipv4_lpm ipv4_forward {host_ip} => {leaf_mac} {port}")
+    
     def _generate_leaf_commands(self, switch, commands):
         commands.append("table_set_default ipv4_lpm drop")
         commands.append("table_set_default ecmp_group drop")
