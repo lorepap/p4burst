@@ -3,6 +3,8 @@ from p4utils.mininetlib.network_API import NetworkAPI
 import os
 
 P4_PATH = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'p4src')
+QUEUE_RATE = 100 # TODO: parametrize
+QUEUE_SIZE = 10 # TODO: parametrize
 
 
 class BaseTopology(ABC):
@@ -57,11 +59,11 @@ class LeafSpineTopology(BaseTopology):
         self.create_switch_commands(num_leaf + num_spine)
 
     def generate_topology(self):
-        hosts_per_leaf = self.num_hosts // self.num_leaf
+        #hosts_per_leaf = self.num_hosts // self.num_leaf
 
         # Generate switches
         for i in range(1, self.num_leaf + self.num_spine + 1):
-            self.net.addP4Switch(f's{i}', cli_input=os.path.join(self.path, f's{i}-commands.txt'))
+            self.net.addP4Switch(f's{i}', cli_input=os.path.join(self.path, f's{i}-commands.txt'), switch_args=f"--priority-queues --queue-rate {QUEUE_RATE}")
         
         # self.net.setP4SourceAll(os.path.join(P4_PATH, self.p4_program))
         
@@ -99,8 +101,8 @@ class DumbbellTopology(BaseTopology):
 
     def generate_topology(self):
         # Generate switches
-        self.net.addP4Switch('s1', cli_input=os.path.join(self.path, 's1-commands.txt'))
-        self.net.addP4Switch('s2', cli_input=os.path.join(self.path, 's2-commands.txt'))
+        self.net.addP4Switch('s1', cli_input=os.path.join(self.path, 's1-commands.txt'), switch_args=f"--priority-queues --queue-rate {QUEUE_RATE}", queue_size=QUEUE_SIZE)
+        self.net.addP4Switch('s2', cli_input=os.path.join(self.path, 's2-commands.txt'), switch_args=f"--priority-queues --queue-rate {QUEUE_RATE}", queue_size=QUEUE_SIZE)
         
         # Set different p4 sources for the  switches
         self.net.setP4Source('s1', os.path.join(P4_PATH, self.p4_program))
