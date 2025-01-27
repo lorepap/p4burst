@@ -81,31 +81,35 @@ class ExperimentRunner:
         servers = self.select_servers(n=self.args.incast_degree)
         
         print(f"Selected servers: {[server.name for server in servers]}")
+        os.makedirs("log/bursty_servers", exist_ok=True)
 
         # for server in servers:
         for server in self.topology.net.net.hosts:
             # flow_data = self.load_bursty_data(server.name, 'web_bursty', 1.0, 0.11) # TODO: use the config file for params
             if server.IP() != client.IP():
                 print(f"Starting server on {server.name} ({server.IP()})...")
-                server.cmd(f'python3 -m app --mode server --host_ip {server.IP()} --type bursty --reply_size {self.args.reply_size} --exp_id {self.exp_id} &')
+                server.cmd(f'python3 -m app --mode server --host_ip {server.IP()} --type bursty --reply_size {self.args.reply_size} --exp_id {self.exp_id} > log/bursty_servers/{server.name}.log 2>&1 &')
                 server_ips.append(server.IP())
         
         time.sleep(2)  # Give the servers some time to start up
 
+        os.makedirs("log/bursty_clients", exist_ok=True)
         print(f"Starting client on {client.name} ({client.IP()})...")
-        client.cmd(f'python3 -m app --mode client --type bursty --server_ips {" ".join(server_ips)} --exp_id {self.exp_id}&')
+        client.cmd(f'python3 -m app --mode client --type bursty --server_ips {" ".join(server_ips)} --exp_id {self.exp_id} --incast_scale {self.args.incast_degree} > log/bursty_clients{client.name}.log 2>&1 &')
 
     def run_background_app(self):
         servers = self.topology.net.net.hosts
         print(f"Servers: {[server.name for server in servers]}")
         
+        os.makedirs("log/background_servers", exist_ok=True)
         # Starting servers
         for server in servers:
             print(f"Starting server on {server.name} ({server.IP()})...")
-            server.cmd(f'python3 -m app --mode server --type background --host_ip {server.IP()} --exp_id {self.exp_id} &')
+            server.cmd(f'python3 -m app --mode server --type background --host_ip {server.IP()} --exp_id {self.exp_id} > log/background_servers/{server.name}.log 2>&1 &')
         
         time.sleep(1)
         
+        os.makedirs("log/background_clients", exist_ok=True)
         # Starting clients
         for server in  servers:
             flow_data = self.load_background_flow_data(server.name, 'cache', 1.0, 11.85) # TODO: use the config file for params
@@ -126,7 +130,7 @@ class ExperimentRunner:
                 --flow_sizes {" ".join(map(str, flow_sizes))} \
                 --iat {" ".join(map(str, inter_arrival_times))} \
                 --type background \
-                --exp_id {self.exp_id} &') # I'm not convinced how server_ips are passed to the client
+                --exp_id {self.exp_id} > log/background_clients/{server.name}.log 2>&1 &') # I'm not convinced how server_ips are passed to the client
 
     def run_simple_app(self):
         """
@@ -135,18 +139,19 @@ class ExperimentRunner:
         # Get hosts
         h1 = self.topology.net.net.get('h1')
         h3 = self.topology.net.net.get('h3')
-    
+
         # Set congestion control
         h1.cmd('sysctl -w net.ipv4.tcp_congestion_control=cubic')
     
         # h1.cmd('ifconfig h1-eth0 txqueuelen 1000')
-    
+        os.makedirs("log/simple_servers", exist_ok=True)
         # Start server on h3
         print(f"Starting server on h3 ({h3.IP()})...")
-        h3.cmd(f'python3 -m app --mode server --host_ip {h3.IP()} --type single &')
+        h3.cmd(f'python3 -m app --mode server --host_ip {h3.IP()} --type single > log/simple_servers/h3.log 2>&1 &')
         time.sleep(2)
+        os.makedirs("log/simple_clients", exist_ok=True)
         print(f"Starting client on h1 ({h1.IP()})...")
-        h1.cmd(f'python3 -m app --mode client --type single --server_ips {h3.IP()} &')
+        h1.cmd(f'python3 -m app --mode client --type single --server_ips {h3.IP()} > log/simple_clients/h1.log 2>&1 &')
 
     def run_iperf_app(self):
         # Two clients send iperf flows to two servers
@@ -163,18 +168,20 @@ class ExperimentRunner:
                     cmd = f'tcpdump -i {intf} -w {pcap_dir}/{intf}.pcap &'
                     host.cmd(cmd)
 
+        os.makedirs("log/iperf_servers", exist_ok=True)
         # Start servers
         print(f"Starting server on h3 ({h3.IP()})...")
-        h3.cmd('iperf3 -s &')
+        h3.cmd('iperf3 -s > log/iperf_servers/h3.log 2>&1 &')
         print(f"Starting server on h4 ({h4.IP()})...")
-        h4.cmd('iperf3 -s -p 5202 &')
+        h4.cmd('iperf3 -s -p 5202 > log/iperf_servers/h4.log 2>&1 &')
         time.sleep(2)
 
+        os.makedirs("log/iperf_clients", exist_ok=True)
         # Start clients
         print(f"Starting client on h1 ({h1.IP()})...")
-        h1.cmd(f'iperf3 -c {h3.IP()} -t {self.args.duration} -p 5201 &')
+        h1.cmd(f'iperf3 -c {h3.IP()} -t {self.args.duration} -p 5201 > log/iperf_clients/h1.log 2>&1 &')
         print(f"Starting client on h2 ({h2.IP()})...")
-        h2.cmd(f'iperf3 -c {h3.IP()} -t {self.args.duration} -p 5202 &')
+        h2.cmd(f'iperf3 -c {h3.IP()} -t {self.args.duration} -p 5202 > log/iperf_clients/h2.log 2>&1 &')
   
     def select_servers(self, n):
         return random.sample(self.topology.net.net.hosts, n)
