@@ -139,77 +139,98 @@ class L3ForwardingControlPlane(BaseControlPlane):
             self.save_commands(switch[1:], commands)
 
 class SimpleDeflectionControlPlane(BaseControlPlane):
+
+    def generate_leaf_spine_control_plane(self):
+        host_connections = self.__get_host_connections()
+        port_mappings = self.__get_port_mappings()
+
+        switch_commands = dict()
+        for switch in self.net_api.switches():
+            switch_commands[switch] = set()
+
+        leaf_switches = self.__get_leaf_switches()
+        spine_switches = self.__get_spine_switches()
+
+        # Process each host and add forwarding rules
+        for host in self.net_api.hosts():
+
+            host_ip = self.get_host_ip(host).split('/')[0]
+            connected_sw, port = host_connections[host]
+            subnet = '.'.join(host_ip.split('.')[:3]) + ".0/24"
+            switch_mac = "00:00:00:00:00:00" # TODO: uncorrect to use this mac, however p4 program does not use it
+            host_mac = self.get_host_mac(host)
+
+            # Add direct connection rule to leaf switch
+            logical_port = port_mappings[connected_sw][port]
+            switch_commands[connected_sw].add(
+                f"table_add SimpleDeflectionIngress.forward.get_fw_port_idx_table get_fw_port_idx_action {host_ip}/32 => {port} {logical_port} {host_mac}"
+            )
+
+                # Add subnet rules to spine switches
+            for spine in spine_switches:
+                port = self.__get_connecting_port(spine, connected_sw)
+                switch_commands[spine].add(
+                    f"table_add MyIngress.ipv4_lpm ipv4_forward {subnet} => {switch_mac} {port}"
+                )
+
+            # Add routing to spine for other leaf switches
+            for leaf in (l for l in leaf_switches if l != connected_sw):
+                ports = self.__get_spine_ports(leaf)
+                selected_port_idx = hash(subnet) % len(ports) # same subnet always goes to the same spine, but different subnet can go to different spine
+                port = ports[selected_port_idx]
+                logical_port = port_mappings[leaf][port]
+                switch_commands[leaf].add(
+                    f"table_add SimpleDeflectionIngress.forward.get_fw_port_idx_table get_fw_port_idx_action {subnet} => {port} {logical_port} {switch_mac}"
+                )
+
+        spine_defaults = [
+            "table_set_default MyIngress.ipv4_lpm drop",
+        ]
+
+        leaf_defaults = [
+            #"table_set_default SimpleDeflectionIngress.forward.get_fw_port_idx_table drop",
+            "table_set_default SimpleDeflectionIngress.forward.fw_l2_table broadcast",
+            #"table_set_default SimpleDeflectionIngress.set_deflect_eggress_port_table drop"
+        ]
+
+        # Save all commands
+        for leaf in leaf_switches:
+
+            register_commands = [
+                f"register_write SimpleDeflectionIngress.neighbor_switch_indicator {port_mappings[leaf][port]} 1" 
+                for port in self.__get_non_spine_ports(leaf)
+            ]
+                
+            deflection_table_commands = [
+                f"table_add SimpleDeflectionIngress.set_deflect_eggress_port_table set_deflect_eggress_port_action {logical_port} => {physical_port}" 
+                for physical_port, logical_port in port_mappings[leaf].items()
+            ]
+                
+            port_index_commands = [
+                f"table_add SimpleDeflectionEgress.get_eg_port_idx_in_reg_table get_eg_port_idx_in_reg_action {physical_port} => {logical_port}"
+                for physical_port, logical_port in port_mappings[leaf].items()
+            ]
+
+            # Combine all commands
+            commands = (
+                leaf_defaults + 
+                list(switch_commands[leaf]) +
+                register_commands +
+                deflection_table_commands +
+                port_index_commands
+            )
+            
+            self.save_commands(leaf[1:], commands)
+            
+        for spine in spine_switches:
+            commands = spine_defaults + list(switch_commands[spine])
+            self.save_commands(spine[1:], commands)
+    
     def generate_control_plane(self):
+
         if isinstance(self.topology, LeafSpineTopology):
-            for switch in self.net_api.switches():
-                commands = []
-                is_spine = 'spine' in switch.lower()
+            self.generate_leaf_spine_control_plane()
                 
-                # Default actions
-                commands.append("table_set_default MyIngress.get_fw_port_idx_table drop")
-                commands.append("table_set_default MyIngress.fw_l2_table broadcast")
-                
-                # Process hosts and their IPs
-                host_entries = {}  # Track added entries to avoid duplicates
-                
-                for host in self.net_api.hosts():
-                    host_ip = self.get_host_ip(host).split('/')[0]
-                    host_mac = self.get_host_mac(host)
-                    # Find the switch connected to the host and the port
-                    connected_sw = None
-                    host_port = None
-                    for sw in self.net_api.switches():
-                        for port, nodes in self.net_api.node_ports()[sw].items():
-                            if host in nodes:
-                                connected_sw = sw
-                                host_port = port
-                                break
-                        if connected_sw:
-                            break
-                    
-                    is_remote = connected_sw != switch
-                    
-                    if not is_remote:
-                        # Direct host connection - add exact match rule
-                        port = host_port  # Use the port we found earlier instead of node_to_node_port
-                        commands.append(
-                            f"table_add MyIngress.get_fw_port_idx_table get_fw_port_idx_action {host_ip} => {port} {port}"
-                        )
-                        # Add L2 forwarding entry
-                        commands.append(
-                            f"table_add MyIngress.fw_l2_table fw_l2_action {host_mac} => {port}"
-                        )
-                    else:
-                        # Remote host - add route through spine/leaf
-                        if is_spine:
-                            # Spine switches: direct route to leaf
-                            leaf_sw = connected_sw
-                            for port, nodes in self.net_api.node_ports()[switch].items():
-                                if leaf_sw in nodes:
-                                    subnet = '.'.join(host_ip.split('.')[:3]) + ".0/24"
-                                    if subnet not in host_entries:
-                                        commands.append(
-                                            f"table_add MyIngress.get_fw_port_idx_table get_fw_port_idx_action {subnet} => {port} {port}"
-                                        )
-                                        host_entries[subnet] = port
-                                    break
-                        else:
-                            # Leaf switches: route to spine with deflection capability
-                            for spine in [sw for sw in self.net_api.switches() if 'spine' in sw.lower()]:
-                                for port, nodes in self.net_api.node_ports()[switch].items():
-                                    if spine in nodes:
-                                        subnet = '.'.join(host_ip.split('.')[:3]) + ".0/24"
-                                        if subnet not in host_entries:
-                                            commands.append(
-                                                f"table_add MyIngress.get_fw_port_idx_table get_fw_port_idx_action {subnet} => {port} {port}"
-                                            )
-                                            host_entries[subnet] = port
-                                        break
-                
-                # Configure try_next_port table entries for leaf switches
-                if not is_spine:
-                    # The entries are already const in the P4 program
-                    pass
         
         # TODO - we need to refactor the topology - control plane interaction
         elif isinstance(self.topology, DumbbellTopology):
@@ -276,6 +297,56 @@ class SimpleDeflectionControlPlane(BaseControlPlane):
                 
                 # Save commands for this switch (fix indentation - move inside the switch loop)
                 self.save_commands(switch[1:], commands)
+
+    def __get_host_connections(self):
+        return {
+            host: (switch, port)
+            for switch in self.net_api.switches()
+            for port, nodes in self.net_api.node_ports()[switch].items()
+            for host in self.net_api.hosts()
+            if host in nodes
+        }
+
+    def __get_port_mappings(self):
+        return {
+            switch: self.__map_physical_to_logical_ports(switch)
+            for switch in self.net_api.switches()
+        }
+    
+    def __map_physical_to_logical_ports(self, switch):
+        physical_ports = sorted([port for port in self.net_api.node_ports()[switch].keys()])
+        
+        if len(physical_ports) > 8:
+            raise ValueError(f"Switch {switch} has {len(physical_ports)} ports. Maximum allowed is 8.")
+            
+        return {port: idx for idx, port in enumerate(physical_ports)}
+    
+    def __get_spine_switches(self):
+        return [switch for switch in self.net_api.switches()
+                if not any(host in nodes 
+                          for _, nodes in self.net_api.node_ports()[switch].items()
+                          for host in self.net_api.hosts())]
+    
+    def __get_non_spine_ports(self, switch):
+        all_ports = set(self.net_api.node_ports()[switch].keys())
+        spine_ports = set(self.__get_spine_ports(switch))
+        return list(all_ports - spine_ports)
+
+    def __get_leaf_switches(self):
+        spine_switches = self.__get_spine_switches()
+        return [switch for switch in self.net_api.switches() 
+                if switch not in spine_switches]
+    
+    def __get_connecting_port(self, source, target):
+        return next((port for port, nodes in self.net_api.node_ports()[source].items()
+                    if target in nodes), None)
+    
+    def __get_spine_ports (self, leaf):
+        spine_switches = self.__get_spine_switches()
+        return list(filter(None, map(
+            lambda spine: self.__get_connecting_port(leaf, spine),
+            spine_switches
+        )))
 
 class TestControlPlane(BaseControlPlane):
     """

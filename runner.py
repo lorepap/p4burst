@@ -32,7 +32,7 @@ class ExperimentRunner:
         elif control_plane == 'l3':
             return 'l3_forwarding.p4'
         elif control_plane == 'simple_deflection':
-            return 'sd.p4'
+            return 'Simple_Deflection/sd.p4'
         else:
             raise ValueError(f"Unsupported control plane: {control_plane}")
 
@@ -57,7 +57,7 @@ class ExperimentRunner:
             self.control_plane = L3ForwardingControlPlane(self.topology)
         elif self.args.control_plane == 'simple_deflection':
             # self.control_plane = SimpleDeflectionControlPlane(self.topology)
-            self.control_plane = TestControlPlane(self.topology) # TODO replace with simpledeflection
+            self.control_plane = SimpleDeflectionControlPlane(self.topology)
         else:
             raise ValueError(f"Unsupported control plane: {self.args.control_plane}")
 
@@ -95,7 +95,7 @@ class ExperimentRunner:
 
         os.makedirs("log/bursty_clients", exist_ok=True)
         print(f"Starting client on {client.name} ({client.IP()})...")
-        client.cmd(f'python3 -m app --mode client --type bursty --server_ips {" ".join(server_ips)} --exp_id {self.exp_id} --incast_scale {self.args.incast_degree} > log/bursty_clients{client.name}.log 2>&1 &')
+        client.cmd(f'python3 -m app --mode client --type bursty --server_ips {" ".join(server_ips)} --exp_id {self.exp_id} --incast_scale {self.args.incast_degree} > log/bursty_clients/{client.name}.log 2>&1 &')
 
     def run_background_app(self):
         servers = self.topology.net.net.hosts
