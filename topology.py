@@ -3,8 +3,8 @@ from p4utils.mininetlib.network_API import NetworkAPI
 import os
 
 P4_PATH = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'p4src')
-QUEUE_RATE = 100 # TODO: parametrize
-QUEUE_SIZE = 10 # TODO: parametrize
+QUEUE_RATE = 1 # TODO: parametrize
+QUEUE_SIZE = 1 # TODO: parametrize
 
 
 class BaseTopology(ABC):
@@ -64,6 +64,8 @@ class LeafSpineTopology(BaseTopology):
         # Generate switches
         for i in range(1, self.num_leaf + self.num_spine + 1):
             self.net.addP4Switch(f's{i}', cli_input=os.path.join(self.path, f's{i}-commands.txt'), switch_args=f"--priority-queues --queue-rate {QUEUE_RATE}")
+            #self.net.addP4Switch(f's{i}', cli_input=os.path.join(self.path, f's{i}-commands.txt'), switch_args=f"--priority-queues")
+        
         
         # self.net.setP4SourceAll(os.path.join(P4_PATH, self.p4_program))
         
