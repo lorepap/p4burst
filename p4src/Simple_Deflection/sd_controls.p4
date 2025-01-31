@@ -12,22 +12,23 @@ control Forward(inout header_t hdr,
         mark_to_drop(standard_metadata);
     }
 
-    action get_fw_port_idx_action(bit<9> port, bit<16> fw_port_idx) {
+    action get_fw_port_idx_action(bit<9> port, bit<16> fw_port_idx, bit<48> dst_mac) {
         standard_metadata.egress_spec = port;
         meta.fw_port_idx = fw_port_idx;
-        hdr.ipv4.ttl = hdr.ipv4.ttl - 1;
+        hdr.ethernet.srcAddr = hdr.ethernet.dstAddr;
+        hdr.ethernet.dstAddr = dst_mac;
     }
 
     table get_fw_port_idx_table {
         key = {
-            hdr.ipv4.dstAddr : exact;
+            hdr.ipv4.dstAddr : lpm;
         }
         actions = {
             get_fw_port_idx_action;
             drop;
         }
-        const default_action = drop;
         size = TABLE_SIZE;
+        default_action = drop();
     }
 
     action fw_l2_action(bit<9> port) {
@@ -55,6 +56,10 @@ control Forward(inout header_t hdr,
         if (!hdr.ipv4.isValid()) {
             fw_l2_table.apply();
         } else {
+            hdr.ipv4.ttl = hdr.ipv4.ttl - 1;
+            if (hdr.ipv4.ttl == 0) {
+                drop();
+            }
             get_fw_port_idx_table.apply();
         }
     }
