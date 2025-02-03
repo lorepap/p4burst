@@ -22,7 +22,8 @@ class BaseClient(ABC):
         self.server_ip = server_ip
         self.congestion_control = congestion_control
         self.exp_id = exp_id
-        self.flowtracker = FlowMetricsManager(self.exp_id)
+        if self.exp_id:
+            self.flowtracker = FlowMetricsManager(self.exp_id)
 
     def send_request(self, server_ip=None, packet_size=1024):
         """
@@ -39,6 +40,7 @@ class BaseClient(ABC):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             try:
                 # Connect to the server
+                print("Connecting to server...")
                 s.connect((server_ip, 12345))
                 logging.info(f"[{self.ip}]: Sending single packet to {server_ip}:12345")
 
@@ -57,6 +59,7 @@ class BaseClient(ABC):
                 traceback.print_exc()
 
     def start(self):
+        print("Starting client...")
         self.send_request(self.server_ip, 1024)
 
     # TODO: move this to a base host class (for both server and client)

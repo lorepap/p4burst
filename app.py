@@ -29,10 +29,11 @@ class App(ABC):
 
     @staticmethod
     def setup_logging(log_file='tmp/app.log'):
+        print('setup logging...')
         os.makedirs('tmp', exist_ok=True)
         logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s',
                         handlers=[
-                logging.FileHandler(log_file, mode='w'),
+                logging.FileHandler(log_file, mode='a'),
                 logging.StreamHandler()  # This will also print logs to console
             ])
 
@@ -113,11 +114,11 @@ class SimplePacketApp(App):
         # packet_size = args.packet_size
         super().__init__(mode)
         if mode == 'server':
-            self.server = BaseServer(port=12345, ip=args.host_ip)  # Use a basic server listener
+            self.server = BaseServer(port=12345, ip=args.host_ip, exp_id=args.exp_id)  # Use a basic server listener
         elif mode == 'client':
             if server_ip is None:
                 raise ValueError("server_ip must be provided for client mode")
-            self.client = BaseClient(server_ip[0])
+            self.client = BaseClient(server_ip=server_ip[0])
         else:
             raise ValueError("Invalid mode. Choose 'server' or 'client'.")
 
@@ -161,7 +162,7 @@ def main():
     parser.add_argument('--iat', required=False, nargs='+', type=float, help="List of inter-arrival times (background app)")
     parser.add_argument('--incast_scale', required=False, type=int, default=5, help="Number of servers to send requests to in a single query (bursty app)")
     parser.add_argument('--qps', required=False, type=int, default=4000, help="Queries per second (bursty app)")
-    parser.add_argument('--exp_id', required=True, type=str, help="Experiment ID")
+    parser.add_argument('--exp_id', required=False, type=str, help="Experiment ID")
     args = parser.parse_args()
 
     # TODO input validation

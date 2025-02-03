@@ -22,7 +22,8 @@ class ExperimentRunner:
         # Path
         self.db_path = 'data/distributions'
         self.exp_id = datetime.now().strftime("%Y%m%d_%H%M%S")
-        flowtracker = FlowMetricsManager(self.exp_id) # create a new database for tracking simulation metrics
+        if not self.args.disable_metrics:
+            flowtracker = FlowMetricsManager(self.exp_id) # create a new database for tracking simulation metrics
         self.p4_program=self.set_p4_program(args.control_plane)
 
     # TODO refactor
@@ -140,6 +141,9 @@ class ExperimentRunner:
         h1.cmd('sysctl -w net.ipv4.tcp_congestion_control=cubic')
     
         # h1.cmd('ifconfig h1-eth0 txqueuelen 1000')
+
+        if self.exp_id:
+            os.makedirs(f'/home/ubuntu/p4burst/tmp/{self.exp_id}', exist_ok=True)
     
         # Start server on h3
         print(f"Starting server on h3 ({h3.IP()})...")
@@ -172,9 +176,9 @@ class ExperimentRunner:
 
         # Start clients
         print(f"Starting client on h1 ({h1.IP()})...")
-        h1.cmd(f'iperf3 -c {h3.IP()} -t {self.args.duration} -p 5201 &')
+        h1.cmd(f'iperf3 -c {h3.IP()} -t {self.args.duration} -p 5201 --logfile /home/ubuntu/p4burst/tmp/{self.exp_id}/iperf_app_client_h1.log &')
         print(f"Starting client on h2 ({h2.IP()})...")
-        h2.cmd(f'iperf3 -c {h3.IP()} -t {self.args.duration} -p 5202 &')
+        h2.cmd(f'iperf3 -c {h3.IP()} -t {self.args.duration} -p 5202 --logfile /home/ubuntu/p4burst/tmp/{self.exp_id}/iperf_app_client_h2.log &')
   
     def select_servers(self, n):
         return random.sample(self.topology.net.net.hosts, n)
@@ -303,6 +307,7 @@ def get_args():
     parser.add_argument('--host_pcap', action='store_true', help='Enable pcap on hosts')
     parser.add_argument('--switch_pcap', action='store_true', help='Enable pcap on switches')
     parser.add_argument('--cli', action='store_true', help='Enable Mininet CLI')
+    parser.add_argument('--disable_metrics', action='store_true', help='Disable metrics collection')
     return parser.parse_args()
 
 def main():

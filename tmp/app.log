@@ -1,0 +1,46 @@
+2025-02-03 17:47:44,933 - [10.0.1.1]: Server listening on port 12345
+2025-02-03 17:51:01,290 - [10.0.1.1]: Server listening on port 12345
+2025-02-03 17:54:49,614 - [10.0.1.1]: Server listening on port 12345
+2025-02-03 17:55:19,616 - [10.0.1.1]: Error sending single packet to 10.0.1.1: [Errno 111] Connection refused
+2025-02-03 17:56:01,008 - [10.0.1.1]: Error sending single packet to 10.0.1.1: [Errno 111] Connection refused
+2025-02-03 17:57:37,561 - [10.0.1.1]: Error sending single packet to 10.0.1.1: [Errno 111] Connection refused
+2025-02-03 17:57:48,084 - [10.0.1.1]: Server listening on port 12345
+2025-02-03 17:57:53,235 - [10.0.1.1]: Error sending single packet to 10.0.1.1: [Errno 111] Connection refused
+2025-02-03 18:00:34,587 - [10.0.2.3]: Server listening on port 12345
+2025-02-03 18:00:40,399 - [10.0.1.1]: Sending single packet to 10.0.2.3:12345
+2025-02-03 18:00:40,400 - [10.0.2.3]: Received 1024 bytes of data
+2025-02-03 18:00:40,400 - [10.0.2.3]: Closing connection
+2025-02-03 18:00:40,401 - [10.0.1.1]: Sent 1024 bytes to 10.0.2.3:12345
+2025-02-03 18:02:30,629 - [10.0.1.1]: Sending single packet to 10.0.2.3:12345
+2025-02-03 18:02:30,630 - [10.0.2.3]: Received 1024 bytes of data
+2025-02-03 18:02:30,630 - [10.0.2.3]: Closing connection
+2025-02-03 18:02:30,631 - [10.0.1.1]: Sent 1024 bytes to 10.0.2.3:12345
+2025-02-03 18:04:42,914 - [10.0.2.3]: Server listening on port 12345
+2025-02-03 18:04:50,077 - [10.0.1.1]: Sending single packet to 10.0.2.3:12345
+2025-02-03 18:04:50,078 - [10.0.2.3]: Received 1024 bytes of data
+2025-02-03 18:04:50,078 - [10.0.2.3]: Closing connection
+2025-02-03 18:04:50,079 - [10.0.1.1]: Sent 1024 bytes to 10.0.2.3:12345
+2025-02-03 18:06:08,137 - [10.0.2.3]: Server listening on port 12345
+2025-02-03 18:06:16,124 - [10.0.1.1]: Sending single packet to 10.0.2.3:12345
+2025-02-03 18:06:16,125 - [10.0.2.3]: Received 1024 bytes of data
+2025-02-03 18:06:16,125 - [10.0.2.3]: Closing connection
+2025-02-03 18:06:16,126 - [10.0.1.1]: Sent 1024 bytes to 10.0.2.3:12345
+2025-02-03 18:07:54,301 - [10.0.2.3]: Server listening on port 12345
+2025-02-03 18:07:55,532 - [10.0.2.3]: Server shutting down gracefully.
+2025-02-03 18:08:03,444 - [10.0.2.3]: Server shutting down gracefully.
+2025-02-03 18:08:04,392 - [10.0.2.3]: Server shutting down gracefully.
+2025-02-03 18:08:04,555 - [10.0.2.3]: Server shutting down gracefully.
+2025-02-03 18:08:04,721 - [10.0.2.3]: Server shutting down gracefully.
+2025-02-03 18:11:35,195 - [10.0.2.3]: Error sending single packet to 10.0.1.1: [Errno 111] Connection refused
+2025-02-03 18:14:10,648 - [10.0.2.3]: Server listening on port 12345
+2025-02-03 18:14:13,872 - [10.0.1.1]: Sending single packet to 10.0.2.3:12345
+2025-02-03 18:14:13,874 - [10.0.2.3]: Received 1024 bytes of data
+2025-02-03 18:14:13,874 - [10.0.2.3]: Closing connection
+2025-02-03 18:14:13,875 - [10.0.1.1]: Sent 1024 bytes to 10.0.2.3:12345
+2025-02-03 18:14:17,384 - [10.0.2.3]: Server shutting down gracefully.
+2025-02-03 18:14:21,243 - [10.0.2.3]: Server listening on port 12345
+2025-02-03 18:14:24,699 - [10.0.1.1]: Sending single packet to 10.0.2.3:12345
+2025-02-03 18:14:24,700 - [10.0.2.3]: Received 1024 bytes of data
+2025-02-03 18:14:24,700 - [10.0.2.3]: Closing connection
+2025-02-03 18:14:24,701 - [10.0.1.1]: Sent 1024 bytes to 10.0.2.3:12345
+2025-02-03 18:14:26,736 - [10.0.2.3]: Server shutting down gracefully.

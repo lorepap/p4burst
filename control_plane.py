@@ -98,6 +98,10 @@ class ECMPControlPlane(BaseControlPlane):
         return False
 
 class L3ForwardingControlPlane(BaseControlPlane):
+    """
+    L3 forwarding control plane for dumbbell topology (2 switches)
+    @TODO - add support for leaf-spine topology
+    """
     def generate_control_plane(self):
         for switch in self.net_api.switches():
             commands = []

@@ -18,7 +18,9 @@ class BaseServer(ABC):
         if ip:
             self.ip = ip 
         else: raise ValueError("IP address must be specified")
-        self.flowtracker = FlowMetricsManager(self.exp_id)
+
+        if self.exp_id:
+            self.flowtracker = FlowMetricsManager(self.exp_id)
 
     def handle_request(self, conn):
         try:
@@ -38,19 +40,25 @@ class BaseServer(ABC):
 
     def start(self):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             s.bind(('0.0.0.0', self.port))
             s.listen()
             logging.info(f"[{self.ip}]: Server listening on port {self.port}")
-            while True:
-                try:
-                    conn, addr = s.accept()
-                    # logging.info(f"[{self.ip}]: Accepted connection from {addr}")
+            try:
+                while True:
+                    try:
+                        conn, addr = s.accept()
+                    except KeyboardInterrupt:
+                        # Break out of the inner blocking call
+                        raise
                     with conn:
                         print(f"Connected by {addr}")
                         self.handle_request(conn)
-                except Exception as e:
-                    logging.error(f"[{self.ip}]: Error accepting connection: {e}")
-                    logging.error(traceback.format_exc())
+            except KeyboardInterrupt:
+                logging.info(f"[{self.ip}]: Server shutting down gracefully.")
+            except Exception as e:
+                logging.error(f"[{self.ip}]: Error accepting connection: {e}")
+                logging.error(traceback.format_exc())
 
 
 class BurstyServer(BaseServer):
