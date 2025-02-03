@@ -7,6 +7,7 @@ import random
 import traceback
 import sqlite3
 import pandas as pd
+from bee_packets_generator import BeePackets, SimpleDeflectionBeePackets
 import numpy as np
 from datetime import datetime
 
@@ -264,6 +265,11 @@ class ExperimentRunner:
         try:
             self.setup_experiment()
             self.start_network() # will run cli if specified
+            
+            if self.p4_program == 'Simple_Deflection/sd.p4':
+                SimpleDeflectionBeePackets(self.topology).send_bee_packets()
+                time.sleep(5)
+            
             if self.args.host_pcap:
                 self.enable_pcap_hosts()
             if self.args.app:

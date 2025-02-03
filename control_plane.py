@@ -141,15 +141,15 @@ class L3ForwardingControlPlane(BaseControlPlane):
 class SimpleDeflectionControlPlane(BaseControlPlane):
 
     def generate_leaf_spine_control_plane(self):
-        host_connections = self.__get_host_connections()
-        port_mappings = self.__get_port_mappings()
+        host_connections = self.topology.get_host_connections()
+        port_mappings = self.topology.get_port_mappings()
 
         switch_commands = dict()
         for switch in self.net_api.switches():
             switch_commands[switch] = set()
 
-        leaf_switches = self.__get_leaf_switches()
-        spine_switches = self.__get_spine_switches()
+        leaf_switches = self.topology.get_leaf_switches()
+        spine_switches = self.topology.get_spine_switches()
 
         # Process each host and add forwarding rules
         for host in self.net_api.hosts():
@@ -168,14 +168,14 @@ class SimpleDeflectionControlPlane(BaseControlPlane):
 
                 # Add subnet rules to spine switches
             for spine in spine_switches:
-                port = self.__get_connecting_port(spine, connected_sw)
+                port = self.topology.get_connecting_port(spine, connected_sw)
                 switch_commands[spine].add(
                     f"table_add MyIngress.ipv4_lpm ipv4_forward {subnet} => {switch_mac} {port}"
                 )
 
             # Add routing to spine for other leaf switches
             for leaf in (l for l in leaf_switches if l != connected_sw):
-                ports = self.__get_spine_ports(leaf)
+                ports = self.topology.get_spine_ports(leaf)
                 selected_port_idx = hash(subnet) % len(ports) # same subnet always goes to the same spine, but different subnet can go to different spine
                 port = ports[selected_port_idx]
                 logical_port = port_mappings[leaf][port]
@@ -196,9 +196,11 @@ class SimpleDeflectionControlPlane(BaseControlPlane):
         # Save all commands
         for leaf in leaf_switches:
 
+            spine_logical_ports = {port_mappings[leaf][port] for port in self.topology.get_spine_ports(leaf)}
+
             register_commands = [
-                f"register_write SimpleDeflectionIngress.neighbor_switch_indicator {port_mappings[leaf][port]} 1" 
-                for port in self.__get_non_spine_ports(leaf)
+                f"register_write SimpleDeflectionIngress.neighbor_switch_indicator {logical_port} 1" 
+                for logical_port in range(8) if logical_port not in spine_logical_ports
             ]
                 
             deflection_table_commands = [
@@ -297,56 +299,6 @@ class SimpleDeflectionControlPlane(BaseControlPlane):
                 
                 # Save commands for this switch (fix indentation - move inside the switch loop)
                 self.save_commands(switch[1:], commands)
-
-    def __get_host_connections(self):
-        return {
-            host: (switch, port)
-            for switch in self.net_api.switches()
-            for port, nodes in self.net_api.node_ports()[switch].items()
-            for host in self.net_api.hosts()
-            if host in nodes
-        }
-
-    def __get_port_mappings(self):
-        return {
-            switch: self.__map_physical_to_logical_ports(switch)
-            for switch in self.net_api.switches()
-        }
-    
-    def __map_physical_to_logical_ports(self, switch):
-        physical_ports = sorted([port for port in self.net_api.node_ports()[switch].keys()])
-        
-        if len(physical_ports) > 8:
-            raise ValueError(f"Switch {switch} has {len(physical_ports)} ports. Maximum allowed is 8.")
-            
-        return {port: idx for idx, port in enumerate(physical_ports)}
-    
-    def __get_spine_switches(self):
-        return [switch for switch in self.net_api.switches()
-                if not any(host in nodes 
-                          for _, nodes in self.net_api.node_ports()[switch].items()
-                          for host in self.net_api.hosts())]
-    
-    def __get_non_spine_ports(self, switch):
-        all_ports = set(self.net_api.node_ports()[switch].keys())
-        spine_ports = set(self.__get_spine_ports(switch))
-        return list(all_ports - spine_ports)
-
-    def __get_leaf_switches(self):
-        spine_switches = self.__get_spine_switches()
-        return [switch for switch in self.net_api.switches() 
-                if switch not in spine_switches]
-    
-    def __get_connecting_port(self, source, target):
-        return next((port for port, nodes in self.net_api.node_ports()[source].items()
-                    if target in nodes), None)
-    
-    def __get_spine_ports (self, leaf):
-        spine_switches = self.__get_spine_switches()
-        return list(filter(None, map(
-            lambda spine: self.__get_connecting_port(leaf, spine),
-            spine_switches
-        )))
 
 class TestControlPlane(BaseControlPlane):
     """

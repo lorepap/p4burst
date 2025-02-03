@@ -50,6 +50,34 @@ class BaseTopology(ABC):
     def enable_switch_pcap(self):
         self.pcap = True
 
+    
+    def get_host_connections(self):
+        return {
+            host: (switch, port)
+            for switch in self.net.switches()
+            for port, nodes in self.net.node_ports()[switch].items()
+            for host in self.net.hosts()
+            if host in nodes
+        }
+
+    def get_port_mappings(self):
+        return {
+            switch: self._map_physical_to_logical_ports(switch)
+            for switch in self.net.switches()
+        }
+        
+    def _map_physical_to_logical_ports(self, switch):
+        physical_ports = sorted([port for port in self.net.node_ports()[switch].keys()])
+        
+        if len(physical_ports) > 8:
+            raise ValueError(f"Switch {switch} has {len(physical_ports)} ports. Maximum allowed is 8.")
+                
+        return {port: idx for idx, port in enumerate(physical_ports)}
+    
+    def get_connecting_port(self, source, target):
+        return next((port for port, nodes in self.net.node_ports()[source].items()
+                    if target in nodes), None)
+        
 
 class LeafSpineTopology(BaseTopology):
     def __init__(self, num_hosts, num_leaf, num_spine, bw, latency, p4_program='ecmp.p4'):
@@ -63,7 +91,7 @@ class LeafSpineTopology(BaseTopology):
 
         # Generate switches
         for i in range(1, self.num_leaf + self.num_spine + 1):
-            self.net.addP4Switch(f's{i}', cli_input=os.path.join(self.path, f's{i}-commands.txt'), switch_args=f"--priority-queues --queue-rate {QUEUE_RATE}")
+            self.net.addP4Switch(f's{i}', cli_input=os.path.join(self.path, f's{i}-commands.txt'), switch_args=f"--priority-queues --queue-rate {QUEUE_RATE}", queue_size=QUEUE_SIZE)
             #self.net.addP4Switch(f's{i}', cli_input=os.path.join(self.path, f's{i}-commands.txt'), switch_args=f"--priority-queues")
         
         
@@ -92,6 +120,24 @@ class LeafSpineTopology(BaseTopology):
         for leaf in range(1, self.num_leaf + 1):
             for spine in range(self.num_leaf + 1, self.num_leaf + self.num_spine + 1):
                 self.net.addLink(f's{leaf}', f's{spine}', bw=self.bw, delay=f'{self.latency}ms')
+        
+    def get_spine_switches(self):
+        return [switch for switch in self.net.switches()
+                if not any(host in nodes 
+                        for _, nodes in self.net.node_ports()[switch].items()
+                        for host in self.net.hosts())]
+        
+    def get_leaf_switches(self):
+        spine_switches = self.get_spine_switches()
+        return [switch for switch in self.net.switches() 
+                if switch not in spine_switches]
+        
+    def get_spine_ports (self, leaf):
+        spine_switches = self.get_spine_switches()
+        return list(filter(None, map(
+            lambda spine: self.get_connecting_port(leaf, spine),
+                spine_switches
+            )))
 
 
 class DumbbellTopology(BaseTopology):

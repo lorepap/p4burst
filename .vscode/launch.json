@@ -34,6 +34,33 @@
                 // "2",
                 "--cli"
             ]
+        },
+        {
+            "name": "RUNNER_LF",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "runner.py",
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "python": "/usr/bin/python",
+            // run as a root
+            "sudo": true,
+            "args": [
+                "-t",
+                "leafspine",
+                "-n",
+                "2",
+                "-c",
+                "simple_deflection",
+                "-l",
+                "2",
+                "-s",
+                "2",
+                "-n",
+                "4",
+                "--incast_degree",
+                "3"
+            ]
         }
     ]
 }
