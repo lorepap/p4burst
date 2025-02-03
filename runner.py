@@ -169,16 +169,16 @@ class ExperimentRunner:
 
         # Start servers
         print(f"Starting server on h3 ({h3.IP()})...")
-        h3.cmd('iperf3 -s &')
+        h3.cmd(f'iperf3 -s --logfile /home/ubuntu/p4burst/tmp/{self.exp_id}/iperf_app_server_h3.log &')
         print(f"Starting server on h4 ({h4.IP()})...")
-        h4.cmd('iperf3 -s -p 5202 &')
+        h4.cmd(f'iperf3 -s -p 5202 --logfile /home/ubuntu/p4burst/tmp/{self.exp_id}/iperf_app_server_h4.log &')
         time.sleep(2)
 
         # Start clients
-        print(f"Starting client on h1 ({h1.IP()})...")
+        print(f"Running client on h1 ({h1.IP()}) for {self.args.duration}s...")
         h1.cmd(f'iperf3 -c {h3.IP()} -t {self.args.duration} -p 5201 --logfile /home/ubuntu/p4burst/tmp/{self.exp_id}/iperf_app_client_h1.log &')
-        print(f"Starting client on h2 ({h2.IP()})...")
-        h2.cmd(f'iperf3 -c {h3.IP()} -t {self.args.duration} -p 5202 --logfile /home/ubuntu/p4burst/tmp/{self.exp_id}/iperf_app_client_h2.log &')
+        print(f"Starting client on h2 ({h2.IP()}) for {self.args.duration}s...")
+        h2.cmd(f'iperf3 -c {h4.IP()} -t {self.args.duration} -p 5202 --logfile /home/ubuntu/p4burst/tmp/{self.exp_id}/iperf_app_client_h2.log &')
   
     def select_servers(self, n):
         return random.sample(self.topology.net.net.hosts, n)
@@ -266,12 +266,15 @@ class ExperimentRunner:
             if self.args.app:
                 exp_dict[self.args.app]()
             else: # Run experiment with background + incast
-                self.run_background_app()
-                self.run_bursty_app()
+                # run the CLI
+                print("No app specified. Running Mininet CLI...")
+                self.topology.net.start_net_cli()
+                # self.run_background_app() 
+                # self.run_bursty_app()
 
             # Let the experiment run for a specified duration
-            print(f"Experiment running for {self.args.duration+5} seconds...")
-            time.sleep(self.args.duration)
+            print(f"Experiment running for {self.args.duration} seconds...")
+            time.sleep(self.args.duration + 5)
 
         except Exception as e:
             traceback.print_exc()
@@ -296,10 +299,10 @@ def get_args():
     parser.add_argument('--topology', '-t', type=str, required=True, choices=['leafspine', 'dumbbell'], help='Topology type')
     parser.add_argument('--control_plane', '-c', type=str, required=False, choices=['ecmp', 'l3', 'simple_deflection'], help='Control plane protocol', default='ecmp')
     parser.add_argument('--hosts', '-n', type=int, required=True, help='Number of hosts')
-    parser.add_argument('--leaf', '-l', type=int, help='Number of leaf switches (for leaf-spine topology)', default=2)
-    parser.add_argument('--spine', '-s', type=int, help='Number of spine switches (for leaf-spine topology)', default=2)
+    parser.add_argument('--leaf', '-l', type=int, required=True, help='Number of leaf switches (for leaf-spine topology)')
+    parser.add_argument('--spine', '-s', type=int, required=True, help='Number of spine switches (for leaf-spine topology)')
     parser.add_argument('--bw', '-b', type=int, help='Bandwidth in Mbps', default=1000)
-    parser.add_argument('--latency', '-d', type=float, help='Latency in ms', default=0.1)
+    parser.add_argument('--latency', '-d', type=float, help='Latency in ms', default=0)
     parser.add_argument('--reply_size', type=int, default=40000, help='Size of the burst response in bytes')
     parser.add_argument('--incast_degree', type=int, default=5, help='Number of bursty servers')
     parser.add_argument('--duration', type=int, default=10, help='Duration of the experiment in seconds')
