@@ -6,15 +6,10 @@ P4_PATH = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'p4src')
 
 
 class BaseTopology(ABC):
-    def __init__(self, num_hosts, bw, latency, p4_program):
-        self.num_hosts = num_hosts
-        self.bw = bw
-        self.latency = latency
+    def __init__(self):
         self.net = NetworkAPI()
         self.path = 'p4cli'
-        self.p4_program = None
         self.pcap = False
-        self.p4_program=p4_program
         # Create log, src and p4cli directories
         os.makedirs('p4src', exist_ok=True)
         os.makedirs('p4cli', exist_ok=True)
@@ -51,9 +46,13 @@ class BaseTopology(ABC):
 
 class LeafSpineTopology(BaseTopology):
     def __init__(self, num_hosts, num_leaf, num_spine, bw, latency, p4_program='ecmp.p4'):
-        super().__init__(num_hosts, bw, latency, p4_program)
+        super().__init__()
+        self.num_hosts = num_hosts
         self.num_leaf = num_leaf
         self.num_spine = num_spine
+        self.bw = bw
+        self.latency = latency
+        self.p4_program = p4_program
         self.create_switch_commands(num_leaf + num_spine)
 
     def generate_topology(self):
@@ -92,7 +91,11 @@ class LeafSpineTopology(BaseTopology):
 
 class DumbbellTopology(BaseTopology):
     def __init__(self, num_hosts, bw, latency, p4_program='l3_forwarding.p4'):
-        super().__init__(num_hosts, bw, latency, p4_program)
+        super().__init__()
+        self.num_hosts = num_hosts
+        self.bw = bw
+        self.latency = latency
+        self.p4_program = p4_program
         self.create_switch_commands(2)
         if self.num_hosts < 2:
             raise ValueError("DumbbellTopology requires at least 2 hosts")
