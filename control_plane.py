@@ -103,44 +103,131 @@ class L3ForwardingControlPlane(BaseControlPlane):
     @TODO - add support for leaf-spine topology
     """
     def generate_control_plane(self):
-        for switch in self.net_api.switches():
-            commands = []
-            commands.append("table_set_default MyIngress.ipv4_lpm drop")
-            host_entries = {}  # Track individual host entries for each switch
+        if isinstance(self.topology, DumbbellTopology):
+            for switch in self.net_api.switches():
+                commands = []
+                commands.append("table_set_default MyIngress.ipv4_lpm drop")
+                host_entries = {}  # Track individual host entries for each switch
 
-            for host in self.net_api.hosts():
-                is_remote = True
-                host_ip = self.get_host_ip(host).split('/')[0]
-                other_switch = 's2' if switch == 's1' else 's1'
+                for host in self.net_api.hosts():
+                    is_remote = True
+                    host_ip = self.get_host_ip(host).split('/')[0]
+                    other_switch = 's2' if switch == 's1' else 's1'
 
-                # Find local hosts and add entry for each specific host IP
-                for port, nodes in self.net_api.node_ports()[switch].items():
-                    if host in nodes:
-                        is_remote = False
-                        # Only add a new entry if this host IP hasn't been added yet
-                        if host_ip not in host_entries:
-                            host_mac = self.get_host_mac(host)
-                            commands.append(
-                                f"table_add MyIngress.ipv4_lpm ipv4_forward {host_ip}/32 => {host_mac} {port}"
-                            )
-                            host_entries[host_ip] = (host_mac, port)
-                        break  # Stop after adding entry for this host IP
-
-                # If the host is remote, add forwarding rule for the other switch
-                if is_remote:
+                    # Find local hosts and add entry for each specific host IP
                     for port, nodes in self.net_api.node_ports()[switch].items():
-                        if other_switch in nodes:
-                            # Only add remote subnet entry if it hasn't been added yet
-                            subnet = '.'.join(host_ip.split('.')[:3]) + ".0/24"
-                            if subnet not in host_entries:
+                        if host in nodes:
+                            is_remote = False
+                            # Only add a new entry if this host IP hasn't been added yet
+                            if host_ip not in host_entries:
+                                host_mac = self.get_host_mac(host)
                                 commands.append(
-                                    f"table_add MyIngress.ipv4_lpm ipv4_forward {subnet} => 00:00:00:00:00:00 {port}"
+                                    f"table_add MyIngress.ipv4_lpm ipv4_forward {host_ip}/32 => {host_mac} {port}"
                                 )
-                                host_entries[subnet] = ("00:00:00:00:00:00", port)
-                            break  # Stop after adding one entry per subnet
+                                host_entries[host_ip] = (host_mac, port)
+                            break  # Stop after adding entry for this host IP
 
-            # Save generated commands for each switch
-            self.save_commands(switch[1:], commands)
+                    # If the host is remote, add forwarding rule for the other switch
+                    if is_remote:
+                        for port, nodes in self.net_api.node_ports()[switch].items():
+                            if other_switch in nodes:
+                                # Only add remote subnet entry if it hasn't been added yet
+                                subnet = '.'.join(host_ip.split('.')[:3]) + ".0/24"
+                                if subnet not in host_entries:
+                                    commands.append(
+                                        f"table_add MyIngress.ipv4_lpm ipv4_forward {subnet} => 00:00:00:00:00:00 {port}"
+                                    )
+                                    host_entries[subnet] = ("00:00:00:00:00:00", port)
+                                break  # Stop after adding one entry per subnet
+
+        if isinstance(self.topology, LeafSpineTopology):
+            # Iterate over all switches in the network
+            for switch in self.net_api.switches():
+                commands = []
+                commands.append("table_set_default MyIngress.ipv4_lpm drop")
+                host_entries = {}  # to avoid duplicate entries on the same switch
+
+                # Determine if this switch is a leaf switch.
+                # (Assume leaf if any port has a node whose name starts with 'h')
+                is_leaf = False
+                for port, nodes in self.net_api.node_ports()[switch].items():
+                    if any(node.startswith("h") for node in nodes):
+                        is_leaf = True
+                        break
+
+                if is_leaf:
+                    # === Leaf Switch Logic ===
+                    for host in self.net_api.hosts():
+                        host_ip = self.get_host_ip(host).split('/')[0]
+
+                        # Check if host is directly attached (local) to this leaf switch.
+                        local = False
+                        for port, nodes in self.net_api.node_ports()[switch].items():
+                            if host in nodes:
+                                local = True
+                                if host_ip not in host_entries:
+                                    host_mac = self.get_host_mac(host)
+                                    commands.append(
+                                        f"table_add MyIngress.ipv4_lpm ipv4_forward {host_ip}/32 => {host_mac} {port}"
+                                    )
+                                    host_entries[host_ip] = (host_mac, port)
+                                break  # Entry added for this host, move to next host
+
+                        if not local:
+                            # Remote host: forward traffic via one of this leaf's spine ports.
+                            # Find a port that connects to a spine switch (assuming spine names start with 's').
+                            for port, nodes in self.net_api.node_ports()[switch].items():
+                                if any(node.startswith("s") for node in nodes):
+                                    # Use an aggregated subnet entry for remote hosts.
+                                    subnet = '.'.join(host_ip.split('.')[:3]) + ".0/24"
+                                    if subnet not in host_entries:
+                                        # Using a placeholder MAC (e.g. 00:00:00:00:00:00) to indicate a next-hop lookup.
+                                        commands.append(
+                                            f"table_add MyIngress.ipv4_lpm ipv4_forward {subnet} => 00:00:00:00:00:00 {port}"
+                                        )
+                                        host_entries[subnet] = ("00:00:00:00:00:00", port)
+                                    break  # One remote rule per subnet is sufficient
+
+                else:
+                    # === Spine Switch Logic ===
+                    # Spine switches do not have hosts attached directly.
+                    # They must forward traffic to the appropriate leaf, so install one entry per leaf subnet.
+                    # First, find all leaf switches in the network.
+                    leaf_switches = [
+                        sw for sw in self.net_api.switches()
+                        if any(
+                            node.startswith("h")
+                            for port in self.net_api.node_ports()[sw]
+                            for node in self.net_api.node_ports()[sw][port]
+                        )
+                    ]
+
+                    for leaf in leaf_switches:
+                        # Pick one host attached to the leaf to infer its subnet.
+                        leaf_host = None
+                        for port, nodes in self.net_api.node_ports()[leaf].items():
+                            for node in nodes:
+                                if node.startswith("h"):
+                                    leaf_host = node
+                                    break
+                            if leaf_host:
+                                break
+
+                        if leaf_host:
+                            leaf_host_ip = self.get_host_ip(leaf_host).split('/')[0]
+                            subnet = '.'.join(leaf_host_ip.split('.')[:3]) + ".0/24"
+                            # On the spine switch, find a port that connects to this leaf.
+                            for port, nodes in self.net_api.node_ports()[switch].items():
+                                if leaf in nodes:
+                                    if subnet not in host_entries:
+                                        commands.append(
+                                            f"table_add MyIngress.ipv4_lpm ipv4_forward {subnet} => 00:00:00:00:00:00 {port}"
+                                        )
+                                        host_entries[subnet] = ("00:00:00:00:00:00", port)
+                                    break
+
+                # Save generated commands for each switch
+                self.save_commands(switch[1:], commands)
 
 class SimpleDeflectionControlPlane(BaseControlPlane):
     def generate_control_plane(self):
