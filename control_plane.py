@@ -102,6 +102,9 @@ class L3ForwardingControlPlane(BaseControlPlane):
     L3 forwarding control plane for dumbbell topology (2 switches)
     @TODO - add support for leaf-spine topology
     """
+    def __init__(self, topology, cmd_path='p4cli'):
+        super().__init__(topology, cmd_path)
+
     def generate_control_plane(self):
         if isinstance(self.topology, DumbbellTopology):
             for switch in self.net_api.switches():
@@ -139,8 +142,10 @@ class L3ForwardingControlPlane(BaseControlPlane):
                                     )
                                     host_entries[subnet] = ("00:00:00:00:00:00", port)
                                 break  # Stop after adding one entry per subnet
+                
+                self.save_commands(switch[1:], commands)   
 
-        if isinstance(self.topology, LeafSpineTopology):
+        elif isinstance(self.topology, LeafSpineTopology):
             # Iterate over all switches in the network
             for switch in self.net_api.switches():
                 commands = []
@@ -151,7 +156,7 @@ class L3ForwardingControlPlane(BaseControlPlane):
                 # (Assume leaf if any port has a node whose name starts with 'h')
                 is_leaf = False
                 for port, nodes in self.net_api.node_ports()[switch].items():
-                    if any(node.startswith("h") for node in nodes):
+                    if any(node.startswith("h") for node in nodes[:2]):
                         is_leaf = True
                         break
 
@@ -177,7 +182,7 @@ class L3ForwardingControlPlane(BaseControlPlane):
                             # Remote host: forward traffic via one of this leaf's spine ports.
                             # Find a port that connects to a spine switch (assuming spine names start with 's').
                             for port, nodes in self.net_api.node_ports()[switch].items():
-                                if any(node.startswith("s") for node in nodes):
+                                if any(node.startswith("s") for node in nodes[:2]):
                                     # Use an aggregated subnet entry for remote hosts.
                                     subnet = '.'.join(host_ip.split('.')[:3]) + ".0/24"
                                     if subnet not in host_entries:
@@ -198,7 +203,7 @@ class L3ForwardingControlPlane(BaseControlPlane):
                         if any(
                             node.startswith("h")
                             for port in self.net_api.node_ports()[sw]
-                            for node in self.net_api.node_ports()[sw][port]
+                            for node in self.net_api.node_ports()[sw][port][:2]
                         )
                     ]
 
@@ -206,7 +211,7 @@ class L3ForwardingControlPlane(BaseControlPlane):
                         # Pick one host attached to the leaf to infer its subnet.
                         leaf_host = None
                         for port, nodes in self.net_api.node_ports()[leaf].items():
-                            for node in nodes:
+                            for node in nodes[:2]:
                                 if node.startswith("h"):
                                     leaf_host = node
                                     break
@@ -218,18 +223,23 @@ class L3ForwardingControlPlane(BaseControlPlane):
                             subnet = '.'.join(leaf_host_ip.split('.')[:3]) + ".0/24"
                             # On the spine switch, find a port that connects to this leaf.
                             for port, nodes in self.net_api.node_ports()[switch].items():
-                                if leaf in nodes:
+                                if leaf in nodes[:2]:
                                     if subnet not in host_entries:
                                         commands.append(
                                             f"table_add MyIngress.ipv4_lpm ipv4_forward {subnet} => 00:00:00:00:00:00 {port}"
                                         )
                                         host_entries[subnet] = ("00:00:00:00:00:00", port)
                                     break
+                
+                self.save_commands(switch[1:], commands)   
+        else:
+            raise ValueError("Unsupported topology type")
 
-                # Save generated commands for each switch
-                self.save_commands(switch[1:], commands)
 
 class SimpleDeflectionControlPlane(BaseControlPlane):
+    def __init__(self, topology, cmd_path='p4cli'):
+        super().__init__(topology, cmd_path)
+
     def generate_control_plane(self):
         if isinstance(self.topology, LeafSpineTopology):
             for switch in self.net_api.switches():
