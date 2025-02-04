@@ -78,15 +78,19 @@ class ExperimentRunner:
 
     def run_bursty_app(self):
         server_ips = []
-        client = self.topology.net.net.get('h1') # TODO generalize with more clients
-        servers = self.select_servers(n=self.args.incast_degree)
+        if not self.args.incast_degree:
+            raise ValueError("Incast degree must be specified for bursty application")
         
+        servers = self.select_servers(n=self.args.incast_degree)
         print(f"Selected servers: {[server.name for server in servers]}")
 
-        # for server in servers:
+        # Client that has not be selected as a server (TODO generalize with more clients)
+        client = random.choice([server for server in self.topology.net.net.hosts if server not in servers])
+
+        # TODO Fix: only selected servers should respond to the bursty client
         for server in self.topology.net.net.hosts:
             # flow_data = self.load_bursty_data(server.name, 'web_bursty', 1.0, 0.11) # TODO: use the config file for params
-            if server.IP() != client.IP():
+            if server.IP() != client.IP() and server in servers:
                 print(f"Starting server on {server.name} ({server.IP()})...")
                 server.cmd(f'python3 -m app --mode server --host_ip {server.IP()} --type bursty --reply_size {self.args.reply_size} --exp_id {self.exp_id} &')
                 server_ips.append(server.IP())
@@ -94,7 +98,8 @@ class ExperimentRunner:
         time.sleep(2)  # Give the servers some time to start up
 
         print(f"Starting client on {client.name} ({client.IP()})...")
-        client.cmd(f'python3 -m app --mode client --type bursty --server_ips {" ".join(server_ips)} --exp_id {self.exp_id}&')
+        print(f"Client will send requests to servers: {server_ips}")
+        client.cmd(f'python3 -m app --mode client --type bursty --server_ips {" ".join(server_ips)} --exp_id {self.exp_id} &')
 
     def run_background_app(self):
         servers = self.topology.net.net.hosts
@@ -181,6 +186,9 @@ class ExperimentRunner:
         h2.cmd(f'iperf3 -c {h4.IP()} -t {self.args.duration} -p 5202 --logfile /home/ubuntu/p4burst/tmp/{self.exp_id}/iperf_app_client_h2.log &')
   
     def select_servers(self, n):
+        # Check if the number of servers requested is greater than the available servers
+        if n > len(self.topology.net.net.hosts):
+            raise ValueError("Requested number of servers exceeds the available servers.")
         return random.sample(self.topology.net.net.hosts, n)
 
     def load_background_flow_data(self, host_id, bg_application_category, 
@@ -304,7 +312,7 @@ def get_args():
     parser.add_argument('--bw', '-b', type=int, help='Bandwidth in Mbps', default=1000)
     parser.add_argument('--latency', '-d', type=float, help='Latency in ms', default=0)
     parser.add_argument('--reply_size', type=int, default=40000, help='Size of the burst response in bytes')
-    parser.add_argument('--incast_degree', type=int, default=5, help='Number of bursty servers')
+    parser.add_argument('--incast_degree', type=int, help='Number of bursty servers')
     parser.add_argument('--duration', type=int, default=10, help='Duration of the experiment in seconds')
     parser.add_argument('--app', type=str, required=False, choices=['bursty', 'background', 'simple', 'iperf'], help='Type of application')
     parser.add_argument('--host_pcap', action='store_true', help='Enable pcap on hosts')
