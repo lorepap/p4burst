@@ -81,12 +81,12 @@ class BurstyClient(BaseClient):
     qps: queries per second
     incast_scale: number of servers to send requests to in a single query
     """
-    def __init__(self, server_ips, reply_size=40000, qps=4000, incast_scale=5, congestion_control='cubic', exp_id=''):
+    def __init__(self, server_ips, reply_size=40000, qps=4000, congestion_control='cubic', exp_id=''):
         super().__init__(congestion_control, exp_id)
         self.server_ips = server_ips
         self.reply_size = reply_size
         self.qps = qps
-        self.incast_scale = incast_scale
+        self.incast_scale = len(server_ips)
         self.fct_stats = defaultdict(list)
         self.qct_stats = []
 
@@ -121,6 +121,7 @@ class BurstyClient(BaseClient):
         flow_ids = {server_ip: random.randint(10000000, 99999999) for server_ip in self.server_ips}
         query_id = random.randint(1, 1000000)
         # Select servers for the incast event
+        logging.info(f"[{self.ip}]: Sending query {query_id} to {self.incast_scale} servers")
         selected_servers = random.sample(self.server_ips, self.incast_scale)
         
         with concurrent.futures.ThreadPoolExecutor(max_workers=len(selected_servers)) as executor:
