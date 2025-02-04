@@ -141,9 +141,6 @@ class ExperimentRunner:
         h1.cmd('sysctl -w net.ipv4.tcp_congestion_control=cubic')
     
         # h1.cmd('ifconfig h1-eth0 txqueuelen 1000')
-
-        if self.exp_id:
-            os.makedirs(f'/home/ubuntu/p4burst/tmp/{self.exp_id}', exist_ok=True)
     
         # Start server on h3
         print(f"Starting server on h3 ({h3.IP()})...")
@@ -158,6 +155,9 @@ class ExperimentRunner:
         h2 = self.topology.net.net.get('h2')
         h3 = self.topology.net.net.get('h3')
         h4 = self.topology.net.net.get('h4')
+
+        # for logging purposes
+        os.makedirs(f'/home/ubuntu/p4burst/tmp/{self.exp_id}', exist_ok=True)
 
         # Capture senders pcap
         pcap_dir = 'pcap'
