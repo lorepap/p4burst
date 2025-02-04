@@ -160,7 +160,6 @@ class BackgroundClient(BaseClient):
         self.flow_ids = flow_ids
         self.flow_sizes = flow_sizes
         self.inter_arrival_times = inter_arrival_times
-        self.flow_id_counter = 0
 
     def send_request(self, flow_id, server_ip, flow_size):
         """Send a single flow (request) of data to a server and wait for acknowledgment."""
@@ -183,15 +182,19 @@ class BackgroundClient(BaseClient):
     def start(self):
         """Send flows to each server based on inter-arrival times and flow sizes."""
         print(f"Client {self.ip} sending {len(self.flow_ids)} flows")
+        n_flows = len(self.flow_ids)
+        counter = 0
+        flow_id_step = 0
         while True:
             for flow_id, inter_arrival_time, flow_size, server_ip in zip(
                 self.flow_ids, self.inter_arrival_times, self.flow_sizes, self.server_ips
             ):
-                if self.flow_id_counter > 0:
-                    flow_id = str(flow_id) + '-' + str(self.flow_id_counter)
-                self.flow_id_counter += 1
+                if counter >= n_flows:
+                    flow_id = str(flow_id) + '-' + str(flow_id_step)
+                counter+=1
                 self.send_request(str(flow_id), server_ip, flow_size)
                 time.sleep(float(inter_arrival_time))
+            flow_id_step += 1
 
 class IperfClient(BaseClient):
     def __init__(self, server_ip, duration):

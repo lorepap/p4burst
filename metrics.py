@@ -66,6 +66,7 @@ class FlowMetricsManager:
     def start_flow(self, flow_id, sender_ip, receiver_ip, flow_size, flow_type):
         """Record the start of a flow."""
         start_time = time.time()
+        logging.info(f"Starting flow {flow_id} from {sender_ip} to {receiver_ip} of size {flow_size}")
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute('''INSERT OR REPLACE INTO flow_metrics 
