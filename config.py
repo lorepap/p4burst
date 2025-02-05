@@ -1,0 +1,2 @@
+QUEUE_SIZE = 2
+QUEUE_RATE = 2

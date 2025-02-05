@@ -1,11 +1,9 @@
 from abc import ABC, abstractmethod
 from p4utils.mininetlib.network_API import NetworkAPI
 import os
+import config
 
 P4_PATH = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'p4src')
-QUEUE_RATE = 1 # TODO: parametrize
-QUEUE_SIZE = 1 # TODO: parametrize
-
 
 class BaseTopology(ABC):
     def __init__(self, num_hosts, bw, latency, p4_program):
@@ -77,6 +75,26 @@ class BaseTopology(ABC):
     def get_connecting_port(self, source, target):
         return next((port for port, nodes in self.net.node_ports()[source].items()
                     if target in nodes), None)
+    
+    def get_host_ip(self, host):
+        return self.net.getNode(host).get('ip')
+
+    def get_host_mac(self, host):
+        return self.net.getNode(host).get('mac')
+    
+    def get_switch_mac(self, sw1, sw2):
+        for node1, node2, info in self.net.links(withInfo=True):
+            if sw1 in [node1, node2] and sw2 in [node1, node2]:
+                return info['addr1'] if sw2 == node1 else info['addr2']
+
+    def get_node_interfaces(self, node):
+        return self.net.node_intfs()[node]
+    
+    def are_hosts_same_switch(self, h1, h2):
+        """Check if hosts connect to same switch"""
+        switch1 = h1.defaultIntf().link.intf2.node
+        switch2 = h2.defaultIntf().link.intf2.node
+        return switch1 == switch2
         
 
 class LeafSpineTopology(BaseTopology):
@@ -91,7 +109,7 @@ class LeafSpineTopology(BaseTopology):
 
         # Generate switches
         for i in range(1, self.num_leaf + self.num_spine + 1):
-            self.net.addP4Switch(f's{i}', cli_input=os.path.join(self.path, f's{i}-commands.txt'), switch_args=f"--priority-queues --queue-rate {QUEUE_RATE}", queue_size=QUEUE_SIZE)
+            self.net.addP4Switch(f's{i}', cli_input=os.path.join(self.path, f's{i}-commands.txt'), switch_args=f"--priority-queues")
             #self.net.addP4Switch(f's{i}', cli_input=os.path.join(self.path, f's{i}-commands.txt'), switch_args=f"--priority-queues")
         
         
@@ -149,8 +167,8 @@ class DumbbellTopology(BaseTopology):
 
     def generate_topology(self):
         # Generate switches
-        self.net.addP4Switch('s1', cli_input=os.path.join(self.path, 's1-commands.txt'), switch_args=f"--priority-queues --queue-rate {QUEUE_RATE}", queue_size=QUEUE_SIZE)
-        self.net.addP4Switch('s2', cli_input=os.path.join(self.path, 's2-commands.txt'), switch_args=f"--priority-queues --queue-rate {QUEUE_RATE}", queue_size=QUEUE_SIZE)
+        self.net.addP4Switch('s1', cli_input=os.path.join(self.path, 's1-commands.txt'), switch_args=f"--priority-queues")
+        self.net.addP4Switch('s2', cli_input=os.path.join(self.path, 's2-commands.txt'), switch_args=f"--priority-queues")
         
         # Set different p4 sources for the  switches
         self.net.setP4Source('s1', os.path.join(P4_PATH, self.p4_program))
