@@ -1,10 +1,10 @@
 import time
 from scapy.all import Ether, IP, UDP, Packet, BitField, sendp
-from abc import abstractmethod
+from abc import ABC, abstractmethod
 
 from topology import DumbbellTopology, LeafSpineTopology
 
-class BeePackets:
+class BeePackets(ABC):
 
     def __init__(self, topology):
         self.topology = topology

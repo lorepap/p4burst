@@ -14,6 +14,7 @@ from datetime import datetime
 from metrics import FlowMetricsManager
 from topology import LeafSpineTopology, DumbbellTopology
 from control_plane import ECMPControlPlane, L3ForwardingControlPlane, SimpleDeflectionControlPlane, TestControlPlane
+import config
 
 class ExperimentRunner:
     def __init__(self, args):
@@ -26,6 +27,41 @@ class ExperimentRunner:
         flowtracker = FlowMetricsManager(self.exp_id) # create a new database for tracking simulation metrics
         self.p4_program=self.set_p4_program(args.control_plane)
 
+    @staticmethod
+    def update_p4_constants_from_config(p4_file):
+        config_vars = {name: value for name, value in vars(config).items() }
+
+        with open(p4_file, 'r') as f:
+            lines = f.readlines()
+
+        for i, line in enumerate(lines):
+            if line.strip().startswith('const'):
+                # Extract const name
+                const_name = line.split('=')[0].split()[-1]
+                if const_name in config_vars:
+                    base = line.split('=')[0]
+                    lines[i] = f"{base}= {config_vars[const_name]};    // Value overriden from config.py\n"
+        
+        with open(p4_file, 'w') as f:
+            f.writelines(lines)
+    
+    @staticmethod
+    def update_p4_queue_size(p4_file):
+        with open(p4_file, 'r') as f:
+            lines = f.readlines()
+
+        for i, line in enumerate(lines):
+            if line.strip().startswith('const'):
+                # Extract const name
+                const_name = line.split('=')[0].split()[-1]
+                if const_name == 'QUEUE_SIZE':
+                    base = line.split('=')[0]
+                    lines[i] = f"{base}= {config.QUEUE_SIZE - 1};    // Value overriden from config.py\n"
+        
+        with open(p4_file, 'w') as f:
+            f.writelines(lines)
+
+
     # TODO refactor
     def set_p4_program(self, control_plane):
         if control_plane == 'ecmp':
@@ -33,6 +69,10 @@ class ExperimentRunner:
         elif control_plane == 'l3':
             return 'l3_forwarding.p4'
         elif control_plane == 'simple_deflection':
+            #if self.args.app == 'deflection_test':
+                #config.QUEUE_SIZE = 2
+                #config.QUEUE_RATE = 1
+            self.update_p4_queue_size('p4src/Simple_Deflection/includes/sd_consts.p4')
             return 'Simple_Deflection/sd.p4'
         else:
             raise ValueError(f"Unsupported control plane: {control_plane}")
@@ -148,11 +188,11 @@ class ExperimentRunner:
         os.makedirs("log/simple_servers", exist_ok=True)
         # Start server on h3
         print(f"Starting server on h3 ({h3.IP()})...")
-        h3.cmd(f'python3 -m app --mode server --host_ip {h3.IP()} --type single > log/simple_servers/h3.log 2>&1 &')
+        h3.cmd(f'python3 -m app --mode server --host_ip {h3.IP()} --type single --exp_id {self.exp_id} > log/simple_servers/h3.log 2>&1 &')
         time.sleep(2)
         os.makedirs("log/simple_clients", exist_ok=True)
         print(f"Starting client on h1 ({h1.IP()})...")
-        h1.cmd(f'python3 -m app --mode client --type single --server_ips {h3.IP()} > log/simple_clients/h1.log 2>&1 &')
+        h1.cmd(f'python3 -m app --mode client --type single --server_ips {h3.IP()} --exp_id {self.exp_id} > log/simple_clients/h1.log 2>&1 &')
 
     def run_iperf_app(self):
         # Two clients send iperf flows to two servers
@@ -183,7 +223,24 @@ class ExperimentRunner:
         h1.cmd(f'iperf3 -c {h3.IP()} -t {self.args.duration} -p 5201 > log/iperf_clients/h1.log 2>&1 &')
         print(f"Starting client on h2 ({h2.IP()})...")
         h2.cmd(f'iperf3 -c {h3.IP()} -t {self.args.duration} -p 5202 > log/iperf_clients/h2.log 2>&1 &')
-  
+
+    def run_deflection_test(self):
+
+        client, server = self.select_servers(2)
+
+        while self.topology.are_hosts_same_switch(client, server):
+            client, server = self.select_servers(2)
+
+        os.makedirs("log/deflection_servers", exist_ok=True)
+        print(f"Starting server on {server.name} ({server.IP()})...")
+        server.cmd(f'python3 -m app --mode server --type deflection_test --host_ip {server.IP()} --exp_id {self.exp_id} > log/deflection_servers/{server.name}.log 2>&1 &')
+
+        time.sleep(2)
+
+        os.makedirs("log/deflection_clients", exist_ok=True)
+        print(f"Starting client on {client.name} ({client.IP()})...")
+        client.cmd(f'python3 -m app --mode client --type deflection_test --server_ips {server.IP()} --exp_id {self.exp_id} > log/deflection_clients/{client.name}.log 2>&1 &')
+    
     def select_servers(self, n):
         return random.sample(self.topology.net.net.hosts, n)
 
@@ -259,7 +316,8 @@ class ExperimentRunner:
                 'bursty': self.run_bursty_app,
                 'background': self.run_background_app,
                 'simple': self.run_simple_app,
-                'iperf': self.run_iperf_app
+                'iperf': self.run_iperf_app,
+                'deflection_test': self.run_deflection_test
             }
         
         try:
@@ -312,7 +370,7 @@ def get_args():
     parser.add_argument('--reply_size', type=int, default=40000, help='Size of the burst response in bytes')
     parser.add_argument('--incast_degree', type=int, default=5, help='Number of bursty servers')
     parser.add_argument('--duration', type=int, default=10, help='Duration of the experiment in seconds')
-    parser.add_argument('--app', type=str, required=False, choices=['bursty', 'background', 'simple', 'iperf'], help='Type of application')
+    parser.add_argument('--app', type=str, required=False, choices=['bursty', 'background', 'simple', 'iperf', 'deflection_test'], help='Type of application')
     parser.add_argument('--host_pcap', action='store_true', help='Enable pcap on hosts')
     parser.add_argument('--switch_pcap', action='store_true', help='Enable pcap on switches')
     parser.add_argument('--cli', action='store_true', help='Enable Mininet CLI')

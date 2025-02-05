@@ -13,7 +13,6 @@ import sqlite3
 import pandas as pd
 import numpy as np
 
-
 class App(ABC):
     def __init__(self, mode, log=True):
         self.mode = mode
@@ -106,6 +105,7 @@ class BackgroundApp(App):
         elif self.mode == 'server':
             self.server.start()
 
+
 class SimplePacketApp(App):
     def __init__(self, args):
         mode = args.mode
@@ -147,11 +147,36 @@ class IperfApp(App):
         elif self.mode == 'client':
             self.client.start()  # Send a single packet and then exit
 
+class DeflectionTestApp(App):
+    def __init__(self, args):
+        mode = args.mode
+        host_ip = args.host_ip
+        server_ip = args.server_ips
+        super().__init__(mode)
+        if mode == 'server':
+            self.server = BaseServer(port=12345, ip=host_ip, exp_id=args.exp_id)
+        elif mode == 'client':
+            if server_ip is None:
+                raise ValueError("server_ip must be provided for client mode")
+            # Using BaseClient since we just need to send basic packets
+            self.client = BaseClient(server_ip=server_ip[0], exp_id=args.exp_id)
+        else:
+            raise ValueError("Invalid mode. Choose 'server' or 'client'.")
+
+    def run(self):
+        if self.mode == 'server':
+            self.server.start()
+        elif self.mode == 'client':
+            # Send two packets in quick succession
+            self.client.send_request(self.client.server_ip)
+            time.sleep(0.001)  # 1ms gap
+            self.client.send_request(self.client.server_ip)
+
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--mode', choices=['server', 'client'], required=True)
-    parser.add_argument('--type', choices=['bursty', 'background', 'single'], required=True)
+    parser.add_argument('--type', choices=['bursty', 'background', 'single', 'deflection_test'], required=True)
     parser.add_argument('--host_ip', type=str, required=False, help="host IP address (required for servers)")
     # parser.add_argument('--host_id', type=str, required=False, help="sender id: required only for a sender")
     parser.add_argument('--server_ips', required=False, nargs='+', help="List of server IPs (bursty app)")
@@ -171,8 +196,10 @@ def main():
         app = BackgroundApp(args)
     elif args.type == 'single':
         app = SimplePacketApp(args)
+    elif args.type == 'deflection_test':
+        app = DeflectionTestApp(args)
     else:
-        raise ValueError("Invalid application type. Choose 'bursty' or 'background'.")
+        raise ValueError("Invalid application type. Choose 'bursty', 'background', 'single' or 'deflection_test'.")
     app.run()
     # app.collect_and_write_metrics(f'tmp/metrics_{args.host_id}.csv')
 

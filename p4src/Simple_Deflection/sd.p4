@@ -46,6 +46,17 @@ control SimpleDeflectionIngress(inout header_t hdr,
         size = TABLE_SIZE;
         default_action = drop();
     }
+
+    table debug_enq_qdepth_table {
+        key = {
+            standard_metadata.enq_qdepth: exact;
+        }
+        actions = {
+            NoAction;
+        }
+        size = 1024;
+        default_action = NoAction();
+    }
      
 
     apply {
@@ -56,6 +67,7 @@ control SimpleDeflectionIngress(inout header_t hdr,
         } else {
             //ingress_ctr.count(ingress_ctr_index);
             forward.apply(hdr, meta, standard_metadata);
+            debug_enq_qdepth_table.apply();
             if (hdr.ipv4.isValid() && (hdr.ipv4.protocol == IP_PROTOCOLS_TCP || hdr.ipv4.protocol == IP_PROTOCOLS_UDP)) {
                 
                 queue_occupancy_info.read(meta.is_queue_full_0, (bit<32>)0);
@@ -165,6 +177,17 @@ control SimpleDeflectionEgress(inout header_t hdr,
         // const default_action = set_eg_queue_length_action;
     }
 
+    table debug_deq_qdepth_table {
+        key = {
+            standard_metadata.deq_qdepth: exact;
+        }
+        actions = {
+            NoAction;
+        }
+        size = 1024;
+        default_action = NoAction();
+    }
+
     apply {
         if (hdr.bee.isValid()) {
             // At the egress, worker packets should only read from the queue occupancy register array
@@ -176,7 +199,8 @@ control SimpleDeflectionEgress(inout header_t hdr,
         } else {
             if (hdr.ipv4.isValid() && (hdr.ipv4.protocol == IP_PROTOCOLS_TCP || hdr.ipv4.protocol == IP_PROTOCOLS_UDP)) {
                 // At the egress, data packets should write into the queue occupancy register array
-                if (standard_metadata.deq_qdepth < QUEUE_CAPACITY) {
+                debug_deq_qdepth_table.apply();
+                if (standard_metadata.deq_qdepth < QUEUE_SIZE) {
                     meta.is_fw_port_full = 0; // Possible to write the register directly, but this is more readable
                 } else {
                     meta.is_fw_port_full = 1;
