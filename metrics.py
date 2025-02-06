@@ -91,25 +91,25 @@ class FlowMetricsManager:
                                   SET end_time = ?, fct = ?, throughput_mbps = ?, latency_ms = ?
                                   WHERE flow_id = ?''', 
                                (end_time, fct, throughput_mbps, latency_ms, flow_id))
+                logging.debug(f"Completed flow {flow_id} with FCT: {fct:.2f}s, Throughput: {throughput_mbps:.2f}Mbps, Latency: {latency_ms:.2f}ms")
                 conn.commit()
 
     def complete_query(self, query_id, flow_ids):
         """Complete a query and save its metrics."""
         end_time = time.time()
+        logging.debug(f"Connecting to {self.db_path}")
         with sqlite3.connect(self.db_path) as conn:
+            logging.debug(f"Connected to {self.db_path}")
             cursor = conn.cursor()
 
             # Retrieve flow metrics for the query
-            print(flow_ids)
             cursor.execute('''SELECT start_time, throughput_mbps, fct FROM flow_metrics 
                             WHERE flow_id IN ({})'''.format(','.join('?' * len(flow_ids))), flow_ids)
             flows = cursor.fetchall()
 
             if flows:
                 min_start_time = min([flow[0] for flow in flows])
-                print('min start time', min_start_time)
                 qct = end_time - min_start_time
-                print('qct', qct)
                 avg_fct = sum(f[2] for f in flows) / len(flows)  # Average flow completion time
                 total_throughput_mbps = sum(f[1] for f in flows)  # Sum of flow throughputs
 
@@ -119,6 +119,9 @@ class FlowMetricsManager:
                                   VALUES (?, ?, ?, ?, ?, ?, ?)''', 
                                (query_id, min_start_time, end_time, qct, len(flows), avg_fct, total_throughput_mbps))
                 conn.commit()
+                logging.debug(f"Completed query {query_id}")
+            else:
+                logging.warning(f"No flows found for query {query_id}")
 
     def get_flow_metrics(self):
         """Retrieve all flow metrics."""
