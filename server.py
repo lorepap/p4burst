@@ -62,7 +62,7 @@ class BaseServer(ABC):
 
 
 class BurstyServer(BaseServer):
-    def __init__(self, ip=None, reply_size=40000, port=12346, exp_id='', cong_control='cubic'):
+    def __init__(self, ip, reply_size, port=12346, exp_id='', cong_control='cubic'):
         super().__init__(port, ip, exp_id=exp_id, congestion_control=cong_control)
         self.reply_size = reply_size
 
@@ -98,7 +98,7 @@ class BurstyServer(BaseServer):
                 conn.sendall(b'x' * self.reply_size)
         except Exception as e:
             logging.error(f"[{self.ip}]: Error handling request from {addr[0]}:{addr[1]}: {e}")
-            print(traceback.format_exc())
+            logging.error(traceback.format_exc())
         finally:
             conn.close()
 
@@ -115,14 +115,27 @@ class BackgroundServer(BaseServer):
             s.listen()
             # logging.info(f"[{self.ip}]: Server listening on port {self.port}")
 
-            while True:
-                conn, addr = s.accept()
-                # logging.info(f"[{self.ip}]: Accepted connection from {addr}")
+            try:
+                while True:
+                    try:
+                        conn, addr = s.accept()
+                    except KeyboardInterrupt:
+                        # Break out of the inner blocking call
+                        raise
+                    # logging.info(f"[{self.ip}]: Accepted connection from {addr}")
 
-                # Start a new thread for each client connection
-                client_thread = threading.Thread(target=self.handle_request, args=(conn, addr))
-                client_thread.daemon = True  # Daemon thread will exit when main program exits
-                client_thread.start()
+                    # with conn:
+                    #     self.handle_request(conn, addr)
+                    
+                    client_thread = threading.Thread(target=self.handle_request, args=(conn, addr))
+                    client_thread.daemon = True  # Daemon thread will exit when main program exits
+                    client_thread.start()
+            except KeyboardInterrupt:
+                logging.info(f"[{self.ip}]: Server shutting down gracefully.")
+            except Exception as e:
+                logging.error(f"[{self.ip}]: Error accepting connection: {e}")
+                logging.error(traceback.format_exc())
+
 
     def handle_request(self, conn, addr):
         """Handle incoming data, compute metrics, and send acknowledgment."""
@@ -152,6 +165,7 @@ class BackgroundServer(BaseServer):
     def get_metrics(self):
         """Retrieve collected flow metrics."""
         return self.flowtracker.get_metrics()
+
 
 class IperfServer(BaseServer):
     def __init__(self, port=5201):
