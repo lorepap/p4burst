@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
 
-import argparse
+import sys
 import os
 import time
 import random
 import traceback
+import argparse
 import sqlite3
 import pandas as pd
 import numpy as np
 from datetime import datetime
+from configparser import ConfigParser
+import subprocess
 
 from metrics import FlowMetricsManager
 from topology import LeafSpineTopology, DumbbellTopology
@@ -17,50 +20,74 @@ from control_plane import ECMPControlPlane, L3ForwardingControlPlane, SimpleDefl
 class ExperimentRunner:
     def __init__(self, args):
         self.args = args
-        self.topology = None
-        self.control_plane = None
         # Path
         self.db_path = 'data/distributions'
         self.exp_id = datetime.now().strftime("%Y%m%d_%H%M%S")
         if not self.args.disable_metrics:
             flowtracker = FlowMetricsManager(self.exp_id) # create a new database for tracking simulation metrics
-        self.p4_program=self.set_p4_program(args.control_plane)
+        self.config = self.load_config()
+        self.p4_program=self.set_p4_program()
+        self.processes = []
+
+    def load_config(self, config_file='config.ini'):
+        config = ConfigParser()
+        config.read(config_file)
+        self.config = config
+        # global
+        self.hosts = self.config.getint('global', 'n_hosts')
+        self.app = self.config.get('global', 'app')
+        self.topology_str = self.config.get('global', 'topology')
+        self.leaf = self.config.getint('leafspine', 'n_leaf')
+        self.spine = self.config.getint('leafspine', 'n_spine')
+        self.bw = self.config.getfloat('global', 'bw')
+        self.delay = self.config.getfloat('global', 'delay')
+        self.control_plane_str = self.config.get('global', 'control_plane')
+        self.cong_proto = self.config.get('global', 'cong_proto')
+        # background
+        self.n_servers = self.config.getint('background', 'n_servers')
+        self.flow_multiplier = self.config.getfloat('background', 'flow_multiplier')
+        self.inter_multiplier = self.config.getfloat('background', 'inter_multiplier')
+        # bursty
+        self.qps = self.config.getint('bursty', 'qps')
+        self.incast_degree = self.config.getint('bursty', 'incast_degree')
+        self.reply_size = self.config.getint('bursty', 'reply_size')
+
 
     # TODO refactor
-    def set_p4_program(self, control_plane):
-        if control_plane == 'ecmp':
+    def set_p4_program(self):
+        if self.control_plane_str == 'ecmp':
             return 'ecmp.p4'
-        elif control_plane == 'l3':
+        elif self.control_plane_str == 'l3':
             return 'l3_forwarding.p4'
-        elif control_plane == 'simple_deflection':
+        elif self.control_plane_str == 'simple_deflection':
             return 'sd.p4'
         else:
-            raise ValueError(f"Unsupported control plane: {control_plane}")
+            raise ValueError(f"Unsupported control plane: {self.control_plane_str}")
 
     def setup_experiment(self):
-        if self.args.topology == 'leafspine':
+        if self.topology_str == 'leafspine':
             self.topology = LeafSpineTopology(
-                self.args.hosts, 
-                self.args.leaf, 
-                self.args.spine, 
-                self.args.bw, 
-                self.args.latency,
+                self.hosts, 
+                self.leaf, 
+                self.spine, 
+                self.bw, 
+                self.delay,
                 self.p4_program
             )
         elif self.args.topology == 'dumbbell':
-            self.topology = DumbbellTopology(self.args.hosts, self.args.bw, self.args.latency, self.p4_program)
+            self.topology = DumbbellTopology(self.hosts, self.bw, self.delay, self.p4_program)
         else:
             raise ValueError(f"Unsupported topology: {self.args.topology}")
 
-        if self.args.control_plane == 'ecmp':
-            self.control_plane = ECMPControlPlane(self.topology, self.args.leaf, self.args.spine)
-        elif self.args.control_plane == 'l3':
+        if self.control_plane_str == 'ecmp':
+            self.control_plane = ECMPControlPlane(self.topology, self.leaf, self.spine)
+        elif self.control_plane_str == 'l3':
             self.control_plane = L3ForwardingControlPlane(self.topology)
-        elif self.args.control_plane == 'simple_deflection':
+        elif self.control_plane_str == 'simple_deflection':
             # self.control_plane = SimpleDeflectionControlPlane(self.topology)
             self.control_plane = TestControlPlane(self.topology) # TODO replace with simpledeflection
         else:
-            raise ValueError(f"Unsupported control plane: {self.args.control_plane}")
+            raise ValueError(f"Unsupported control plane: {self.control_plane_str}")
 
     def start_network(self):
         self.topology.generate_topology()
@@ -77,62 +104,83 @@ class ExperimentRunner:
             self.topology.net.stopNetwork()
 
     def run_bursty_app(self):
-        server_ips = []
-        if not self.args.incast_degree:
-            raise ValueError("Incast degree must be specified for bursty application")
+        if not self.incast_degree:
+            raise ValueError("Incast degree must be specified for bursty app")
         
-        servers = self.select_servers(n=self.args.incast_degree)
+        server_ips = []
+        client = random.choice(self.topology.net.net.hosts)
+        servers = self.select_servers(n=self.incast_degree)
+        
         print(f"Selected servers: {[server.name for server in servers]}")
+        #os.makedirs("log/bursty_servers", exist_ok=True)
 
-        # Client that has not be selected as a server (TODO generalize with more clients)
-        client = random.choice([server for server in self.topology.net.net.hosts if server not in servers])
-
-        # TODO Fix: only selected servers should respond to the bursty client
+        # for server in servers:
         for server in self.topology.net.net.hosts:
             # flow_data = self.load_bursty_data(server.name, 'web_bursty', 1.0, 0.11) # TODO: use the config file for params
-            if server.IP() != client.IP() and server in servers:
+            if server.IP() != client.IP():
                 print(f"Starting server on {server.name} ({server.IP()})...")
-                server.cmd(f'python3 -m app --mode server --host_ip {server.IP()} --type bursty --reply_size {self.args.reply_size} --exp_id {self.exp_id} &')
+                server.cmd(f'python3 -m app --mode server --host_ip {server.IP()} --type bursty --reply_size {self.reply_size} --exp_id {self.exp_id} > /dev/null 2>&1 &')
                 server_ips.append(server.IP())
         
         time.sleep(2)  # Give the servers some time to start up
 
+        #os.makedirs("log/bursty_clients", exist_ok=True)
         print(f"Starting client on {client.name} ({client.IP()})...")
-        print(f"Client will send requests to servers: {server_ips}")
-        client.cmd(f'python3 -m app --mode client --type bursty --server_ips {" ".join(server_ips)} --exp_id {self.exp_id} &')
+        #client.cmd(f'python3 -m app --mode client --type bursty --server_ips {" ".join(server_ips)} --exp_id {self.exp_id} --incast_scale {self.incast_degree} > /dev/null 2>&1 &')
+
+        client_cmd = (
+            f'python3 -m app --mode client --type bursty '
+            f'--server_ips {" ".join(server_ips)} '
+            f'--exp_id {self.exp_id} '
+            f'--incast_scale {self.incast_degree} '
+            f'--duration {self.args.duration}'
+        )
+
+        print(f"Starting client: {client_cmd}")
+        proc = client.popen(client_cmd, shell=True, stderr=sys.stderr, stdout=subprocess.DEVNULL)
+        self.processes.append(proc)
+
 
     def run_background_app(self):
-        servers = self.topology.net.net.hosts
-        print(f"Servers: {[server.name for server in servers]}")
-        
-        # Starting servers
-        for server in servers:
+        self.bg_servers = self.topology.net.net.hosts[:self.n_servers] # TODO: we should randomize the servers -> requires db creation for arbitrary number of servers (<320)
+        print(f"Servers: {[server.name for server in self.bg_servers]}")
+
+        # Start the server processes on each host.
+        for server in self.bg_servers:
             print(f"Starting server on {server.name} ({server.IP()})...")
-            server.cmd(f'python3 -m app --mode server --type background --host_ip {server.IP()} --exp_id {self.exp_id} &')
-        
-        time.sleep(1)
-        
-        # Starting clients
-        for server in  servers:
-            flow_data = self.load_background_flow_data(server.name, 'cache', 1.0, 11.85) # TODO: use the config file for params
-            # params for client traffic -> this looks bad TODO improvements
-            # this block should go somewhere else and the params shoul be passed differently
-            # I also have doubts about this app runner function - TODO investigate integrating client and server directly here
+            # Launch in background since we might not need to wait on these.
+            server.cmd(f'python3 -m app --mode server --type background --host_ip {server.IP()} --exp_id {self.exp_id} > /dev/null 2>&1 &')
+
+        time.sleep(1)  # Allow servers to start
+
+        # For each server (or whichever host is acting as a client), start the background client.
+        for server in self.bg_servers:
+            flow_data = self.load_background_flow_data(server.name, 'cache', self.flow_multiplier, self.inter_multiplier)
+            # Extract parameters from flow_data
             server_ids = [flow['server_idx'] for flow in flow_data]
             server_names = [f'h{int(server_id)+1}' for server_id in server_ids]
             server_ips = [self.topology.net.net.get(server_name).IP() for server_name in server_names]
             flow_ids = [flow['flow_id'] for flow in flow_data]
             flow_sizes = [flow['flow_size'] for flow in flow_data]
             inter_arrival_times = [flow['inter_arrival_time'] for flow in flow_data]
-            host_id = server.name # parsed in the client
-            print(f"[DEBUG] Client {host_id} flow ids: {flow_ids}")
-            server.cmd(f'python3 -m app --mode client \
-                --server_ips {" ".join(server_ips)} \
-                --flow_ids {" ".join(map(str, flow_ids))} \
-                --flow_sizes {" ".join(map(str, flow_sizes))} \
-                --iat {" ".join(map(str, inter_arrival_times))} \
-                --type background \
-                --exp_id {self.exp_id} &') # I'm not convinced how server_ips are passed to the client
+
+            # Construct the client command, now including a duration parameter.
+            client_cmd = (
+                f'python3 -m app --mode client '
+                f'--server_ips {" ".join(server_ips)} '
+                f'--flow_ids {" ".join(map(str, flow_ids))} '
+                f'--flow_sizes {" ".join(map(str, flow_sizes))} '
+                f'--iat {" ".join(map(str, inter_arrival_times))} '
+                f'--type background '
+                f'--duration {self.args.duration} '
+                f'--exp_id {self.exp_id} '
+                f'--congestion_control {self.cong_proto}'
+            )
+            print(f"Starting background client on {server.name}: {client_cmd}")
+
+            # Use popen() so we can wait for the client process to finish.
+            proc = server.popen(client_cmd, shell=True, stderr=sys.stderr, stdout=subprocess.DEVNULL)
+            self.processes.append(proc)
 
     def run_simple_app(self):
         """
@@ -187,8 +235,8 @@ class ExperimentRunner:
   
     def select_servers(self, n):
         # Check if the number of servers requested is greater than the available servers
-        if n > len(self.topology.net.net.hosts):
-            raise ValueError("Requested number of servers exceeds the available servers.")
+        if n >= len(self.topology.net.net.hosts):
+            raise ValueError("Number of servers requested must be less than the total number of hosts.")
         return random.sample(self.topology.net.net.hosts, n)
 
     def load_background_flow_data(self, host_id, bg_application_category, 
@@ -221,7 +269,7 @@ class ExperimentRunner:
             file_path = f"{bg_application_category}_background_{db_name}_db_" \
                         f"{float(bg_flow_multiplier):.6f}_flowmult_" \
                         f"{float(bg_inter_multiplier):.6f}_intermult_0_" \
-                        f"{self.args.hosts}_servers.db"
+                        f"{len(self.bg_servers)}_servers.db"
 
             if not os.path.exists(os.path.join(self.db_path, file_path)):
                 raise ValueError(f"File {file_path} not found in {self.db_path}")
@@ -256,10 +304,19 @@ class ExperimentRunner:
             })
 
         return flow_data
+    
+    def run_mixed_app(self):
+        try:
+            self.run_background_app()
+            self.run_bursty_app()
+        except Exception as e:
+            traceback.print_exc()
+            raise e
+
 
     def run_experiment(self):
-        
         exp_dict = {
+                'mixed': self.run_mixed_app,
                 'bursty': self.run_bursty_app,
                 'background': self.run_background_app,
                 'simple': self.run_simple_app,
@@ -271,18 +328,18 @@ class ExperimentRunner:
             self.start_network() # will run cli if specified
             if self.args.host_pcap:
                 self.enable_pcap_hosts()
-            if self.args.app:
-                exp_dict[self.args.app]()
-            else: # Run experiment with background + incast
+            if self.app:
+                exp_dict[self.app]()
+            else:
                 # run the CLI
                 print("No app specified. Running Mininet CLI...")
                 self.topology.net.start_net_cli()
-                # self.run_background_app() 
-                # self.run_bursty_app()
-
-            # Let the experiment run for a specified duration
-            print(f"Experiment running for {self.args.duration} seconds...")
-            time.sleep(self.args.duration + 5)
+            
+            print("Waiting for processes to finish...")
+            #time.sleep(self.args.duration + 5)
+            
+            for proc in self.processes:
+                proc.wait(timeout=self.args.duration + 5)
 
         except Exception as e:
             traceback.print_exc()
@@ -303,18 +360,9 @@ class ExperimentRunner:
 
 
 def get_args():
+    # TODO replace with config file
     parser = argparse.ArgumentParser(description='Run network experiment')
-    parser.add_argument('--topology', '-t', type=str, required=True, choices=['leafspine', 'dumbbell'], help='Topology type')
-    parser.add_argument('--control_plane', '-c', type=str, required=False, choices=['ecmp', 'l3', 'simple_deflection'], help='Control plane protocol', default='ecmp')
-    parser.add_argument('--hosts', '-n', type=int, required=True, help='Number of hosts')
-    parser.add_argument('--leaf', '-l', type=int, required=True, help='Number of leaf switches (for leaf-spine topology)')
-    parser.add_argument('--spine', '-s', type=int, required=True, help='Number of spine switches (for leaf-spine topology)')
-    parser.add_argument('--bw', '-b', type=int, help='Bandwidth in Mbps', default=1000)
-    parser.add_argument('--latency', '-d', type=float, help='Latency in ms', default=0)
-    parser.add_argument('--reply_size', type=int, default=40000, help='Size of the burst response in bytes')
-    parser.add_argument('--incast_degree', type=int, help='Number of bursty servers')
-    parser.add_argument('--duration', type=int, default=10, help='Duration of the experiment in seconds')
-    parser.add_argument('--app', type=str, required=False, choices=['bursty', 'background', 'simple', 'iperf'], help='Type of application')
+    parser.add_argument('--duration', '-d', type=int, default=10, help='Duration of the experiment in seconds')
     parser.add_argument('--host_pcap', action='store_true', help='Enable pcap on hosts')
     parser.add_argument('--switch_pcap', action='store_true', help='Enable pcap on switches')
     parser.add_argument('--cli', action='store_true', help='Enable Mininet CLI')
