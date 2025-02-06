@@ -29,15 +29,38 @@ class App(ABC):
     def run(self):
         pass
 
+    # @staticmethod
+    # def setup_logging(log_file='tmp/app.log'):
+    #     print('setup logging...')
+    #     os.makedirs('tmp', exist_ok=True)
+    #     logging.basicConfig(level=logging.DEBUG, 
+    #                     format='%(asctime)s - %(levelname)s - %(message)s',
+    #                     handlers=[
+    #             logging.FileHandler(log_file, mode='a'),
+    #             logging.StreamHandler()  # This will also print logs to console
+    #         ])
+
     @staticmethod
     def setup_logging(log_file='tmp/app.log'):
-        print('setup logging...')
-        os.makedirs('tmp', exist_ok=True)
-        logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s',
-                        handlers=[
-                logging.FileHandler(log_file, mode='a'),
-                logging.StreamHandler()  # This will also print logs to console
-            ])
+        file_handler = logging.FileHandler(log_file, mode='a')
+        file_handler.setLevel(logging.DEBUG)
+        file_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+        file_handler.setFormatter(file_formatter)
+
+        # Create a stream (console) handler that logs only errors (ERROR and above)
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(logging.ERROR)
+        console_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+        console_handler.setFormatter(console_formatter)
+
+        # Get the root logger and configure it
+        logger = logging.getLogger()
+        logger.setLevel(logging.DEBUG)  # Overall logger level
+        # Remove any pre-existing handlers
+        logger.handlers = []
+        # Add our handlers
+        logger.addHandler(file_handler)
+        logger.addHandler(console_handler)
 
     @staticmethod
     def load_config(config_file):
@@ -48,24 +71,21 @@ class App(ABC):
     def cleanup(self):
         if self.server:
             self.server.stop()
-        # remove log files
 
 
 class BurstyApp(App):
     def __init__(self, args):
         super().__init__(args)
         mode = args.mode
-        host_ip = args.host_ip
         server_ips = args.server_ips
-        reply_size = args.reply_size
-        incast_scale = args.incast_scale
-        qps = args.qps
+        reply_size = self.config.getint('bursty', 'reply_size')
+        qps = self.config.getint('bursty', 'qps')
         if mode == 'server':
             self.server = BurstyServer(reply_size=reply_size, ip=args.host_ip, exp_id=args.exp_id)
         elif mode == 'client':
             if server_ips is None:
                 raise ValueError("server_ips must be provided for client mode")
-            self.client = BurstyClient(server_ips, reply_size, qps=qps, exp_id=args.exp_id)
+            self.client = BurstyClient(server_ips, reply_size, duration=args.duration, qps=qps, exp_id=args.exp_id)
         else:
             raise ValueError("Invalid mode. Choose 'server' or 'client'.")
 
@@ -85,8 +105,7 @@ class BackgroundApp(App):
         flow_ids = args.flow_ids
         flow_sizes = args.flow_sizes
         inter_arrival_times = args.iat
-        congestion_control = self.config['background']['cong_proto']
-        print("CONG CONTROL", congestion_control)
+        congestion_control = args.congestion_control
 
         if mode == 'server':
             self.server = BackgroundServer(ip=host_ip, exp_id=args.exp_id)
@@ -97,8 +116,9 @@ class BackgroundApp(App):
                 flow_ids,
                 flow_sizes,
                 inter_arrival_times,
-                congestion_control=congestion_control,
-                exp_id=args.exp_id
+                duration=args.duration,
+                exp_id=args.exp_id,
+                congestion_control=congestion_control
             )
         else:
             raise ValueError("Invalid mode. Choose 'server' or 'client'.")
@@ -163,9 +183,11 @@ def main():
     parser.add_argument('--flow_ids',  required=False, nargs='+', type=int, help="List of flow IDs (background app)")
     parser.add_argument('--flow_sizes', required=False, nargs='+', type=int, help="List of flow sizes (background app)")
     parser.add_argument('--iat', required=False, nargs='+', type=float, help="List of inter-arrival times (background app)")
-    parser.add_argument('--incast_scale', required=False, type=int, default=5, help="Number of servers to send requests to in a single query (bursty app)")
+    parser.add_argument('--incast_scale', required=False, type=int, help="Number of servers to send requests to in a single query (bursty app)")
     parser.add_argument('--qps', required=False, type=int, default=4000, help="Queries per second (bursty app)")
     parser.add_argument('--exp_id', required=False, type=str, help="Experiment ID")
+    parser.add_argument('--duration', required=False, type=int, help="Duration for client")
+    parser.add_argument('--congestion_control', required=False, type=str, default='cubic', help="Congestion control algorithm")
     args = parser.parse_args()
 
     # TODO input validation
