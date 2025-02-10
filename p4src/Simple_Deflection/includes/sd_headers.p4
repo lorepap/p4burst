@@ -3,12 +3,6 @@
 
 typedef bit<8> ip_protocol_t;
 
-struct port_metadata_t {
-    bit<3> port_pcp;
-    bit<12> port_vid;
-    bit<9> l2_xid;
-}
-
 header ethernet_h {
     bit<48> dstAddr;
     bit<48> srcAddr;
@@ -66,8 +60,6 @@ struct metadata_t {
     bit<32> queue_length;
     bit<32> queue_length2;
     bit<16> fw_port_idx; 
-
-    port_metadata_t port_properties;
 
     bit<32> output_port_idx;
 
