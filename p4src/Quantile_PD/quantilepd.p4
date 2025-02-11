@@ -16,7 +16,7 @@ control QuantilePDIngress(
     inout standard_metadata_t standard_metadata)
 {
 
-    register<bit<32>>(NUM_LOGICAL_PORTS) ig_queue_length_reg;
+    register<bit<32>>(NUM_LOGICAL_PORTS) queue_length_reg;
     register<bit<16>>(1) tail_low_reg;
     register<bit<16>>(1) tail_high_reg;
 
@@ -47,8 +47,8 @@ control QuantilePDIngress(
     action get_tail_action() {
         bit<16> t_low;
         bit<16> t_high;
-        tail_low_reg.read(t_low, (bit<32>)0);
-        tail_high_reg.read(t_high, (bit<32>)0);
+        tail_low_reg.read(t_low, 0);
+        tail_high_reg.read(t_high, 0);
         if (t_low < (16 * SAMPLE_COUNT - 1)) {
             t_low = t_low + 1;
         } else {
@@ -61,7 +61,7 @@ control QuantilePDIngress(
 
     apply {
         if (hdr.bee.isValid()) {
-            ig_queue_length_reg.write((bit<32>)hdr.bee.port_idx_in_reg, hdr.bee.queue_length);
+            queue_length_reg.write((bit<32>)hdr.bee.port_idx_in_reg, hdr.bee.queue_length);
         } else if (hdr.ipv4.isValid() &&
                   (hdr.ipv4.protocol == IP_PROTOCOLS_TCP ||
                    hdr.ipv4.protocol == IP_PROTOCOLS_UDP)) {
@@ -69,8 +69,8 @@ control QuantilePDIngress(
             get_flow_priority_table.apply();
             routing.apply(hdr, meta, standard_metadata);
             deflection_routing.apply(hdr, meta, standard_metadata);
-            ig_queue_length_reg.read(meta.queue_length, (bit<32>)meta.fw_port_idx);
-            ig_queue_length_reg.read(meta.deflect_queue_length, (bit<32>)meta.fw_port_idx);
+            queue_length_reg.read(meta.queue_length, (bit<32>)meta.fw_port_idx);
+            queue_length_reg.read(meta.deflect_queue_length, (bit<32>)meta.fw_port_idx);
 
             if (meta.queue_length < QUEUE_SIZE) {
                 meta.queue_length = QUEUE_SIZE - meta.queue_length;
