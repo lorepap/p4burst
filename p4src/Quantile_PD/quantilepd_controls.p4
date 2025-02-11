@@ -74,7 +74,7 @@ control DeflectRouting(inout header_t hdr,
     }
 
     action deflect_get_fw_port_idx_action(bit<9> port, bit<16> fw_port_idx, bit<48> dst_mac) {
-        standard_metadata.egress_spec = port;
+        meta.deflect_egress_spec = port;
         meta.deflect_fw_port_idx = fw_port_idx;
         hdr.ethernet.srcAddr = hdr.ethernet.dstAddr; // l2 simplified forwarding to enable comunications between hosts
         hdr.ethernet.dstAddr = dst_mac;
