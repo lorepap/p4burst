@@ -3,7 +3,7 @@
 
 #include "sd_headers.p4"
 
-control SimpleDeflectionVerifyChecksum(inout header_t hdr, inout metadata_t meta) {
+control SwitchVerifyChecksum(inout header_t hdr, inout metadata_t meta) {
     apply {
         verify_checksum(
             hdr.ipv4.isValid(),
@@ -23,7 +23,7 @@ control SimpleDeflectionVerifyChecksum(inout header_t hdr, inout metadata_t meta
     }
 }
 
-control SimpleDeflectionComputeChecksum(inout header_t hdr, inout metadata_t meta) {
+control SwitchComputeChecksum(inout header_t hdr, inout metadata_t meta) {
     apply {
         update_checksum(
             hdr.ipv4.isValid(),

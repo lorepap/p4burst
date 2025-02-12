@@ -12,11 +12,11 @@
 /*
     Switch ingress pipeline
 */
-control SimpleDeflectionIngress(inout header_t hdr,
+control SwitchIngress(inout header_t hdr,
                   inout metadata_t meta,
                   inout standard_metadata_t standard_metadata) {
 
-    Forward() forward;
+    Routing() routing;
 
     register<bit<1>>(8) queue_occupancy_info;
 
@@ -66,7 +66,7 @@ control SimpleDeflectionIngress(inout header_t hdr,
             //resubmit_preserving_field_list((bit<8>)1);
         } else {
             //ingress_ctr.count(ingress_ctr_index);
-            forward.apply(hdr, meta, standard_metadata);
+            routing.apply(hdr, meta, standard_metadata);
             debug_enq_qdepth_table.apply();
             if (hdr.ipv4.isValid() && (hdr.ipv4.protocol == IP_PROTOCOLS_TCP || hdr.ipv4.protocol == IP_PROTOCOLS_UDP)) {
                 
@@ -154,7 +154,7 @@ control SimpleDeflectionIngress(inout header_t hdr,
 /*
     Switch Egress pipeline
 */
-control SimpleDeflectionEgress(inout header_t hdr,
+control SwitchEgress(inout header_t hdr,
                  inout metadata_t meta,
                  inout standard_metadata_t standard_metadata) {
 
@@ -218,10 +218,10 @@ control SimpleDeflectionEgress(inout header_t hdr,
 // Switch architecture
 
 V1Switch(
-    SimpleDeflectionParser(),
-    SimpleDeflectionVerifyChecksum(),
-    SimpleDeflectionIngress(),
-    SimpleDeflectionEgress(), 
-    SimpleDeflectionComputeChecksum(),
-    SimpleDeflectionDeparser()
+    SwitchParser(),
+    SwitchVerifyChecksum(),
+    SwitchIngress(),
+    SwitchEgress(), 
+    SwitchComputeChecksum(),
+    SwitchDeparser()
 ) main;

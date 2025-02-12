@@ -10,7 +10,7 @@
 /*
     Switch ingress pipeline
 */
-control DistPDIngress(
+control SwitchIngress(
     inout header_t            hdr,
     inout metadata_t          meta,
     inout standard_metadata_t standard_metadata)
@@ -126,7 +126,7 @@ control DistPDIngress(
 /*
     Switch Egress pipeline
 */
-control DistPDEgress(
+control SwitchEgress(
     inout header_t            hdr,
     inout metadata_t          meta,
     inout standard_metadata_t standard_metadata)
@@ -189,10 +189,10 @@ control DistPDEgress(
 
 
 //switch architecture
-V1Switch(DistPDParser(),
-         DistPDVerifyChecksum(),
-         DistPDIngress(),
-         DistPDEgress(),
-         DistPDComputeChecksum(),
-         DistPDDeparser()
+V1Switch(SwitchParser(),
+         SwitchVerifyChecksum(),
+         SwitchIngress(),
+         SwitchEgress(),
+         SwitchComputeChecksum(),
+         SwitchDeparser()
 ) main;

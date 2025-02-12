@@ -10,7 +10,7 @@
 /*
     Switch ingress pipeline
 */
-control QuantilePDIngress(
+control SwitchIngress(
     inout header_t hdr,
     inout metadata_t meta,
     inout standard_metadata_t standard_metadata)
@@ -103,7 +103,7 @@ control QuantilePDIngress(
 
 
 
-control QuantilePDEgress(
+control SwitchEgress(
     inout header_t            hdr,
     inout metadata_t          meta,
     inout standard_metadata_t standard_metadata)
@@ -133,7 +133,7 @@ control QuantilePDEgress(
 
                 get_eg_port_idx_in_reg_table.apply();
 
-                eg_queue_length_reg.write((bit<32>)meta.port_idx_in_reg, (bit<32>)standard_metadata.deq_qdepth); //Dopo che il pacchetto lascia la coda, pensaci!!
+                eg_queue_length_reg.write((bit<32>)meta.port_idx_in_reg, (bit<32>)(standard_metadata.deq_qdepth)); //Dopo che il pacchetto lascia la coda, pensaci!!
             }
         }
     }
@@ -141,10 +141,10 @@ control QuantilePDEgress(
 
 
 //switch architecture
-V1Switch(QuantilePDParser(),
-         QuantilePDVerifyChecksum(),
-         QuantilePDIngress(),
-         QuantilePDEgress(),
-         QuantilePDComputeChecksum(),
-         QuantilePDDeparser()
+V1Switch(SwitchParser(),
+         SwitchVerifyChecksum(),
+         SwitchIngress(),
+         SwitchEgress(),
+         SwitchComputeChecksum(),
+         SwitchDeparser()
 ) main;

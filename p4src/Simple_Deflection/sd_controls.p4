@@ -4,7 +4,7 @@
 #include "includes/sd_consts.p4"
 #include "includes/sd_headers.p4"
 
-control Forward(inout header_t hdr,
+control Routing(inout header_t hdr,
                inout metadata_t meta,
                inout standard_metadata_t standard_metadata) {
     

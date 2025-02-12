@@ -53,12 +53,6 @@ struct metadata_t {
     @field_list(0) // to avoid warning "no user metadata fields tagged with @field_list(0)"
     bit<1> dummy;
 
-    bit<8> prefix_id;
-    bit<8> deflect_prefix_id;
-
-    /////////////////////////////
-    bit<32> qid;
-
     bit<16> order;
     bit<16> tail;
 

@@ -7,7 +7,7 @@
 // ---------------------------------------------------------------------------
 // Parser
 // ---------------------------------------------------------------------------
-parser DistPDParser(packet_in packet,
+parser SwitchParser(packet_in packet,
                 out header_t hdr,
                 inout metadata_t meta,
                 inout standard_metadata_t standard_metadata) {
@@ -56,7 +56,7 @@ parser DistPDParser(packet_in packet,
 // ---------------------------------------------------------------------------
 // Deparser
 // ---------------------------------------------------------------------------
-control DistPDDeparser(packet_out packet, in header_t hdr) {
+control SwitchDeparser(packet_out packet, in header_t hdr) {
     apply {
         packet.emit(hdr.ethernet);
         packet.emit(hdr.ipv4);

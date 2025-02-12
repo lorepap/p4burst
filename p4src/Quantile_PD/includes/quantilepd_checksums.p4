@@ -3,7 +3,7 @@
 
 #include "quantilepd_headers.p4"
 
-control QuantilePDVerifyChecksum(inout header_t hdr, inout metadata_t meta) {
+control SwitchVerifyChecksum(inout header_t hdr, inout metadata_t meta) {
     apply {
         verify_checksum(
             hdr.ipv4.isValid(),
@@ -23,7 +23,7 @@ control QuantilePDVerifyChecksum(inout header_t hdr, inout metadata_t meta) {
     }
 }
 
-control QuantilePDComputeChecksum(inout header_t hdr, inout metadata_t meta) {
+control SwitchComputeChecksum(inout header_t hdr, inout metadata_t meta) {
     apply {
         update_checksum(
             hdr.ipv4.isValid(),
