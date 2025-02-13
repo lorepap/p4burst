@@ -78,6 +78,9 @@ class BaseTopology(ABC):
     
     def get_host_ip(self, host):
         return self.net.getNode(host).get('ip')
+    
+    def get_host_ip_no_mask(self, host):
+        return self.get_host_ip(host).split('/')[0]
 
     def get_host_mac(self, host):
         return self.net.getNode(host).get('mac')
@@ -95,6 +98,9 @@ class BaseTopology(ABC):
         switch1 = h1.defaultIntf().link.intf2.node
         switch2 = h2.defaultIntf().link.intf2.node
         return switch1 == switch2
+    
+    def get_hosts_connected_to_switch(self, switch):
+        return [host for host in self.net.hosts() if switch in self.net.node_intfs()[host].keys()]
         
 
 class LeafSpineTopology(BaseTopology):

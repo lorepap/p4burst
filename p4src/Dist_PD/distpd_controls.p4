@@ -73,28 +73,30 @@ control DeflectRouting(inout header_t hdr,
         mark_to_drop(standard_metadata);
     }
 
-    action deflect_get_fw_port_idx_action(bit<9> port, bit<16> fw_port_idx, bit<48> dst_mac) {
+    action deflect_get_fw_port_idx_action(bit<9> port, bit<16> fw_port_idx) {
         meta.deflect_egress_spec = port;
         meta.deflect_fw_port_idx = fw_port_idx;
-        hdr.ethernet.srcAddr = hdr.ethernet.dstAddr; // l2 simplified forwarding to enable comunications between hosts
-        hdr.ethernet.dstAddr = dst_mac;
     }
 
-    table deflect_get_fw_idx_port_table {
+    action no_deflection() {
+        meta.deflect_egress_spec = standard_metadata.egress_spec;
+        meta.deflect_fw_port_idx = meta.fw_port_idx;
+    }
+
+    table deflect_get_fw_port_idx_table {
         key = {
             hdr.ipv4.dstAddr : lpm;
         }
         actions = {
             deflect_get_fw_port_idx_action;
-            NoAction;
-            drop;
+            no_deflection;
         }
         size = TABLE_SIZE;
-        default_action = NoAction;
+        default_action = no_deflection();
     }
     
     apply {
-        deflect_get_fw_idx_port_table.apply();
+        deflect_get_fw_port_idx_table.apply();
     }
 
 }
