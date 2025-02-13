@@ -74,6 +74,12 @@ class ExperimentRunner:
                 #config.QUEUE_RATE = 1
             self.update_p4_queue_size('p4src/Simple_Deflection/includes/sd_consts.p4')
             return 'Simple_Deflection/sd.p4'
+        elif control_plane == 'simple_deflection_fl':
+            #if self.args.app == 'deflection_test':
+                #config.QUEUE_SIZE = 2
+                #config.QUEUE_RATE = 1
+            self.update_p4_queue_size('p4src/Simple_Deflection_FL/includes/sd_consts.p4')
+            return 'Simple_Deflection/sd.p4'
         else:
             raise ValueError(f"Unsupported control plane: {control_plane}")
 
@@ -96,7 +102,7 @@ class ExperimentRunner:
             self.control_plane = ECMPControlPlane(self.topology, self.args.leaf, self.args.spine)
         elif self.args.control_plane == 'l3':
             self.control_plane = L3ForwardingControlPlane(self.topology)
-        elif self.args.control_plane == 'simple_deflection':
+        elif self.args.control_plane == 'simple_deflection' or self.args.control_plane == 'simple_deflection_fl':
             # self.control_plane = SimpleDeflectionControlPlane(self.topology)
             self.control_plane = SimpleDeflectionControlPlane(self.topology)
         else:
@@ -324,7 +330,7 @@ class ExperimentRunner:
             self.setup_experiment()
             self.start_network() # will run cli if specified
             
-            if self.p4_program == 'Simple_Deflection/sd.p4':
+            if self.p4_program == 'Simple_Deflection/sd.p4' or self.p4_program == 'Simple_Deflection_FL/sd.p4':
                 SimpleDeflectionBeePackets(self.topology).send_bee_packets()
                 time.sleep(5)
             
@@ -361,7 +367,7 @@ class ExperimentRunner:
 def get_args():
     parser = argparse.ArgumentParser(description='Run network experiment')
     parser.add_argument('--topology', '-t', type=str, required=True, choices=['leafspine', 'dumbbell'], help='Topology type')
-    parser.add_argument('--control_plane', '-c', type=str, required=False, choices=['ecmp', 'l3', 'simple_deflection'], help='Control plane protocol', default='ecmp')
+    parser.add_argument('--control_plane', '-c', type=str, required=False, choices=['ecmp', 'l3', 'simple_deflection', 'simple_deflection_fl'], help='Control plane protocol', default='ecmp')
     parser.add_argument('--hosts', '-n', type=int, required=True, help='Number of hosts')
     parser.add_argument('--leaf', '-l', type=int, help='Number of leaf switches (for leaf-spine topology)', default=2)
     parser.add_argument('--spine', '-s', type=int, help='Number of spine switches (for leaf-spine topology)', default=2)
