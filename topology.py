@@ -22,6 +22,47 @@ class BaseTopology(ABC):
     def generate_topology(self):
         pass
 
+    def get_host_connections(self):
+        return {
+            host: (switch, port)
+            for switch in self.net.switches()
+            for port, nodes in self.net.node_ports()[switch].items()
+            for host in self.net.hosts()
+            if host in nodes
+        }
+
+    def get_port_mappings(self):
+        return {
+            switch: self._map_physical_to_logical_ports(switch)
+            for switch in self.net.switches()
+        }
+        
+    def _map_physical_to_logical_ports(self, switch):
+        physical_ports = sorted([port for port in self.net.node_ports()[switch].keys()])
+        
+        if len(physical_ports) > 8:
+            raise ValueError(f"Switch {switch} has {len(physical_ports)} ports. Maximum allowed is 8.")
+                
+        return {port: idx for idx, port in enumerate(physical_ports)}
+
+    def get_connecting_port(self, source, target):
+        return next((port for port, nodes in self.net.node_ports()[source].items()
+                    if target in nodes), None)
+    
+    def get_host_ip(self, host):
+        return self.net.getNode(host).get('ip')
+
+    def get_host_mac(self, host):
+        return self.net.getNode(host).get('mac')
+    
+    def get_switch_mac(self, sw1, sw2):
+        for node1, node2, info in self.net.links(withInfo=True):
+            if sw1 in [node1, node2] and sw2 in [node1, node2]:
+                return info['addr1'] if sw2 == node1 else info['addr2']
+
+    def get_node_interfaces(self, node):
+        return self.net.node_intfs()[node]
+
     def create_switch_commands(self, switch_num):
         # Create txt files for each switch
         for i in range(1, switch_num + 1):
@@ -54,6 +95,24 @@ class LeafSpineTopology(BaseTopology):
         self.latency = latency
         self.p4_program = p4_program
         self.create_switch_commands(num_leaf + num_spine)
+
+    def get_spine_switches(self):
+        return [switch for switch in self.net.switches()
+                if not any(host in nodes 
+                        for _, nodes in self.net.node_ports()[switch].items()
+                        for host in self.net.hosts())]
+        
+    def get_leaf_switches(self):
+        spine_switches = self.get_spine_switches()
+        return [switch for switch in self.net.switches() 
+                if switch not in spine_switches]
+        
+    def get_spine_ports (self, leaf):
+        spine_switches = self.get_spine_switches()
+        return list(filter(None, map(
+            lambda spine: self.get_connecting_port(leaf, spine),
+                spine_switches
+            )))
 
     def generate_topology(self):
         hosts_per_leaf = self.num_hosts // self.num_leaf
@@ -90,11 +149,11 @@ class LeafSpineTopology(BaseTopology):
 
 
 class DumbbellTopology(BaseTopology):
-    def __init__(self, num_hosts, bw, latency, p4_program='l3_forwarding.p4'):
+    def __init__(self, num_hosts, bw, delay, p4_program='l3_forwarding.p4'):
         super().__init__()
         self.num_hosts = num_hosts
         self.bw = bw
-        self.latency = latency
+        self.delay = delay
         self.p4_program = p4_program
         self.create_switch_commands(2)
         if self.num_hosts < 2:
@@ -120,8 +179,8 @@ class DumbbellTopology(BaseTopology):
             host_port = i if switch_num == 1 else i - hosts_per_switch
             switch_port = i if switch_num == 1 else i - hosts_per_switch
             self.net.addLink(f'h{i}', f's{switch_num}', 
-                             bw=self.bw, delay=f'{self.latency}ms')
+                             bw=self.bw, delay=f'{self.delay}ms')
 
         # Connect switches
         self.net.addLink('s1', 's2', 
-                         bw=self.bw, delay=f'{self.latency}ms')
+                         bw=self.bw, delay=f'{self.delay}ms')

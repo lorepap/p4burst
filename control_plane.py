@@ -3,6 +3,8 @@ from p4utils.mininetlib.network_API import NetworkAPI
 import os 
 import ipaddress
 from topology import LeafSpineTopology, DumbbellTopology  # Add this line to import topology classes
+import utils
+import utils.bee_packets
 
 class BaseControlPlane(ABC):
     def __init__(self, topology, cmd_path='p4cli'):
@@ -240,143 +242,222 @@ class SimpleDeflectionControlPlane(BaseControlPlane):
     def __init__(self, topology, cmd_path='p4cli'):
         super().__init__(topology, cmd_path)
 
+    @staticmethod
+    def send_bee_packets(switch):
+        utils.bee_packets.send_bee_packets(switch)
+
     def generate_control_plane(self):
+
         if isinstance(self.topology, LeafSpineTopology):
+            host_connections = self.topology.get_host_connections()
+            port_mappings = self.topology.get_port_mappings()
+
+            switch_commands = dict()
             for switch in self.net_api.switches():
-                commands = []
-                is_spine = 'spine' in switch.lower()
-                
-                # Default actions
-                commands.append("table_set_default MyIngress.get_fw_port_idx_table drop")
-                commands.append("table_set_default MyIngress.fw_l2_table broadcast")
-                
-                # Process hosts and their IPs
-                host_entries = {}  # Track added entries to avoid duplicates
-                
-                for host in self.net_api.hosts():
-                    host_ip = self.get_host_ip(host).split('/')[0]
-                    host_mac = self.get_host_mac(host)
-                    # Find the switch connected to the host and the port
-                    connected_sw = None
-                    host_port = None
-                    for sw in self.net_api.switches():
-                        for port, nodes in self.net_api.node_ports()[sw].items():
-                            if host in nodes:
-                                connected_sw = sw
-                                host_port = port
-                                break
-                        if connected_sw:
-                            break
+                switch_commands[switch] = set()
+
+            leaf_switches = self.topology.get_leaf_switches()
+            spine_switches = self.topology.get_spine_switches()
+
+            # Process each host and add forwarding rules
+            for host in self.net_api.hosts():
+
+                host_ip = self.topology.get_host_ip(host).split('/')[0]
+                connected_sw, port = host_connections[host]
+                subnet = '.'.join(host_ip.split('.')[:3]) + ".0/24"
+                switch_mac = "00:00:00:00:00:00" # TODO: uncorrect to use this mac, however p4 program does not use it
+                host_mac = self.topology.get_host_mac(host)
+
+                # Add direct connection rule to leaf switch
+                logical_port = port_mappings[connected_sw][port]
+                switch_commands[connected_sw].add(
+                    f"table_add SimpleDeflectionIngress.forward.get_fw_port_idx_table get_fw_port_idx_action {host_ip}/32 => {port} {logical_port} {host_mac}"
+                )
+
+                # Add subnet rules to spine switches
+                for spine in spine_switches:
+                    port = self.topology.get_connecting_port(spine, connected_sw)
+                    switch_commands[spine].add(
+                        f"table_add MyIngress.ipv4_lpm ipv4_forward {subnet} => {switch_mac} {port}"
+                    )
+
+                # Add routing to spine for other leaf switches
+                for leaf in (l for l in leaf_switches if l != connected_sw):
+                    ports = self.topology.get_spine_ports(leaf)
+                    selected_port_idx = hash(subnet) % len(ports) # same subnet always goes to the same spine, but different subnet can go to different spine
+                    port = ports[selected_port_idx]
+                    logical_port = port_mappings[leaf][port]
+                    switch_commands[leaf].add(
+                        f"table_add SimpleDeflectionIngress.forward.get_fw_port_idx_table get_fw_port_idx_action {subnet} => {port} {logical_port} {switch_mac}"
+                    )
+
+            spine_defaults = [
+                "table_set_default MyIngress.ipv4_lpm drop",
+            ]
+
+            leaf_defaults = [
+                #"table_set_default SimpleDeflectionIngress.forward.get_fw_port_idx_table drop",
+                "table_set_default SimpleDeflectionIngress.forward.fw_l2_table broadcast",
+                #"table_set_default SimpleDeflectionIngress.set_deflect_egress_port_table drop"
+            ]
+
+            # Save all commands
+            for leaf in leaf_switches:
+
+                spine_logical_ports = {port_mappings[leaf][port] for port in self.topology.get_spine_ports(leaf)}
+
+                register_commands = [
+                    f"register_write SimpleDeflectionIngress.neighbor_switch_indicator {logical_port} 1" 
+                    for logical_port in range(8) if logical_port not in spine_logical_ports
+                ]
                     
-                    is_remote = connected_sw != switch
+                deflection_table_commands = [
+                    f"table_add SimpleDeflectionIngress.set_deflect_egress_port_table set_deflect_egress_port_action {logical_port} => {physical_port}" 
+                    for physical_port, logical_port in port_mappings[leaf].items()
+                ]
                     
-                    if not is_remote:
-                        # Direct host connection - add exact match rule
-                        port = host_port  # Use the port we found earlier instead of node_to_node_port
-                        commands.append(
-                            f"table_add MyIngress.get_fw_port_idx_table get_fw_port_idx_action {host_ip} => {port} {port}"
-                        )
-                        # Add L2 forwarding entry
-                        commands.append(
-                            f"table_add MyIngress.fw_l2_table fw_l2_action {host_mac} => {port}"
-                        )
-                    else:
-                        # Remote host - add route through spine/leaf
-                        if is_spine:
-                            # Spine switches: direct route to leaf
-                            leaf_sw = connected_sw
-                            for port, nodes in self.net_api.node_ports()[switch].items():
-                                if leaf_sw in nodes:
-                                    subnet = '.'.join(host_ip.split('.')[:3]) + ".0/24"
-                                    if subnet not in host_entries:
-                                        commands.append(
-                                            f"table_add MyIngress.get_fw_port_idx_table get_fw_port_idx_action {subnet} => {port} {port}"
-                                        )
-                                        host_entries[subnet] = port
-                                    break
-                        else:
-                            # Leaf switches: route to spine with deflection capability
-                            for spine in [sw for sw in self.net_api.switches() if 'spine' in sw.lower()]:
-                                for port, nodes in self.net_api.node_ports()[switch].items():
-                                    if spine in nodes:
-                                        subnet = '.'.join(host_ip.split('.')[:3]) + ".0/24"
-                                        if subnet not in host_entries:
-                                            commands.append(
-                                                f"table_add MyIngress.get_fw_port_idx_table get_fw_port_idx_action {subnet} => {port} {port}"
-                                            )
-                                            host_entries[subnet] = port
-                                        break
+                port_index_commands = [
+                    f"table_add SimpleDeflectionEgress.get_eg_port_idx_in_reg_table get_eg_port_idx_in_reg_action {physical_port} => {logical_port}"
+                    for physical_port, logical_port in port_mappings[leaf].items()
+                ]
+
+                queue_commands = [f"set_queue_rate 2", f"set_queue_depth 2"]
+
+                # Combine all commands
+                commands = (
+                    leaf_defaults + 
+                    list(switch_commands[leaf]) +
+                    register_commands +
+                    deflection_table_commands +
+                    port_index_commands +
+                    queue_commands
+                )
                 
-                # Configure try_next_port table entries for leaf switches
-                if not is_spine:
-                    # The entries are already const in the P4 program
-                    pass
-        
-        # TODO - we need to refactor the topology - control plane interaction
+                self.save_commands(leaf[1:], commands)
+                
+            for spine in spine_switches:
+                commands = spine_defaults + list(switch_commands[spine])
+                self.save_commands(spine[1:], commands)
+
         elif isinstance(self.topology, DumbbellTopology):
-            for switch in self.net_api.switches():
-                commands = []
-                
-                # Default actions
-                commands.append("table_set_default MyIngress.get_fw_port_idx_table drop")
-                commands.append("table_set_default MyIngress.fw_l2_table broadcast")
-                
-                # Track added entries
-                host_entries = {}
-                
-                # Get the other switch in dumbbell
-                other_switch = None
-                for sw in self.net_api.switches():
-                    if sw != switch: 
-                        other_switch = sw
-                        break
-                
-                # Find inter-switch port
-                interswitch_port = None
-                for port, nodes in self.net_api.node_ports()[switch].items():
-                    if other_switch in nodes:
-                        interswitch_port = port
-                        break
-                
-                # Process hosts
-                for host in self.net_api.hosts():
-                    host_ip = self.get_host_ip(host).split('/')[0]
-                    host_mac = self.get_host_mac(host)
-                    
-                    # Find the switch connected to the host
-                    connected_sw = None
-                    host_port = None
-                    for sw in self.net_api.switches():
-                        for port, nodes in self.net_api.node_ports()[sw].items():
-                            if host in nodes:
-                                connected_sw = sw
-                                host_port = port
-                                break
-                        if connected_sw:
-                            break
-                    
-                    is_remote = connected_sw != switch
-                    
-                    if not is_remote:
-                        # Directly connected host
-                        port = host_port  # Use the port we found earlier instead of node_to_node_port
-                        commands.append(
-                            f"table_add MyIngress.get_fw_port_idx_table get_fw_port_idx_action {host_ip} => {port} {port}"
-                        )
-                        commands.append(
-                            f"table_add MyIngress.fw_l2_table fw_l2_action {host_mac} => {port}"
-                        )
-                    else:
-                        # Remote host - route through other switch
-                        subnet = '.'.join(host_ip.split('.')[:3]) + ".0/24"
-                        if subnet not in host_entries:
-                            commands.append(
-                                f"table_add MyIngress.get_fw_port_idx_table get_fw_port_idx_action {subnet} => {interswitch_port} {interswitch_port}"
-                            )
-                            host_entries[subnet] = interswitch_port
-                
-                # Save commands for this switch (fix indentation - move inside the switch loop)
-                self.save_commands(switch[1:], commands)
+            """
+            Configure the control plane for a dumbbell topology:
+            - Switch "s1" runs the Simple Deflection program (sd.p4)
+            - Switch "s2" runs standard L3 forwarding (l3_forwarding.p4)
+            
+            Assumptions:
+            * There are exactly two switches: "s1" and "s2".
+            * The inter-switch link uses physical port 1 on both switches.
+            * Hosts can be connected to any port except port 1.
+            """
+
+            # Define the two switches.
+            s1 = "s1"  # deflection switch
+            s2 = "s2"  # L3 forwarding switch
+
+            s1_inter = self.topology.get_connecting_port(s1, s2)
+            s2_inter = self.topology.get_connecting_port(s2, s1)
+
+            # Obtain port mappings and host connections from the topology.
+            # port_mappings { switch: { physical_port: logical_port, ... }, ... }
+            port_mappings = self.topology.get_port_mappings()
+            # host_connections { host: (switch, physical_port), ... }
+            host_connections = self.topology.get_host_connections()
+
+            # Initialize a dictionary to hold all control plane commands for each switch.
+            switch_commands = { s1: set(), s2: set() }
+
+            # Process each host.
+            for host in self.net_api.hosts():
+                # Get host IP (removing any prefix) and MAC.
+                host_ip = self.topology.get_host_ip(host).split('/')[0]
+                host_mac = self.topology.get_host_mac(host)
+                # Determine which switch the host is connected to and on which physical port.
+                connected_sw, host_port = host_connections[host]
+
+                if connected_sw == s1:
+                    # --- For a host connected to s1 ---
+                    # (a) Install a local forwarding rule on s1.
+                    logical_port = port_mappings[s1][host_port]
+                    switch_commands[s1].add(
+                        f"table_add SimpleDeflectionIngress.forward.get_fw_port_idx_table "
+                        f"get_fw_port_idx_action {host_ip}/32 => {host_port} {logical_port} {host_mac}"
+                    )
+                    # (b) On s2, add an inter-switch rule so that packets destined to this host are forwarded via s2's inter-switch port.
+                    switch_commands[s2].add(
+                        f"table_add MyIngress.ipv4_lpm ipv4_forward {host_ip}/32 => {host_mac} {s2_inter}"
+                    )
+                elif connected_sw == s2:
+                    # --- For a host connected to s2 ---
+                    # (a) Install a local L3 forwarding rule on s2.
+                    switch_commands[s2].add(
+                        f"table_add MyIngress.ipv4_lpm ipv4_forward {host_ip}/32 => {host_mac} {host_port}"
+                    )
+                    # (b) On s1, install an inter-switch rule so that packets destined to this host use the inter-switch link.
+                    # A dummy MAC is used here since the sd.p4 program does not use it.
+                    dummy_mac = "00:00:00:00:00:00"
+                    logical_inter = port_mappings[s1][s1_inter]
+                    switch_commands[s1].add(
+                        f"table_add SimpleDeflectionIngress.forward.get_fw_port_idx_table "
+                        f"get_fw_port_idx_action {host_ip}/32 => {s1_inter} {logical_inter} {dummy_mac}"
+                    )
+
+            # Set default actions.
+            # For s1 (Simple Deflection switch), we set a default for the L2 table.
+            s1_defaults = [
+                # Uncomment the next line if you need a default drop for the get_fw_port_idx_table:
+                "table_set_default SimpleDeflectionIngress.forward.get_fw_port_idx_table SimpleDeflectionIngress.forward.drop",
+                "table_set_default SimpleDeflectionIngress.forward.fw_l2_table broadcast",
+                "table_set_default SimpleDeflectionIngress.set_deflect_egress_port_table SimpleDeflectionIngress.drop"
+            ]
+            # For s2 (L3 forwarding switch), drop if no rule matches.
+            s2_defaults = [
+                "table_set_default MyIngress.ipv4_lpm drop",
+            ]
+
+            # Additional configuration for s1 (the deflection switch):
+            # 1. Configure the neighbor_switch_indicator register.
+            #    For s1, only the inter-switch port should be available for deflection.
+            s1_register_commands = [
+                f"register_write SimpleDeflectionIngress.neighbor_switch_indicator {logical_port} 1"
+                for physical_port, logical_port in port_mappings[s1].items()
+                if physical_port != s1_inter
+            ]
+            # 2. Populate the deflection mapping table.
+            s1_deflection_table_commands = [
+                f"table_add SimpleDeflectionIngress.set_deflect_egress_port_table set_deflect_egress_port_action {logical_port} => {physical_port}"
+                for physical_port, logical_port in port_mappings[s1].items()
+            ]
+            # 3. Populate the port-index table used in the egress pipeline.
+            s1_port_index_commands = [
+                f"table_add SimpleDeflectionEgress.get_eg_port_idx_in_reg_table get_eg_port_idx_in_reg_action {physical_port} => {logical_port}"
+                for physical_port, logical_port in port_mappings[s1].items()
+            ]
+            # 4. Set queue configuration commands.
+            queue_rate = 1000
+            queue_depth = 1000
+            s1_queue_commands = [ f"set_queue_rate {queue_rate}", f"set_queue_depth {queue_depth}" ]
+            #s1_queue_commands = [""]
+
+            # Combine all commands for s1.
+            s1_commands = (
+                s1_defaults +
+                list(switch_commands[s1]) +
+                s1_register_commands +
+                s1_deflection_table_commands +
+                s1_port_index_commands +
+                s1_queue_commands
+            )
+
+            # Combine all commands for s2.
+            s2_commands = s2_defaults + list(switch_commands[s2])
+
+            # Save the commands for each switch.
+            self.save_commands(s1[1:], s1_commands)
+            self.save_commands(s2[1:], s2_commands)
+
+
+
 
 class TestControlPlane(BaseControlPlane):
     """
@@ -390,67 +471,89 @@ class TestControlPlane(BaseControlPlane):
         self.deflection_switch = deflection_switch
 
     def generate_control_plane(self):
-        if not isinstance(self.topology, DumbbellTopology):
-            raise ValueError("TestControlPlane can only be used with DumbbellTopology")
+        """
+        Configure the control plane:
+        - `s1` runs the Simple Deflection P4 program (`sd.p4`)
+        - `s2` runs a normal L3 forwarding (`l3_forwarding.p4`)
+        """
 
         for switch in self.net_api.switches():
             commands = []
-            if switch == self.deflection_switch:
-                # Use deflection routing on deflection_switch
-                commands.append("table_set_default MyIngress.get_fw_port_idx_table drop")
-                commands.append("table_set_default MyIngress.fw_l2_table broadcast")
-            else:
-                # Use simple L3 forwarding on other switch
-                commands.append("table_set_default MyIngress.ipv4_lpm drop")
+            print(f"[INFO] Configuring switch {switch}")
 
-            # Get the other switch and inter-switch port
-            other_switch = [sw for sw in self.net_api.switches() if sw != switch][0]
+            # Find the other switch (to get the inter-switch link)
+            other_switch = None
+            for sw in self.net_api.switches():
+                if sw != switch:
+                    other_switch = sw
+                    break
+
+            # Find the inter-switch port
             interswitch_port = None
             for port, nodes in self.net_api.node_ports()[switch].items():
                 if other_switch in nodes:
                     interswitch_port = port
                     break
 
-            # Process all hosts
             for host in self.net_api.hosts():
                 host_ip = self.get_host_ip(host).split('/')[0]
                 host_mac = self.get_host_mac(host)
-                is_local = False
-                local_port = None
 
-                # Find if host is local to this switch
-                for port, nodes in self.net_api.node_ports()[switch].items():
-                    if host in nodes:
-                        is_local = True
-                        local_port = port
+                # Identify the switch the host is connected to
+                connected_sw = None
+                host_port = None
+                for sw in self.net_api.switches():
+                    for port, nodes in self.net_api.node_ports()[sw].items():
+                        if host in nodes:
+                            connected_sw = sw
+                            host_port = port
+                            break
+                    if connected_sw:
                         break
 
-                if is_local:
-                    if switch == self.deflection_switch:
-                        # Local host on deflection switch - use deflection tables
+                is_remote = connected_sw != switch
+
+                ## 🎯 **Switch S1: Implements Simple Deflection (`sd.p4`)**
+                if switch == "s1":
+                    commands.append("table_set_default SimpleDeflectionIngress.forward.get_fw_port_idx_table drop")
+                    commands.append("table_set_default SimpleDeflectionIngress.forward.fw_l2_table broadcast")
+
+                    # Initialize queue occupancy registers (assuming 8 ports)
+                    for port in range(8):
+                        commands.append(f"register_write SimpleDeflectionIngress.queue_occupancy_info {port} 0")
+
+                    if connected_sw == "s1":
+                        # Local forwarding (e.g., h1 → h2)
+                        print(f"[INFO] (S1) Adding L3 forwarding: {host_ip} -> port {host_port}")
                         commands.append(
-                            f"table_add MyIngress.get_fw_port_idx_table get_fw_port_idx_action {host_ip}/32 => {local_port} {local_port}"
-                        )
-                        commands.append(
-                            f"table_add MyIngress.fw_l2_table fw_l2_action {host_mac} => {local_port}"
-                        )
-                    else:
-                        # Local host on L3 switch - use L3 forwarding
-                        commands.append(
-                            f"table_add MyIngress.ipv4_lpm ipv4_forward {host_ip}/32 => {host_mac} {local_port}"
-                        )
-                else:
-                    # Remote hosts
-                    subnet = '.'.join(host_ip.split('.')[:3]) + ".0/24"
-                    if switch == self.deflection_switch:
-                        # Remote on deflection switch - use deflection with interswitch port
-                        commands.append(
-                            f"table_add MyIngress.get_fw_port_idx_table get_fw_port_idx_action {subnet} => {interswitch_port} {interswitch_port}"
+                            f"table_add SimpleDeflectionIngress.forward.get_fw_port_idx_table get_fw_port_idx_action {host_ip}/32 => {host_port} {host_port}"
                         )
                     else:
-                        # Remote on L3 switch - use simple forwarding through interswitch port
+                        # Inter-switch forwarding (s1 -> s2)
+                        print(f"[INFO] (S1) Adding deflection rule for {host_ip}/32 -> inter-switch port {interswitch_port}")
                         commands.append(
-                            f"table_add MyIngress.ipv4_lpm ipv4_forward {subnet} => 00:00:00:00:00:00 {interswitch_port}"
+                            f"table_add SimpleDeflectionIngress.forward.get_fw_port_idx_table get_fw_port_idx_action {host_ip}/32 => {interswitch_port} {interswitch_port}"
+                        )
+                        commands.append(
+                            f"register_write SimpleDeflectionIngress.queue_occupancy_info {interswitch_port} 1"
                         )
 
+                ## 🎯 **Switch S2: Implements Standard L3 Forwarding (`l3_forwarding.p4`)**
+                elif switch == "s2":
+                    commands.append("table_set_default MyIngress.ipv4_lpm drop")
+
+                    if connected_sw == "s2":
+                        # Local forwarding (e.g., h3 → h4)
+                        print(f"[INFO] (S2) Adding L3 forwarding: {host_ip} -> port {host_port}")
+                        commands.append(
+                            f"table_add MyIngress.ipv4_lpm ipv4_forward {host_ip}/32 => {host_mac} {host_port}"
+                        )
+                    else:
+                        # Inter-switch forwarding (s2 -> s1)
+                        print(f"[INFO] (S2) Adding inter-switch forwarding: {host_ip}/32 -> port {interswitch_port}")
+                        commands.append(
+                            f"table_add MyIngress.ipv4_lpm ipv4_forward {host_ip}/32 => {host_mac} {interswitch_port}"
+                        )
+
+            # Save commands for debugging
             self.save_commands(switch[1:], commands)

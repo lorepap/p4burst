@@ -20,6 +20,7 @@
             "console": "integratedTerminal",
             "sudo": true,
         },
+
         {
             "name": "RUNNER",
             "type": "debugpy",
@@ -27,20 +28,25 @@
             "program": "runner.py",
             "cwd": "${workspaceFolder}",
             "console": "integratedTerminal",
+            "python": "/usr/bin/python",
             // run as a root
             "sudo": true,
             "args": [
                 "-t",
-                "dumbbell",
+                "leafspine",
                 "-n",
+                "4",
+                "--leaf",
+                "4",
+                "--spine",
                 "2",
                 "-c",
-                "simple_deflection",
+                "l3",
                 // "-l",
                 // "2",
                 // "-s",
                 // "2",
-                "--cli"
+                // "--cli"
             ]
         }
     ]

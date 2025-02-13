@@ -15,11 +15,12 @@ import subprocess
 
 from metrics import FlowMetricsManager
 from topology import LeafSpineTopology, DumbbellTopology
-from control_plane import ECMPControlPlane, L3ForwardingControlPlane, SimpleDeflectionControlPlane, TestControlPlane
+from control_plane import ECMPControlPlane, L3ForwardingControlPlane, SimpleDeflectionControlPlane, BaseControlPlane
 
 class ExperimentRunner:
     def __init__(self, args):
         self.args = args
+        self.control_plane: BaseControlPlane = None
         # Path
         self.db_path = 'data/distributions'
         self.exp_id = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -34,7 +35,7 @@ class ExperimentRunner:
         config.read(config_file)
         self.config = config
         # global
-        self.hosts = self.config.getint('global', 'n_hosts')
+        self.n_hosts = self.config.getint('global', 'n_hosts')
         self.app = self.config.get('global', 'app')
         self.topology_str = self.config.get('global', 'topology')
         self.leaf = self.config.getint('leafspine', 'n_leaf')
@@ -60,22 +61,22 @@ class ExperimentRunner:
         elif self.control_plane_str == 'l3':
             return 'l3_forwarding.p4'
         elif self.control_plane_str == 'simple_deflection':
-            return 'sd.p4'
+            return 'sd/sd.p4'
         else:
             raise ValueError(f"Unsupported control plane: {self.control_plane_str}")
 
     def setup_experiment(self):
         if self.topology_str == 'leafspine':
             self.topology = LeafSpineTopology(
-                self.hosts, 
+                self.n_hosts, 
                 self.leaf, 
                 self.spine, 
                 self.bw, 
                 self.delay,
                 self.p4_program
             )
-        elif self.args.topology == 'dumbbell':
-            self.topology = DumbbellTopology(self.hosts, self.bw, self.delay, self.p4_program)
+        elif self.topology_str == 'dumbbell':
+            self.topology = DumbbellTopology(self.n_hosts, self.bw, self.delay, self.p4_program)
         else:
             raise ValueError(f"Unsupported topology: {self.args.topology}")
 
@@ -84,20 +85,20 @@ class ExperimentRunner:
         elif self.control_plane_str == 'l3':
             self.control_plane = L3ForwardingControlPlane(self.topology)
         elif self.control_plane_str == 'simple_deflection':
-            # self.control_plane = SimpleDeflectionControlPlane(self.topology)
-            self.control_plane = TestControlPlane(self.topology) # TODO replace with simpledeflection
+            self.control_plane = SimpleDeflectionControlPlane(self.topology)
         else:
             raise ValueError(f"Unsupported control plane: {self.control_plane_str}")
 
     def start_network(self):
+        """
+        Start the network and generate the control plane.
+        """
         self.topology.generate_topology()
         if self.args.switch_pcap:
             self.topology.enable_switch_pcap()
         self.topology.start_network()
         self.control_plane.generate_control_plane()
         self.topology.net.program_switches() # insert the rules
-        if self.args.cli:
-            self.topology.net.start_net_cli()  # debugging
 
     def stop_network(self):
         if self.topology.net:
@@ -206,32 +207,34 @@ class ExperimentRunner:
         # Two clients send iperf flows to two servers
         h1 = self.topology.net.net.get('h1')
         h2 = self.topology.net.net.get('h2')
-        h3 = self.topology.net.net.get('h3')
-        h4 = self.topology.net.net.get('h4')
+        # h3 = self.topology.net.net.get('h3')
+        # h4 = self.topology.net.net.get('h4')
 
         # for logging purposes
         os.makedirs(f'/home/ubuntu/p4burst/tmp/{self.exp_id}', exist_ok=True)
 
         # Capture senders pcap
         pcap_dir = 'pcap'
-        for host in [h1, h2, h3]:
+        for host in self.topology.net.net.hosts:
             for intf in host.intfList():
                 if intf.name != 'lo':
                     cmd = f'tcpdump -i {intf} -w {pcap_dir}/{intf}.pcap &'
                     host.cmd(cmd)
 
         # Start servers
-        print(f"Starting server on h3 ({h3.IP()})...")
-        h3.cmd(f'iperf3 -s --logfile /home/ubuntu/p4burst/tmp/{self.exp_id}/iperf_app_server_h3.log &')
-        print(f"Starting server on h4 ({h4.IP()})...")
-        h4.cmd(f'iperf3 -s -p 5202 --logfile /home/ubuntu/p4burst/tmp/{self.exp_id}/iperf_app_server_h4.log &')
+        print(f"Starting server on h2 ({h2.IP()})...")
+        h2.cmd(f'iperf3 -s --logfile /home/ubuntu/p4burst/tmp/{self.exp_id}/iperf_app_server_h3.log &')
+        #print(f"Starting server on h4 ({h4.IP()})...")
+        #h4.cmd(f'iperf3 -s -p 5202 --logfile /home/ubuntu/p4burst/tmp/{self.exp_id}/iperf_app_server_h4.log &')
         time.sleep(2)
 
         # Start clients
         print(f"Running client on h1 ({h1.IP()}) for {self.args.duration}s...")
-        h1.cmd(f'iperf3 -c {h3.IP()} -t {self.args.duration} -p 5201 --logfile /home/ubuntu/p4burst/tmp/{self.exp_id}/iperf_app_client_h1.log &')
-        print(f"Starting client on h2 ({h2.IP()}) for {self.args.duration}s...")
-        h2.cmd(f'iperf3 -c {h4.IP()} -t {self.args.duration} -p 5202 --logfile /home/ubuntu/p4burst/tmp/{self.exp_id}/iperf_app_client_h2.log &')
+        cmd = f'iperf3 -c {h2.IP()} -t {self.args.duration} -p 5201 --logfile /home/ubuntu/p4burst/tmp/{self.exp_id}/iperf_app_client_h1.log'
+        proc = h1.popen(cmd, shell=True, stderr=sys.stderr, stdout=subprocess.DEVNULL)
+        self.processes.append(proc)
+        # print(f"Starting client on h2 ({h2.IP()}) for {self.args.duration}s...")
+        # h2.cmd(f'iperf3 -c {h4.IP()} -t {self.args.duration} -p 5202 --logfile /home/ubuntu/p4burst/tmp/{self.exp_id}/iperf_app_client_h2.log &')
   
     def select_servers(self, n):
         # Check if the number of servers requested is greater than the available servers
@@ -326,10 +329,21 @@ class ExperimentRunner:
         try:
             self.setup_experiment()
             self.start_network() # will run cli if specified
+
+            # Pre-run setup
+            if isinstance(self.control_plane, SimpleDeflectionControlPlane):
+                # Note: I add the bee packets logic to the SD control plane to keep the runner clean
+                self.control_plane.send_bee_packets(switch='s1') # TODO add bee packets for all deflection switches
+            
+            if self.args.cli:
+                self.topology.net.start_net_cli()  # debugging
+
             if self.args.host_pcap:
                 self.enable_pcap_hosts()
+            
             if self.app:
                 exp_dict[self.app]()
+            
             else:
                 # run the CLI
                 print("No app specified. Running Mininet CLI...")
