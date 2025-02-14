@@ -364,6 +364,9 @@ class QuantilePreemptiveDeflectionControlPlane(BaseDeflectionControlPlane):
     
         # Map to 1 or 2 with 75%-25% distribution
         return 1 if hash_value % 4 < 3 else 2
+    
+    def generate_leaf_spine_control_plane(self):
+        return super().generate_leaf_spine_control_plane()
 
     def generate_dumbbell_control_plane(self):
         raise NotImplementedError("QuantilePreemptiveDeflectionControlPlane is not implemented for DumbbellTopology")
@@ -380,8 +383,8 @@ class DistPreemptiveDeflectionControlPlane(BaseDeflectionControlPlane):
         # Map to 45 or 2 with 80%-20% distribution
         return 45 if hash_value % 5 < 4 else 2
     
-    def generate_control_plane(self):
-        super().generate_control_plane()
+    def generate_leaf_spine_control_plane(self):
+        super().generate_leaf_spine_control_plane()
         commands = []
         C = config.QUEUE_SIZE - 1
         alpha = config.ALPHA
@@ -396,10 +399,10 @@ class DistPreemptiveDeflectionControlPlane(BaseDeflectionControlPlane):
                 rank_start, rank_end, mid_rank = DistPreemptiveDeflectionControlPlane._compute_interval_and_midpoint(j)
                 rel_prio = math.floor(C * alpha * (1 - math.exp(- (mid_rank / mid_m))))
                 commands.append(
-                    f"table_add get_rel_prio_table get_rel_prio_action {rel_prio} => [{rank_start} - {rank_end}] [{m_start} - {m_end}]"
+                    f"table_add SwitchIngress.get_rel_prio_table get_rel_prio_action {rank_start}->{rank_end} {m_start}->{m_end} => {rel_prio} 1"
                 )
-                commands.append(DistPreemptiveDeflectionControlPlane
-                    f"table_add get_deflect_rel_prio_table get_deflect_rel_prio_action {rel_prio} => [{rank_start} - {rank_end}] [{m_start} - {m_end}]"
+                commands.append(
+                    f"table_add SwitchIngress.get_deflect_rel_prio_table get_deflect_rel_prio_action {rank_start}->{rank_end} {m_start}->{m_end} => {rel_prio} 1"
                 )
 
         for i in range(m_newm_num_entries):
@@ -408,7 +411,7 @@ class DistPreemptiveDeflectionControlPlane(BaseDeflectionControlPlane):
                 rank_start, rank_end, mid_rank = DistPreemptiveDeflectionControlPlane._compute_interval_and_midpoint(j)
                 new_m = math.floor((49 * mid_m + mid_rank) / 50)
                 commands.append(
-                    f"table_add get_newm_table get_newm_action {new_m} => [{rank_start} - {rank_end}] [{m_start} - {m_end}]"
+                    f"table_add SwitchEgress.get_newm_table get_newm_action {rank_start}->{rank_end} {m_start}->{m_end} => {new_m} 1"
                 )
         
         for leaf in self.leaf_switches:
