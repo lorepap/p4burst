@@ -86,7 +86,7 @@ class BaseTopology(ABC):
 
 
 class LeafSpineTopology(BaseTopology):
-    def __init__(self, num_hosts, num_leaf, num_spine, bw, latency, p4_program='ecmp.p4'):
+    def __init__(self, num_hosts, num_leaf, num_spine, bw, latency, p4_program):
         super().__init__()
         self.num_hosts = num_hosts
         self.num_leaf = num_leaf
