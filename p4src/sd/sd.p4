@@ -221,6 +221,8 @@ control SimpleDeflectionEgress(inout header_t hdr,
                 get_eg_port_idx_in_reg_table.apply();
                 debug_eg_port.write((bit<32>)0, standard_metadata.egress_port);
                 debug_qdepth.write((bit<32>)0, standard_metadata.deq_qdepth);
+
+                queue_occupancy_info.write((bit<32>)meta.port_idx_in_reg, meta.is_fw_port_full);
             }
         }
     }
