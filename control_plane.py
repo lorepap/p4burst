@@ -239,8 +239,10 @@ class L3ForwardingControlPlane(BaseControlPlane):
 
 
 class SimpleDeflectionControlPlane(BaseControlPlane):
-    def __init__(self, topology, cmd_path='p4cli'):
+    def __init__(self, topology, cmd_path='p4cli', queue_rate=100, queue_depth=100):
         super().__init__(topology, cmd_path)
+        self.queue_rate = queue_rate
+        self.queue_depth = queue_depth
 
     @staticmethod
     def send_bee_packets(switch):
@@ -261,7 +263,6 @@ class SimpleDeflectionControlPlane(BaseControlPlane):
 
             # Process each host and add forwarding rules
             for host in self.net_api.hosts():
-
                 host_ip = self.topology.get_host_ip(host).split('/')[0]
                 connected_sw, port = host_connections[host]
                 subnet = '.'.join(host_ip.split('.')[:3]) + ".0/24"
@@ -296,7 +297,7 @@ class SimpleDeflectionControlPlane(BaseControlPlane):
             ]
 
             leaf_defaults = [
-                #"table_set_default SimpleDeflectionIngress.forward.get_fw_port_idx_table drop",
+                "table_set_default SimpleDeflectionIngress.forward.get_fw_port_idx_table SimpleDeflectionIngress.forward.drop",
                 "table_set_default SimpleDeflectionIngress.forward.fw_l2_table broadcast",
                 #"table_set_default SimpleDeflectionIngress.set_deflect_egress_port_table drop"
             ]
@@ -321,7 +322,7 @@ class SimpleDeflectionControlPlane(BaseControlPlane):
                     for physical_port, logical_port in port_mappings[leaf].items()
                 ]
 
-                queue_commands = [f"set_queue_rate 2", f"set_queue_depth 2"]
+                queue_commands = [f"set_queue_rate {self.queue_rate}", f"set_queue_depth {self.queue_depth}"]
 
                 # Combine all commands
                 commands = (
@@ -434,9 +435,7 @@ class SimpleDeflectionControlPlane(BaseControlPlane):
                 for physical_port, logical_port in port_mappings[s1].items()
             ]
             # 4. Set queue configuration commands.
-            queue_rate = 1000
-            queue_depth = 1000
-            s1_queue_commands = [ f"set_queue_rate {queue_rate}", f"set_queue_depth {queue_depth}" ]
+            s1_queue_commands = [ f"set_queue_rate {self.queue_rate}", f"set_queue_depth {self.queue_depth}" ]
             #s1_queue_commands = [""]
 
             # Combine all commands for s1.
