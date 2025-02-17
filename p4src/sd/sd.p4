@@ -21,8 +21,7 @@ control SimpleDeflectionIngress(inout header_t hdr,
 
     register<bit<1>>(8) queue_occupancy_info;
     register<bit<1>>(8) neighbor_switch_indicator;
-    register<bit<1>>(8) is_fw_port_full_register;
-    register<bit<19>>(8) ig_deq_qdepth_register;
+    register<bit<1>>(1) is_fw_port_full_register;
 
     counter(1, CounterType.packets) normal_ctr;
     counter(1, CounterType.packets) deflected_ctr;
@@ -94,7 +93,7 @@ control SimpleDeflectionIngress(inout header_t hdr,
                 queue_occupancy_info.read(meta.is_fw_port_full, (bit<32>)meta.fw_port_idx);
                 
                 // debug
-                is_fw_port_full_register.write((bit<32>)meta.fw_port_idx, meta.is_fw_port_full);
+                is_fw_port_full_register.write(0, meta.is_fw_port_full);
 
                 generate_random();
                 
@@ -169,7 +168,8 @@ control SimpleDeflectionEgress(inout header_t hdr,
                  inout standard_metadata_t standard_metadata) {
 
     register<bit<1>>(8) queue_occupancy_info;
-    register<bit<19>>(8) debug_qdepth;
+    register<bit<19>>(1) debug_qdepth;
+    register<bit<9>>(1) debug_eg_port;
 
     // TODO: Following action and table can be avoided if we unify output_port_idx and fw_port_idx.
     //       This would avoid a table lookup, but like that we can count the number of deflected packets.
@@ -219,8 +219,8 @@ control SimpleDeflectionEgress(inout header_t hdr,
                 }
 
                 get_eg_port_idx_in_reg_table.apply();
-                queue_occupancy_info.write((bit<32>)meta.port_idx_in_reg, meta.is_fw_port_full);
-                debug_qdepth.write((bit<32>)standard_metadata.egress_port, standard_metadata.deq_qdepth);
+                debug_eg_port.write((bit<32>)0, standard_metadata.egress_port);
+                debug_qdepth.write((bit<32>)0, standard_metadata.deq_qdepth);
             }
         }
     }
