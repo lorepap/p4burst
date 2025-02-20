@@ -9,9 +9,9 @@ const bit<32> TABLE_SIZE      = 256;
 const bit<16> QUANTILEPD_PORT = 9000;
 const bit<16> NUM_FLOWS       = 500;
 const bit<16> NUM_PREFIXES    = 500;
-const bit<32> QUEUE_SIZE      = 1000;    // Value overriden from config.py
+const bit<32> QUEUE_SIZE      = 49;    // Value overriden from config.py
 const bit<16> SAMPLE_COUNT    = 1;
 const bit<32> NUM_LOGICAL_PORTS = 8;
-const bit<8> EQUATION_MULT_SHIFT = 3;
+const bit<8> PRIO_SHIFT                        = 0;    // Value overriden
 
 #endif

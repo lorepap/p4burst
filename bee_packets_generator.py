@@ -48,7 +48,7 @@ class QuantilePreemptiveDeflectionBeePackets(BeePackets):
     class BeeHeader(Packet):
         name = "BeeHeader"
         fields_desc = [
-            BitField("port_idx_in_reg", 0, 32),  # TODO: ridurre a 16 o meno
+            BitField("port_idx_in_reg", 0, 16),  # TODO: ridurre a 16 o meno
             BitField("queue_length", 0, 32),
             BitField("M", 0, 32)
         ]
@@ -60,7 +60,8 @@ class DistPreemptiveDeflectionBeePackets(BeePackets):
         name = "BeeHeader"
         fields_desc = [
             BitField("port_idx_in_reg", 0, 16),
-            BitField("queue_length", 0, 32)
+            BitField("queue_length", 0, 32),
+            BitField("M", 0, 32),
         ]
     def create_bee_header(self, port):
         return self.BeeHeader(port_idx_in_reg=port)

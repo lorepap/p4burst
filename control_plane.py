@@ -193,6 +193,7 @@ class BaseDeflectionControlPlane(BaseControlPlane):
                 for physical_port, logical_port in self.port_mappings[leaf].items()
             ]
 
+            #queue_commands = [f"set_queue_rate {config.QUEUE_RATE}", f"set_queue_depth {config.QUEUE_SIZE}", f"set_queue_rate 1000 9999"]
             queue_commands = [f"set_queue_rate {config.QUEUE_RATE}", f"set_queue_depth {config.QUEUE_SIZE}"]
 
             # Combine all commands
@@ -311,7 +312,7 @@ class BasePreemptiveDeflectionControlPlane(BaseDeflectionControlPlane):
     def generate_leaf_spine_control_plane(self):
         super().generate_leaf_spine_control_plane()
         hosts_pairs = itertools.combinations(self.net_api.hosts(), 2)
-        switch_commands = defaultdict(list)
+        switch_commands = defaultdict(set)
         for host1, host2 in hosts_pairs:
             h1_ip = self.topology.get_host_ip_no_mask(host1)
             h2_ip = self.topology.get_host_ip_no_mask(host2)
@@ -322,8 +323,8 @@ class BasePreemptiveDeflectionControlPlane(BaseDeflectionControlPlane):
                 f"table_add SwitchIngress.get_flow_priority_table get_flow_priority_action {h1_ip} {h2_ip} => {rank}",
                 f"table_add SwitchIngress.get_flow_priority_table get_flow_priority_action {h2_ip} {h1_ip} => {rank}"
             ]
-            switch_commands[h1_connected_sw].extend(rank_commands)
-            switch_commands[h2_connected_sw].extend(rank_commands)
+            switch_commands[h1_connected_sw].update(rank_commands)
+            switch_commands[h2_connected_sw].update(rank_commands)
 
         for host in self.net_api.hosts():
 
@@ -334,7 +335,7 @@ class BasePreemptiveDeflectionControlPlane(BaseDeflectionControlPlane):
             # Add routing to spine for other leaf switches
             for leaf in (l for l in self.leaf_switches if l != connected_sw):
                 ports = self.topology.get_spine_ports(leaf)
-                deflection_port_idx = hash(subnet) + 1 % len(ports) # same subnet always goes to the same spine, but different subnet can go to different spine
+                deflection_port_idx = (hash(subnet) + 1) % len(ports) # same subnet always goes to the same spine, but different subnet can go to different spine
                 deflection_port = ports[deflection_port_idx]
                 logical_deflection_port = self.port_mappings[leaf][deflection_port]
                 switch_commands[leaf].add(
@@ -353,7 +354,7 @@ class BasePreemptiveDeflectionControlPlane(BaseDeflectionControlPlane):
         pass
 
 
-class QuantilePreemptiveDeflectionControlPlane(BaseDeflectionControlPlane):
+class QuantilePreemptiveDeflectionControlPlane(BasePreemptiveDeflectionControlPlane):
     def calculate_rank(self, ip_address_1, ip_address_2): # TODO: we have to think about priorities of packets
         # Sort IPs to ensure consistent ordering
         ips = sorted([ip_address_1, ip_address_2])
@@ -363,15 +364,16 @@ class QuantilePreemptiveDeflectionControlPlane(BaseDeflectionControlPlane):
         hash_value = hash(combined) & 0xFFFFFFFF  # Get positive 32-bit value
     
         # Map to 1 or 2 with 75%-25% distribution
-        return 1 if hash_value % 4 < 3 else 2
+        #return 1 if hash_value % 4 < 3 else 2
+        return 1 if hash_value % 2==0 else 2
     
     def generate_leaf_spine_control_plane(self):
-        return super().generate_leaf_spine_control_plane()
+        super().generate_leaf_spine_control_plane()
 
     def generate_dumbbell_control_plane(self):
         raise NotImplementedError("QuantilePreemptiveDeflectionControlPlane is not implemented for DumbbellTopology")
     
-class DistPreemptiveDeflectionControlPlane(BaseDeflectionControlPlane):
+class DistPreemptiveDeflectionControlPlane(BasePreemptiveDeflectionControlPlane):
     def calculate_rank(self, ip_address_1, ip_address_2): # TODO: we have to think about priorities of packets
         # Sort IPs to ensure consistent ordering
         ips = sorted([ip_address_1, ip_address_2])
@@ -394,9 +396,9 @@ class DistPreemptiveDeflectionControlPlane(BaseDeflectionControlPlane):
         m_newm_rank_entries = config.M_NEWM_RANK_ENTRIES
 
         for i in range(m_prio_num_entries):
-            m_start, m_end, mid_m = DistPreemptiveDeflectionControlPlane._compute_interval_and_midpoint(i)
+            m_start, m_end, mid_m = DistPreemptiveDeflectionControlPlane.compute_interval_and_midpoint(i)
             for j in range(m_prio_rank_entries):
-                rank_start, rank_end, mid_rank = DistPreemptiveDeflectionControlPlane._compute_interval_and_midpoint(j)
+                rank_start, rank_end, mid_rank = DistPreemptiveDeflectionControlPlane.compute_interval_and_midpoint(j)
                 rel_prio = math.floor(C * alpha * (1 - math.exp(- (mid_rank / mid_m))))
                 commands.append(
                     f"table_add SwitchIngress.get_rel_prio_table get_rel_prio_action {rank_start}->{rank_end} {m_start}->{m_end} => {rel_prio} 1"
@@ -406,10 +408,10 @@ class DistPreemptiveDeflectionControlPlane(BaseDeflectionControlPlane):
                 )
 
         for i in range(m_newm_num_entries):
-            m_start, m_end, mid_m = DistPreemptiveDeflectionControlPlane._compute_interval_and_midpoint(i)
+            m_start, m_end, mid_m = DistPreemptiveDeflectionControlPlane.compute_interval_and_midpoint(i)
             for j in range(m_newm_rank_entries):
-                rank_start, rank_end, mid_rank = DistPreemptiveDeflectionControlPlane._compute_interval_and_midpoint(j)
-                new_m = math.floor((49 * mid_m + mid_rank) / 50)
+                rank_start, rank_end, mid_rank = DistPreemptiveDeflectionControlPlane.compute_interval_and_midpoint(j)
+                new_m = self.compute_new_m(mid_m, mid_rank)
                 commands.append(
                     f"table_add SwitchEgress.get_newm_table get_newm_action {rank_start}->{rank_end} {m_start}->{m_end} => {new_m} 1"
                 )
@@ -420,11 +422,26 @@ class DistPreemptiveDeflectionControlPlane(BaseDeflectionControlPlane):
     def generate_dumbbell_control_plane(self):
         raise NotImplementedError("DistPreemptiveDeflectionControlPlane is not implemented for DumbbellTopology")
 
+    '''
     @staticmethod
     def _compute_interval_and_midpoint(index):
         start = (2 << index) + 1
         end = (2 << (index + 1))
         return start, end, (start + end) / 2.0
+        '''
+    @staticmethod
+    def compute_interval_and_midpoint(index): # diverso da practical deflection (guarda sopra), ma in questo modo gli intervalli partono da 0
+        start = (2 << index) - 2
+        end = (2 << (index + 1)) - 3
+        return start, end, (start + end) / 2.0
+    
+    @staticmethod
+    def compute_new_m(mid_m, mid_rank):
+        return math.floor((49 * mid_m + mid_rank) / 50)
+    
+    @staticmethod
+    def compute_rel_prio(mid_rank, mid_m, C, alpha):
+        return math.floor(C * alpha * (1 - math.exp(- (mid_rank / mid_m))))
     
 
         

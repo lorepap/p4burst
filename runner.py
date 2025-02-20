@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+import math
 import os
 import time
 import random
@@ -57,6 +58,43 @@ class ExperimentRunner:
                 if const_name == 'QUEUE_SIZE':
                     base = line.split('=')[0]
                     lines[i] = f"{base}= {config.QUEUE_SIZE - 1};    // Value overriden from config.py\n"
+                if const_name == 'COUNT_ALL_SHIFT':
+                    base = line.split('=')[0]
+                    deflection_margin = config.LOGARITMIC_DEFLECTING_MARGIN if config.LOGARITMIC_DEFLECTING_MARGIN > 0 else 1
+                    shift = math.floor(math.log2(config.QUEUE_SIZE - 1)) - deflection_margin
+                    if shift < 0:
+                        shift = 0
+                    lines[i] = f"{base} = {shift};    // Value overriden\n"
+
+                if const_name == 'PRIO_SHIFT':
+                    base = line.split('=')[0]
+                    deflection_margin = config.LOGARITMIC_DEFLECTING_MARGIN if config.LOGARITMIC_DEFLECTING_MARGIN > 0 else 1
+                    C = config.QUEUE_SIZE - 1
+                    alpha = config.ALPHA
+                    max_m_index = config.M_PRIO_NUM_ENTRIES - 1
+                    m_rank_index = config.M_PRIO_RANK_ENTRIES -1
+                    base = line.split('=')[0]
+                    _, _, mid_rank = DistPreemptiveDeflectionControlPlane.compute_interval_and_midpoint(m_rank_index)
+                    _, _, mid_m = DistPreemptiveDeflectionControlPlane.compute_interval_and_midpoint(max_m_index)
+                    rel_prio = DistPreemptiveDeflectionControlPlane.compute_rel_prio(mid_rank, mid_m, C, alpha)
+                    shift = math.floor(math.log2(C / rel_prio)) - deflection_margin
+                    if shift < 0:
+                        shift = 0
+                    lines[i] = f"{base} = {shift};    // Value overriden\n"
+                '''
+                if const_name == 'EQUATION_MULT_SHIFT':
+                    C = config.QUEUE_SIZE - 1
+                    alpha = config.ALPHA
+                    max_m_index = config.M_PRIO_NUM_ENTRIES - 1
+                    m_rank_index = config.M_PRIO_RANK_ENTRIES -1
+                    base = line.split('=')[0]
+                    _, _, mid_rank = DistPreemptiveDeflectionControlPlane.compute_interval_and_midpoint(m_rank_index)
+                    _, _, mid_m = DistPreemptiveDeflectionControlPlane.compute_interval_and_midpoint(max_m_index)
+                    rel_prio = DistPreemptiveDeflectionControlPlane.compute_rel_prio(mid_rank, mid_m, C, alpha)
+                    equation_mult_shift = math.floor(math.log2(rel_prio / C)) + 4
+                    lines[i] = f"{base} = {equation_mult_shift};    // Value overriden\n"
+                '''
+
         
         with open(p4_file, 'w') as f:
             f.writelines(lines)
@@ -81,10 +119,10 @@ class ExperimentRunner:
             self.update_p4_queue_size('p4src/Simple_Deflection_FL/includes/sd_consts.p4')
             return 'Simple_Deflection/sd.p4'
         elif control_plane == 'quantile_preemptive_deflection':
-            self.update_p4_constants_from_config('p4src/Quantile_PD/includes/quantilepd_consts.p4')
+            self.update_p4_queue_size('p4src/Quantile_PD/includes/quantilepd_consts.p4')
             return 'Quantile_PD/quantilepd.p4'
         elif control_plane == 'dist_preemptive_deflection':
-            self.update_p4_constants_from_config('p4src/Dist_PD/includes/distpd_consts.p4')
+            self.update_p4_queue_size('p4src/Dist_PD/includes/distpd_consts.p4')
             return 'Dist_PD/distpd.p4'
         else:
             raise ValueError(f"Unsupported control plane: {control_plane}")

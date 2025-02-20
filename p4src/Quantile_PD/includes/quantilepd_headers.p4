@@ -93,6 +93,7 @@ struct metadata_t {
 
     bit<9> deflect_egress_spec;
     bit<16> port_idx_in_reg;
+    bit<32> reg_val;
 }
 
 

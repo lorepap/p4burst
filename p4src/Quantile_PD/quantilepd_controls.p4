@@ -104,6 +104,66 @@ control DeflectRouting(inout header_t hdr,
 control GetQuantile(inout metadata_t meta) {
     register<bit<32>>(20) window_register;
 
+    table debug_window_actions {
+        key = {
+            meta.tail : exact;
+            meta.rank : exact;
+            meta.check_results_0 : exact;
+            meta.check_results_1 : exact;
+            meta.check_results_2 : exact;
+            meta.check_results_3 : exact;
+            meta.check_results_4 : exact;
+            meta.check_results_5 : exact;
+            meta.check_results_6 : exact;
+            meta.check_results_7 : exact;
+            meta.check_results_8 : exact;
+            meta.check_results_9 : exact;
+            meta.check_results_10 : exact;
+            meta.check_results_11 : exact;
+            meta.check_results_12 : exact;
+            meta.check_results_13 : exact;
+            meta.check_results_14 : exact;
+            meta.check_results_15 : exact;
+            meta.check_results_16 : exact;
+            meta.check_results_17 : exact;
+            meta.check_results_18 : exact;
+            meta.check_results_19 : exact;
+        }
+        actions = { NoAction; }
+        size = TABLE_SIZE;
+        default_action = NoAction();
+    }
+
+    table debug_count_all {
+        key = {
+            meta.count_all : exact;
+            meta.check_results_0 : exact;
+            meta.check_results_1 : exact;
+            meta.check_results_2 : exact;
+            meta.check_results_3 : exact;
+            meta.check_results_4 : exact;
+            meta.check_results_5 : exact;
+            meta.check_results_6 : exact;
+            meta.check_results_7 : exact;
+            meta.check_results_8 : exact;
+            meta.check_results_9 : exact;
+            meta.check_results_10 : exact;
+            meta.check_results_11 : exact;
+            meta.check_results_12 : exact;
+            meta.check_results_13 : exact;
+            meta.check_results_14 : exact;
+            meta.check_results_15 : exact;
+            meta.check_results_16 : exact;
+            meta.check_results_17 : exact;
+            meta.check_results_18 : exact;
+            meta.check_results_19 : exact;
+        }
+        actions = { NoAction; }
+        size = TABLE_SIZE;
+        default_action = NoAction();
+    }
+
+/*
     #define CHECK_WINDOW_ACTION(INDEX)                                      \
         action check_window_action_##INDEX() {                              \
             bit<32> reg_val;                                                \
@@ -113,50 +173,69 @@ control GetQuantile(inout metadata_t meta) {
             } else {                                                        \
                 meta.check_results_##INDEX = 0;                             \
             }                                                               \
-            if (meta.tail == (bit<16>)((INDEX) * SAMPLE_COUNT)) {           \
+            if (meta.tail == (bit<16>)(INDEX * SAMPLE_COUNT)) {             \
                 reg_val = meta.rank;                                        \
             }                                                               \
-            window_register.write(INDEX, meta.rank);                        \
+            window_register.write(INDEX, meta.rank);                        \ 
         }
+*/
 
+    #define CHECK_WINDOW_ACTION(INDEX)                                      \
+        window_register.read(meta.reg_val, INDEX);                           \
+        if (meta.rank < meta.reg_val) {                                      \
+            meta.check_results_##INDEX = 1;                             \
+        } else {                                                        \
+            meta.check_results_##INDEX = 0;                             \
+        }                                                               \
+        if (meta.tail == (bit<16>)(INDEX * SAMPLE_COUNT)) {             \
+            window_register.write(INDEX, meta.rank);                    \ 
+        }                                                               \
 
     action sum_columns_and_compute_count_all() {
-        bit<32> col0;
-        bit<32> col1;
-        bit<32> col2;
-        bit<32> col3;
+        //bit<32> col0;
+        //bit<32> col1;
+        //bit<32> col2;
+        //bit<32> col3;
         
         // Somma per ciascuna colonna:
         // Colonna 0: indici 0, 4, 8, 12, 16
-        col0 = (bit<32>)meta.check_results_0 + (bit<32>)meta.check_results_4 +
-               (bit<32>)meta.check_results_8 + (bit<32>)meta.check_results_12 +
-               (bit<32>)meta.check_results_16;
+        meta.check_results_0 = meta.check_results_0 + meta.check_results_4;
+        meta.check_results_0 = meta.check_results_0 + meta.check_results_8;
+        meta.check_results_0 = meta.check_results_0 + meta.check_results_12;
+        meta.check_results_0 = meta.check_results_0 + meta.check_results_16;
         // Colonna 1: indici 1, 5, 9, 13, 17
-        col1 = (bit<32>)meta.check_results_1 + (bit<32>)meta.check_results_5 +
-               (bit<32>)meta.check_results_9 + (bit<32>)meta.check_results_13 +
-               (bit<32>)meta.check_results_17;
+        meta.check_results_1 = meta.check_results_1 + meta.check_results_5; 
+        meta.check_results_1 = meta.check_results_1 + meta.check_results_9;
+        meta.check_results_1 = meta.check_results_1 + meta.check_results_13;
+        meta.check_results_1 = meta.check_results_1 + meta.check_results_17;
         // Colonna 2: indici 2, 6, 10, 14, 18
-        col2 = (bit<32>)meta.check_results_2 + (bit<32>)meta.check_results_6 +
-               (bit<32>)meta.check_results_10 + (bit<32>)meta.check_results_14 +
-               (bit<32>)meta.check_results_18;
+        meta.check_results_2 = meta.check_results_2 + meta.check_results_6;
+        meta.check_results_2 = meta.check_results_2 + meta.check_results_10;
+        meta.check_results_2 = meta.check_results_2 + meta.check_results_14;
+        meta.check_results_2 = meta.check_results_2 + meta.check_results_18;
         // Colonna 3: indici 3, 7, 11, 15, 19
-        col3 = (bit<32>)meta.check_results_3 + (bit<32>)meta.check_results_7 +
-               (bit<32>)meta.check_results_11 + (bit<32>)meta.check_results_15 +
-               (bit<32>)meta.check_results_19;
+        meta.check_results_3 = meta.check_results_3 + meta.check_results_7;
+        meta.check_results_3 = meta.check_results_3 + meta.check_results_11;
+        meta.check_results_3 = meta.check_results_3 + meta.check_results_15; 
+        meta.check_results_3 = meta.check_results_3 + meta.check_results_19;
 
-        // Logica per impostare il count finale (adattabile alla logica originale)
-        if (col0 == 0 && col2 == 0) {
+        meta.check_results_0 = meta.check_results_0 + meta.check_results_1;
+        meta.check_results_2 = meta.check_results_2 + meta.check_results_3;
+
+        // Logica per impostare il count finale)
+        if (meta.check_results_0 == 0 && meta.check_results_2 == 0) {
             meta.count_all = 0;
-        } else if ((col0 == 1 && col2 == 0) || (col0 == 0 && col2 == 1)) {
+        } else if ((meta.check_results_0 == 1 && meta.check_results_2 == 0) || (meta.check_results_0 == 0 && meta.check_results_2 == 1)) {
             meta.count_all = 1;
         } else {
             meta.count_all = 2;
         }
 
-        // Moltiplichiamo count_all (shift left di 10 bit equivale a moltiplicare per 2^10)
-        meta.count_all = meta.count_all << 10;
+        // Moltiplichiamo count_all (shift left di COUNT_ALL_SHIFT bit equivale a moltiplicare per 2^COUNT_ALL_SHIFT)
+        meta.count_all = meta.count_all << COUNT_ALL_SHIFT;
     }
 
+/*
     CHECK_WINDOW_ACTION(0)
     CHECK_WINDOW_ACTION(1)
     CHECK_WINDOW_ACTION(2)
@@ -177,32 +256,38 @@ control GetQuantile(inout metadata_t meta) {
     CHECK_WINDOW_ACTION(17)
     CHECK_WINDOW_ACTION(18)
     CHECK_WINDOW_ACTION(19)
+*/
 
     apply {
         // In questo esempio, "unroliamo" manualmente la chiamata per ciascuna finestra (0..19)
-        check_window_action_0();
-        check_window_action_1();
-        check_window_action_2();
-        check_window_action_3();
-        check_window_action_4();
-        check_window_action_5();
-        check_window_action_6();
-        check_window_action_7();
-        check_window_action_8();
-        check_window_action_9();
-        check_window_action_10();
-        check_window_action_11();
-        check_window_action_12();
-        check_window_action_13();
-        check_window_action_14();
-        check_window_action_15();
-        check_window_action_16();
-        check_window_action_17();
-        check_window_action_18();
-        check_window_action_19();
+        log_msg(" -- debug_log1");
+        CHECK_WINDOW_ACTION(0)
+        CHECK_WINDOW_ACTION(1)
+        CHECK_WINDOW_ACTION(2)
+        CHECK_WINDOW_ACTION(3)
+        CHECK_WINDOW_ACTION(4)
+        CHECK_WINDOW_ACTION(5)
+        CHECK_WINDOW_ACTION(6)
+        CHECK_WINDOW_ACTION(7)
+        CHECK_WINDOW_ACTION(8)
+        CHECK_WINDOW_ACTION(9)
+        CHECK_WINDOW_ACTION(10)
+        CHECK_WINDOW_ACTION(11)
+        CHECK_WINDOW_ACTION(12)
+        CHECK_WINDOW_ACTION(13)
+        CHECK_WINDOW_ACTION(14)
+        CHECK_WINDOW_ACTION(15)
+        CHECK_WINDOW_ACTION(16)
+        CHECK_WINDOW_ACTION(17)
+        CHECK_WINDOW_ACTION(18)
+        CHECK_WINDOW_ACTION(19)
+
+        debug_window_actions.apply();
 
         // Dopo aver eseguito tutti i check, sommiamo i risultati e calcoliamo il valore finale
         sum_columns_and_compute_count_all();
+
+        debug_count_all.apply();
     }
 
 }

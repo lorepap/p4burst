@@ -50,7 +50,7 @@ header udp_h {
 }
 
 header bee_h {
-    bit<32> port_idx_in_reg;
+    bit<16> port_idx_in_reg;
     bit<32> queue_length;
     bit<32> M;
 }

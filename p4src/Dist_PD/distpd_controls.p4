@@ -121,8 +121,8 @@ control GetMinRelPrioQueueLen(inout metadata_t ig_md) {
 control DeflectGetMinRelPrioQueueLen(inout metadata_t ig_md) {
 
     action deflect_get_min_rel_prio_queue_len() {
-        if (ig_md.rel_prio < ig_md.deflect_queue_length) {
-            ig_md.deflect_min_value_rel_prio_queue_len = ig_md.rel_prio;
+        if (ig_md.deflect_rel_prio < ig_md.deflect_queue_length) {
+            ig_md.deflect_min_value_rel_prio_queue_len = ig_md.deflect_rel_prio;
         } else {
             ig_md.deflect_min_value_rel_prio_queue_len = ig_md.deflect_queue_length;
         }

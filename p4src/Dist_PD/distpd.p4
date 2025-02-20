@@ -27,6 +27,22 @@ control SwitchIngress(
     action drop() {
         mark_to_drop(standard_metadata);
     }
+
+    table debug_prio {
+        key = {
+            standard_metadata.egress_spec: exact;
+            meta.fw_port_idx: exact;
+            meta.deflect_egress_spec: exact;
+            meta.deflect_fw_port_idx: exact;
+            meta.rank: exact;
+            meta.rel_prio: exact;
+            meta.deflect_rel_prio: exact;
+            meta.queue_length: exact;
+            meta.deflect_queue_length: exact;
+        }
+        actions = { NoAction; }
+        size = TABLE_SIZE;
+    }
     
     action get_flow_priority_action(bit<32> rank) {
         meta.rank = rank;
@@ -40,32 +56,34 @@ control SwitchIngress(
         size = TABLE_SIZE;
     }
     
+    
     action shift_queue_length() {
-        meta.queue_length = meta.queue_length << EQUATION_MULT_SHIFT;
+        meta.queue_length = meta.queue_length << 2;
     }
     
     action shift_deflect_queue_length() {
-        meta.deflect_queue_length = meta.deflect_queue_length << EQUATION_MULT_SHIFT;
+        meta.deflect_queue_length = meta.deflect_queue_length << 2;
     }
     
+    
     action get_rel_prio_action(bit<32> rel_prio) {
-        meta.rel_prio = rel_prio;
+        meta.rel_prio = rel_prio; // << PRIO_SHIFT;
     }
     action get_deflect_rel_prio_action(bit<32> rel_prio) {
-        meta.deflect_rel_prio = rel_prio;
+        meta.deflect_rel_prio = rel_prio; // << PRIO_SHIFT;
     }
     table get_rel_prio_table {
         key = {
-            meta.rank[19:0]: range;
-            meta.m[19:0] : range;
+            meta.rank: range;
+            meta.m : range;
         }
         actions = { get_rel_prio_action; }
         size = TABLE_SIZE;
     }
     table get_deflect_rel_prio_table {
         key = {
-            meta.rank[19:0]: range;
-            meta.deflect_m[19:0] : range;
+            meta.rank: range;
+            meta.deflect_m : range;
         }
         actions = { get_deflect_rel_prio_action; }
         size = TABLE_SIZE;
@@ -84,9 +102,9 @@ control SwitchIngress(
             routing.apply(hdr, meta, standard_metadata);
             deflection_routing.apply(hdr, meta, standard_metadata);
             ig_queue_length_reg.read(meta.queue_length, (bit<32>)meta.fw_port_idx);
-            ig_queue_length_reg.read(meta.deflect_queue_length, (bit<32>)meta.fw_port_idx);
+            ig_queue_length_reg.read(meta.deflect_queue_length, (bit<32>)meta.deflect_fw_port_idx);
             ig_m_reg.read(meta.m, (bit<32>)meta.fw_port_idx);
-            ig_m_reg.read(meta.deflect_m, (bit<32>)meta.fw_port_idx);
+            ig_m_reg.read(meta.deflect_m, (bit<32>)meta.deflect_fw_port_idx);
             
             get_rel_prio_table.apply();
             get_deflect_rel_prio_table.apply();
@@ -101,18 +119,21 @@ control SwitchIngress(
             } else {
                 meta.deflect_queue_length = 0;
             }
+            
+            // Diminusce la prbabilità di deflessione commentare per testare la deflessione.
             shift_queue_length();
             shift_deflect_queue_length();
             
             get_min_rel_prio_queue_len.apply(meta);
             deflect_get_min_rel_prio_queue_len.apply(meta);
+
+            debug_prio.apply();
             
             if (meta.min_value_rel_prio_queue_len == meta.queue_length) {
                 meta.m = (bit<32>) meta.deflect_m;
                 if (meta.deflect_min_value_rel_prio_queue_len != meta.deflect_queue_length) {
                     standard_metadata.egress_spec = meta.deflect_egress_spec;
                 } else {
-                    meta.m = 0;
                     drop();
                 } 
                 //TODO: looks like in TNA packets are dropped immediately, while in v1model often packets marked to be dropped in the imgress are dropped after the egress.
@@ -172,7 +193,6 @@ control SwitchEgress(
             eg_m_reg.read(hdr.bee.M, (bit<32>)hdr.bee.port_idx_in_reg);
             recirculate_preserving_field_list(0);
         } else if (hdr.ipv4.isValid() && 
-                   meta.m != 0 &&
                    (hdr.ipv4.protocol == IP_PROTOCOLS_TCP ||
                     hdr.ipv4.protocol == IP_PROTOCOLS_UDP)) {
 
