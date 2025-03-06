@@ -7,6 +7,6 @@ const bit<8> IP_PROTOCOLS_TCP = 6;
 const bit<8> IP_PROTOCOLS_UDP = 17;
 const bit<16> BEE_PORT        = 9999;
 const bit<32> TABLE_SIZE      = 256;
-const bit<19> QUEUE_CAPACITY  = 1000;     // QUEUE CAPACITY 1000 in bmv2
+const bit<19> QUEUE_CAPACITY  = 29;     // QUEUE CAPACITY 1000 in bmv2
 
 #endif

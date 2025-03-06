@@ -51,9 +51,21 @@ header udp_h {
     bit<16> checksum;
 }
 
+header flow_h {
+    bit<32> flow_id;
+    bit<32> seq;
+}
+
 header bee_h {
     bit<31> port_idx_in_reg;
     bit<1> queue_occ_info;
+}
+
+// for feature extraction
+header feat_h { 
+    bit<32> queue_length; 
+    bit<32> arrival_rate;
+    bit<32> link_util; 
 }
 
 struct metadata_t {
@@ -100,6 +112,7 @@ struct header_t {
     ipv4_h ipv4;
     tcp_h tcp;
     udp_h udp;
+    flow_h flow;
     bee_h bee;
 }
 

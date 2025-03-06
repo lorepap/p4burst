@@ -69,9 +69,16 @@ control SimpleDeflectionIngress(inout header_t hdr,
             //resubmit_preserving_field_list((bit<8>)1);
         } else {
             //ingress_ctr.count(ingress_ctr_index);
+            
             forward.apply(hdr, meta, standard_metadata);
             debug_enq_qdepth_table.apply();
+            
             if (hdr.ipv4.isValid() && (hdr.ipv4.protocol == IP_PROTOCOLS_TCP || hdr.ipv4.protocol == IP_PROTOCOLS_UDP)) {
+                
+                if (hdr.flow.isValid()) {
+                    log_msg("Ingress: port={}, size={}, flow_id={}, seq={}, timestamp={}", {standard_metadata.ingress_port, hdr.ipv4.totalLen, hdr.flow.flow_id, hdr.flow.seq, standard_metadata.ingress_global_timestamp});
+                }
+                
                 queue_occupancy_info.read(meta.is_queue_full_0, (bit<32>)0);
                 queue_occupancy_info.read(meta.is_queue_full_1, (bit<32>)1);
                 queue_occupancy_info.read(meta.is_queue_full_2, (bit<32>)2);
@@ -148,10 +155,14 @@ control SimpleDeflectionIngress(inout header_t hdr,
                     
                     set_deflect_egress_port_table.apply();
                     deflected_ctr.count(0);
+                    
+                    log_msg("Deflection: original_port={}, deflected_to={}, random_number={}",
+                            {meta.fw_port_idx+1, meta.output_port_idx+1, meta.random_number});
                     //ucast_port_debug_alu.execute(0);    // what is the value for idx
                 }
                 else {
                     // normal forwarding
+                    log_msg("Normal: port={}", {meta.fw_port_idx+1});
                     normal_ctr.count(0);
                 }
             }
@@ -170,6 +181,7 @@ control SimpleDeflectionEgress(inout header_t hdr,
     register<bit<1>>(8) queue_occupancy_info;
     register<bit<19>>(1) debug_qdepth;
     register<bit<9>>(1) debug_eg_port;
+    register<bit<32>>(8) arrival_counter;
 
     // TODO: Following action and table can be avoided if we unify output_port_idx and fw_port_idx.
     //       This would avoid a table lookup, but like that we can count the number of deflected packets.
@@ -209,7 +221,7 @@ control SimpleDeflectionEgress(inout header_t hdr,
             
         } else {
             if (hdr.ipv4.isValid() && (hdr.ipv4.protocol == IP_PROTOCOLS_TCP || hdr.ipv4.protocol == IP_PROTOCOLS_UDP)) {
-                // At the egress, data packets should write into the queue occupancy register array
+                // At the egress, data p\ackets should write into the queue occupancy register array
                 // debug_deq_qdepth_table.apply();
 
                 if (standard_metadata.deq_qdepth < QUEUE_CAPACITY) {
@@ -221,6 +233,15 @@ control SimpleDeflectionEgress(inout header_t hdr,
                 get_eg_port_idx_in_reg_table.apply();
                 debug_eg_port.write((bit<32>)0, standard_metadata.egress_port);
                 debug_qdepth.write((bit<32>)0, standard_metadata.deq_qdepth);
+
+                log_msg("Queue: port={}, deq_qdepth={}", {standard_metadata.egress_port, standard_metadata.deq_qdepth});
+
+                // Update and log arrival counter
+                bit<32> count;
+                arrival_counter.read(count, (bit<32>)standard_metadata.egress_port);
+                count = count + 1;
+                arrival_counter.write((bit<32>)standard_metadata.egress_port, count);
+                log_msg("Arrival: port={}, count={}", {standard_metadata.egress_port, count});
 
                 queue_occupancy_info.write((bit<32>)meta.port_idx_in_reg, meta.is_fw_port_full);
             }

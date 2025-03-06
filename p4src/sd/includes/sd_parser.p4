@@ -42,12 +42,18 @@ parser SimpleDeflectionParser(packet_in packet,
         packet.extract(hdr.udp);
         transition select(hdr.udp.dstPort) {
             BEE_PORT: parse_bee;
-            default: accept;
+            default: parse_flow;
         }
     }
 
     state parse_bee {
         packet.extract(hdr.bee);
+        transition accept;
+    }
+
+
+    state parse_flow {
+        packet.extract(hdr.flow);
         transition accept;
     }
 }
@@ -62,6 +68,7 @@ control SimpleDeflectionDeparser(packet_out packet, in header_t hdr) {
         packet.emit(hdr.ipv4);
         packet.emit(hdr.tcp);
         packet.emit(hdr.udp);
+        packet.emit(hdr.flow);
         packet.emit(hdr.bee);
     }
 }

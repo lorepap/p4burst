@@ -10,7 +10,9 @@
             "request": "launch",
             "program": "${file}",
             "console": "integratedTerminal",
-            "sudo": true
+            "sudo": true,
+            "justMyCode": false,
+            "python": "ip netns exec h1 python3"
         },
         {
             "name": "stress_test_dumbbell",
