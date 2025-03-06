@@ -31,14 +31,14 @@ def run_mininet():
     """
     Run a simple client-server application that sends one single packet from a client to a server.
     """
-    
-    n_hosts = 7
+
+    n_hosts = 5
     bw = 10
     delay = 0
     p4_program = 'sd/sd.p4' 
     exp_id = "0000-deflection"
-    queue_rate = 3
-    queue_depth = 3
+    queue_rate = 10
+    queue_depth = 30
 
     # topology = DumbbellTopology(n_hosts, bw, delay, p4_program)
     topology = LeafSpineTopology(n_hosts, 2, 2, bw, delay, p4_program)
@@ -61,9 +61,9 @@ def run_mininet():
 
     client_1 = topology.net.net.get('h1')
     client_2 = topology.net.net.get('h3')
-    client_3 = topology.net.net.get('h5')
-    client_4 = topology.net.net.get('h7')
-    clients = [client_1]
+    #client_3 = topology.net.net.get('h5')
+    # client_4 = topology.net.net.get('h7')
+    clients = [client_1, client_2]
     server = topology.net.net.get('h2')
 
     time.sleep(2)
@@ -71,14 +71,14 @@ def run_mininet():
     # tcp dump
     switch = topology.net.net.get('s2')
     os.makedirs(f"tmp/{exp_id}", exist_ok=True)
-    switch.cmd(f"tcpdump -i s1-eth1 > tmp/{exp_id}/s1-eth1_deflection.log &") # to h2
+    switch.cmd(f"tcpdump -i s1-eth1 > tmp/{exp_id}/s1-eth1_deflection.log &")
     switch.cmd(f"tcpdump -i s1-eth2 > tmp/{exp_id}/s1-eth2_deflection.log &") 
     switch.cmd(f"tcpdump -i s1-eth3 > tmp/{exp_id}/s1-eth3_deflection.log &") 
     switch.cmd(f"tcpdump -i s1-eth4 > tmp/{exp_id}/s1-eth4_deflection.log &") 
     switch.cmd(f"tcpdump -i s1-eth5 > tmp/{exp_id}/s1-eth5_deflection.log &") 
     switch.cmd(f"tcpdump -i s1-eth6 > tmp/{exp_id}/s1-eth6_deflection.log &") 
     
-    switch.cmd(f"tcpdump -i s2-eth1 > tmp/{exp_id}/s2-eth1_deflection.log &") # to h2
+    switch.cmd(f"tcpdump -i s2-eth1 > tmp/{exp_id}/s2-eth1_deflection.log &")
     switch.cmd(f"tcpdump -i s2-eth2 > tmp/{exp_id}/s2-eth2_deflection.log &") 
     switch.cmd(f"tcpdump -i s2-eth3 > tmp/{exp_id}/s2-eth3_deflection.log &") 
     switch.cmd(f"tcpdump -i s2-eth4 > tmp/{exp_id}/s2-eth4_deflection.log &") 
@@ -98,7 +98,7 @@ def run_mininet():
         print(f"Starting client on {client.name} ({client.IP()})...")
         log_file_str = f'tmp/{exp_id}/iperf_client_{i+1}.log'
         log_file = open(log_file_str, "w")
-        client_cmd = "iperf3 -c " + server.IP() + f" 10 -p 520{i+1}"
+        client_cmd = "iperf3 -c " + server.IP() + f" -p 520{i+1} -u -b 10M -t 10 -l 200"
         procs.append(client.popen(client_cmd, shell=True, stderr=log_file, stdout=log_file))
 
     for proc in procs:
