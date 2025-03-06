@@ -64,6 +64,9 @@ def merge_by_flow_seq(rl_csv, receiver_csv, output_csv):
         print(f"Warning: {missing_count} rows in RL dataset do not have corresponding entries in receiver log")
         print(f"Setting missing reordering_flag values to 0 (assuming in-order)")
         merged_df.loc[missing_mask, 'reordering_flag'] = 0
+
+    # Drop the flow_id column
+    merged_df.drop(columns=['flow_id', 'seq'], inplace=True)
     
     # Incorporate reorder penalty into reward
     print("Adjusting rewards based on reordering flags...")
