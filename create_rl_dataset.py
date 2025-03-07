@@ -7,6 +7,7 @@ import csv
 from collections import defaultdict
 from datetime import datetime
 import sys
+import os
 
 def parse_timestamp(ts_str):
     """Convert timestamp string to seconds."""
@@ -32,6 +33,18 @@ def merge_by_flow_seq(rl_csv, receiver_csv, output_csv):
         receiver_csv: Path to receiver log CSV with reordering flags
         output_csv: Path to write the merged output CSV
     """
+    # Check if input files exist
+    if not os.path.exists(rl_csv):
+        print(f"Error: RL dataset file {rl_csv} does not exist")
+        return False
+        
+    if not os.path.exists(receiver_csv):
+        print(f"Error: Receiver log file {receiver_csv} does not exist")
+        return False
+        
+    # Create directory for output if it doesn't exist
+    os.makedirs(os.path.dirname(output_csv), exist_ok=True)
+    
     print(f"Loading RL dataset from {rl_csv}")
     rl_df = pd.read_csv(rl_csv)
     
@@ -82,7 +95,7 @@ def merge_by_flow_seq(rl_csv, receiver_csv, output_csv):
     merged_df.to_csv(output_csv, index=False)
     print(f"Merge complete: {len(merged_df)} total rows in final dataset")
 
-def parse_switch_log(log_file, output_csv, window_size_us=100000, capacity_bps=10**7):
+def parse_switch_log(log_file, output_csv):
     """
     Parse P4 switch logs to extract flow data and create an RL dataset.
     
@@ -93,6 +106,14 @@ def parse_switch_log(log_file, output_csv, window_size_us=100000, capacity_bps=1
         capacity_bps: Link capacity in bits per second (unused with simplified features)
     """
     print(f"Parsing switch log from {log_file}")
+    
+    # Ensure log file exists
+    if not os.path.exists(log_file):
+        print(f"Error: Switch log file {log_file} does not exist")
+        return False
+        
+    # Create directory for output if it doesn't exist
+    os.makedirs(os.path.dirname(output_csv), exist_ok=True)
     
     # Regex patterns for parsing logs
     ingress_pattern = re.compile(r'Ingress: port=(\d+), size=(\d+), flow_id=(\d+), seq=(\d+), timestamp=(\d+)')
@@ -146,7 +167,7 @@ def parse_switch_log(log_file, output_csv, window_size_us=100000, capacity_bps=1
             break
     if t0 is None:
         print("Error: No ingress events found in the log.")
-        return
+        return False
     
     # Track current state - only queue depths now
     current_queue_depth = {p: 0 for p in range(1, 8)}
@@ -201,6 +222,7 @@ def parse_switch_log(log_file, output_csv, window_size_us=100000, capacity_bps=1
     
     print(f"Dataset with {len(dataset)} records written to {output_csv}")
     print("Note: Using simplified feature set with queue depths only for real-time RL processing")
+    return True
 
 def main():
     parser = argparse.ArgumentParser(description='Parse P4 switch logs and merge with receiver logs')
@@ -236,9 +258,12 @@ def main():
         merge_by_flow_seq(args.rl, args.receiver, args.output)
     elif args.command == 'full':
         # Run the full pipeline
-        parse_switch_log(args.log, args.intermediate, args.window)
-        merge_by_flow_seq(args.intermediate, args.receiver, args.output)
-        print(f"Full pipeline complete! Intermediate file: {args.intermediate}, Final output: {args.output}")
+        os.makedirs(os.path.dirname(args.intermediate), exist_ok=True)
+        if parse_switch_log(args.log, args.intermediate, args.window) is not False:
+            merge_by_flow_seq(args.intermediate, args.receiver, args.output)
+            print(f"Full pipeline complete! Intermediate file: {args.intermediate}, Final output: {args.output}")
+        else:
+            print(f"Pipeline stopped: Failed to process switch log {args.log}")
     else:
         parser.print_help()
 

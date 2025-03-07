@@ -42,7 +42,7 @@ def process_packet(pkt):
         dst_ip = pkt[IP].dst
         dport = pkt[UDP].dport
         arrival_time = time.time()  # current timestamp in seconds
-        key = (src_ip, dst_ip, dport)  # define a flow key
+        key = (src_ip, dst_ip, dport, flow_id)  # define a flow key
 
         # Check if this packet is out-of-order:
         reorder_flag = 0

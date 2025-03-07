@@ -49,8 +49,8 @@ def send_out_of_order_pkts(src_ip, iface, dst_ip, dst_port, num_packets=1000, in
         all_packets.extend(flow_packets)
     
     # Optionally interleave packets from different flows to simulate concurrent traffic
-    if num_flows > 1:
-        random.shuffle(all_packets)
+    # if num_flows > 1:
+    #     random.shuffle(all_packets)
     
     # Send packets in the (potentially modified) order
     print(f"Sending {len(all_packets)} total packets...")
@@ -88,7 +88,7 @@ if __name__ == '__main__':
     parser.add_argument("--port", type=int, help="Destination port")
     parser.add_argument("--num_packets", type=int, help="Number of packets per flow", default=100)
     parser.add_argument("--interval", type=float, help="Interval between packets", default=0.001)
-    parser.add_argument("--reorder_prob", type=float, help="Probability of out-of-order packets", default=0.2)
+    parser.add_argument("--reorder_prob", type=float, help="Probability of out-of-order packets", default=0)
     parser.add_argument("--num_flows", type=int, help="Number of flows to generate", default=1)
 
     args = parser.parse_args()
@@ -96,4 +96,4 @@ if __name__ == '__main__':
     # loopppa on the number of flows to debug different flow ids
     bind_layers(UDP, FlowHeader, dport=int(args.port))
     #send_custom_traffic(args.src_ip, args.intf, args.dst_ip, int(args.port), num_packets=args.num_packets, interval=args.interval)
-    send_out_of_order_pkts(args.src_ip, args.intf, args.dst_ip, int(args.port), num_packets=args.num_packets, interval=args.interval, out_of_order_probability=0.2, num_flows=args.num_flows)
+    send_out_of_order_pkts(args.src_ip, args.intf, args.dst_ip, int(args.port), num_packets=args.num_packets, interval=args.interval, out_of_order_probability=args.reorder_prob, num_flows=args.num_flows)
