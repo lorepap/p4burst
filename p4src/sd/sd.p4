@@ -20,6 +20,7 @@ control SimpleDeflectionIngress(inout header_t hdr,
     Forward() forward;
 
     register<bit<1>>(8) queue_occupancy_info;
+    register<bit<19>>(8) queue_depth_info;
     register<bit<1>>(8) neighbor_switch_indicator;
     register<bit<1>>(1) is_fw_port_full_register;
 
@@ -65,8 +66,10 @@ control SimpleDeflectionIngress(inout header_t hdr,
     apply {
         if (hdr.bee.isValid()) {
             queue_occupancy_info.write((bit<32>)hdr.bee.port_idx_in_reg, hdr.bee.queue_occ_info);
-            //meta.is_recirculated = 1;
-            //resubmit_preserving_field_list((bit<8>)1);
+            queue_depth_info.write((bit<32>)hdr.bee.port_idx_in_reg, hdr.bee.queue_depth);
+            
+            log_msg("BeeIngress: port={}, queue_occ={}, queue_depth={}", 
+                   {hdr.bee.port_idx_in_reg, hdr.bee.queue_occ_info, hdr.bee.queue_depth});
         } else {
             //ingress_ctr.count(ingress_ctr_index);
             
@@ -179,6 +182,7 @@ control SimpleDeflectionEgress(inout header_t hdr,
                  inout standard_metadata_t standard_metadata) {
 
     register<bit<1>>(8) queue_occupancy_info;
+    register<bit<19>>(8) queue_depth_info;  // Change to 8 entries to store depth for each port
     register<bit<19>>(1) debug_qdepth;
     register<bit<9>>(1) debug_eg_port;
     register<bit<32>>(8) arrival_counter;
@@ -213,19 +217,22 @@ control SimpleDeflectionEgress(inout header_t hdr,
 
     apply {
         if (hdr.bee.isValid()) {
-            // At the egress, worker packets should only read from the queue occupancy register array
-            // TODO: In BMv2 metadata can be preserved during recirculation. No need for bee header.
-            //       Also, bee packets don't need to reach UDP, can we send L2 packets with specific metadata?
+            // Bee packets read both queue occupancy and queue depth
             queue_occupancy_info.read(hdr.bee.queue_occ_info, (bit<32>)hdr.bee.port_idx_in_reg);
+            queue_depth_info.read(hdr.bee.queue_depth, (bit<32>)hdr.bee.port_idx_in_reg);
+            
+            log_msg("BeeEgress: port={}, queue_occ={}, queue_depth={}", 
+                   {hdr.bee.port_idx_in_reg, hdr.bee.queue_occ_info, hdr.bee.queue_depth});
+            
             recirculate_preserving_field_list(0);
             
         } else {
             if (hdr.ipv4.isValid() && (hdr.ipv4.protocol == IP_PROTOCOLS_TCP || hdr.ipv4.protocol == IP_PROTOCOLS_UDP)) {
-                // At the egress, data p\ackets should write into the queue occupancy register array
-                // debug_deq_qdepth_table.apply();
-
+                // Normal packet processing
+                
+                // Store both queue occupancy and actual queue depth
                 if (standard_metadata.deq_qdepth < QUEUE_CAPACITY) {
-                    meta.is_fw_port_full = 0; // Possible to write the register directly, but this is more readable
+                    meta.is_fw_port_full = 0;
                 } else {
                     meta.is_fw_port_full = 1;
                 }
@@ -234,16 +241,36 @@ control SimpleDeflectionEgress(inout header_t hdr,
                 debug_eg_port.write((bit<32>)0, standard_metadata.egress_port);
                 debug_qdepth.write((bit<32>)0, standard_metadata.deq_qdepth);
 
-                log_msg("Queue: port={}, deq_qdepth={}", {standard_metadata.egress_port, standard_metadata.deq_qdepth});
-
-                // Update and log arrival counter
+                // Update arrival counter as before
                 bit<32> count;
                 arrival_counter.read(count, (bit<32>)standard_metadata.egress_port);
                 count = count + 1;
                 arrival_counter.write((bit<32>)standard_metadata.egress_port, count);
                 log_msg("Arrival: port={}, count={}", {standard_metadata.egress_port, count});
 
+                // Write both queue occupancy and queue depth to registers
                 queue_occupancy_info.write((bit<32>)meta.port_idx_in_reg, meta.is_fw_port_full);
+                queue_depth_info.write((bit<32>)meta.port_idx_in_reg, standard_metadata.deq_qdepth);
+
+                // Queue depths
+                bit<19> q0;
+                bit<19> q1;
+                bit<19> q2;
+                bit<19> q3;
+                bit<19> q4;
+                bit<19> q5;
+                bit<19> q6;
+                bit<19> q7;
+                queue_depth_info.read(q0, 0);
+                queue_depth_info.read(q1, 1);
+                queue_depth_info.read(q2, 2);
+                queue_depth_info.read(q3, 3);
+                queue_depth_info.read(q4, 4);
+                queue_depth_info.read(q5, 5);
+                queue_depth_info.read(q6, 6);
+                queue_depth_info.read(q7, 7);
+                log_msg("Queue depths: q0={} q1={} q2={} q3={} q4={} q5={} q6={} q7={}",
+                        {q0, q1, q2, q3, q4, q5, q6, q7});
             }
         }
     }

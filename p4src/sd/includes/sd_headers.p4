@@ -57,8 +57,9 @@ header flow_h {
 }
 
 header bee_h {
-    bit<31> port_idx_in_reg;
+    bit<28> port_idx_in_reg;
     bit<1> queue_occ_info;
+    bit<19> queue_depth;
 }
 
 // for feature extraction

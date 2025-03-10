@@ -27,8 +27,9 @@ import argparse
 class BeeHeader(Packet):
     name = "BeeHeader"
     fields_desc = [
-        BitField("port_idx_in_reg", 0, 31),
-        BitField("queue_occ_info", 0, 1)
+        BitField("port_idx_in_reg", 0, 28),
+        BitField("queue_occ_info", 0, 1),
+        BitField("queue_depth", 0, 19) 
     ]
 
 def send_bee_packets(switch_name):
@@ -51,7 +52,7 @@ def run_mininet(n_pkts, interval, num_flows, n_senders):
     delay = 0.01
     p4_program = 'sd/sd.p4' 
     exp_id = "0000-deflection"
-    queue_rate = 1000
+    queue_rate = 100
     queue_depth = 30
 
     # topology = DumbbellTopology(n_hosts, bw, delay, p4_program)
@@ -115,9 +116,8 @@ def run_mininet(n_pkts, interval, num_flows, n_senders):
         client_cmd = f"python3 -u tx_reord.py --intf {intf} --src_ip {client.IP()} --dst_ip {server.IP()} --port 520{i+1} \
                 --num_packets {n_pkts} --interval {interval} --num_flows {num_flows} > {log_file_str} 2>&1 &"
         client.sendCmd(client_cmd)
-        # All clients should now be running in parallel
-        print("All clients started simultaneously")
 
+    print("All clients started simultaneously")
     # Wait for a reasonable amount of time for traffic to complete
     wait_time = max(10, n_pkts * interval * 2)  # Base wait time on packet count and interval
     print(f"Waiting {wait_time} seconds for traffic to complete...")

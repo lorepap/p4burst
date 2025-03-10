@@ -35,6 +35,8 @@ def main():
     cli_cmd_eg_port = "echo 'register_read SimpleDeflectionEgress.debug_eg_port' | simple_switch_CLI --thrift-port 9090"
     cli_cmd_normal_counter = "echo 'counter_read SimpleDeflectionIngress.normal_ctr 0' | simple_switch_CLI --thrift-port 9090"
     cli_cmd_deflected_counter = "echo 'counter_read SimpleDeflectionIngress.deflected_ctr 0' | simple_switch_CLI --thrift-port 9090"
+    cli_cmd_queue_depths = "echo 'register_read SimpleDeflectionEgress.queue_depth_info' | simple_switch_CLI --thrift-port 9090"
+
 
     with open(log_file, "w") as f:
         # f.write("Timestamp | Port | All Queues Occupancy (0/1) | Full? | Crt Enq Depth\n")
@@ -49,6 +51,7 @@ def main():
             result_debug_eg_port = subprocess.run(cli_cmd_eg_port, shell=True, capture_output=True, text=True)
             result_counter_normal = subprocess.run(cli_cmd_normal_counter, shell=True, capture_output=True, text=True)
             result_counter_deflected = subprocess.run(cli_cmd_deflected_counter, shell=True, capture_output=True, text=True)
+            result_queue_depths = subprocess.run(cli_cmd_queue_depths, shell=True, capture_output=True, text=True)
 
             output_queue = result_queue.stdout.strip()
             output_fw_full = result_fw_full.stdout.strip()
@@ -56,6 +59,7 @@ def main():
             output_debug_eg_port = result_debug_eg_port.stdout.strip()
             output_counter_normal = result_counter_normal.stdout.strip()
             output_counter_deflected = result_counter_deflected.stdout.strip()
+            output_queue_depths = result_queue_depths.stdout.strip()
 
             # Debugging: Print raw output
             # print("Raw Queue Output:", output_queue)
@@ -71,6 +75,7 @@ def main():
                 f.write(f"{output_debug_eg_port}\n")
                 f.write(f"{output_counter_normal}\n")
                 f.write(f"{output_counter_deflected}\n")
+                f.write(f"{output_queue_depths}\n")
                 f.write("\n")
 
 

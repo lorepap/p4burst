@@ -5,25 +5,48 @@
       "id" : 0,
       "fields" : [
         ["tmp", 32, false],
-        ["tmp_0", 9, false],
-        ["tmp_1", 16, false],
-        ["tmp_2", 32, false],
-        ["tmp_3", 32, false],
-        ["tmp_4", 48, false],
-        ["tmp_5", 32, false],
-        ["tmp_6", 16, false],
+        ["tmp_0", 32, false],
+        ["tmp_1", 28, false],
+        ["tmp_2", 1, false],
+        ["tmp_3", 19, false],
+        ["tmp_4", 9, false],
+        ["tmp_5", 16, false],
+        ["tmp_6", 32, false],
         ["tmp_7", 32, false],
-        ["tmp_8", 5, false],
-        ["tmp_9", 16, false],
-        ["tmp_10", 32, false],
-        ["tmp_11", 9, false],
-        ["tmp_12", 19, false],
-        ["tmp_13", 32, false],
+        ["tmp_8", 48, false],
+        ["tmp_9", 32, false],
+        ["tmp_10", 16, false],
+        ["tmp_11", 32, false],
+        ["tmp_12", 5, false],
+        ["tmp_13", 16, false],
         ["tmp_14", 32, false],
-        ["tmp_15", 9, false],
-        ["tmp_16", 32, false],
-        ["tmp_17", 32, false],
+        ["tmp_15", 32, false],
+        ["tmp_16", 28, false],
+        ["tmp_17", 1, false],
+        ["tmp_18", 19, false],
+        ["tmp_19", 32, false],
+        ["tmp_20", 32, false],
+        ["tmp_21", 9, false],
+        ["tmp_22", 32, false],
+        ["tmp_23", 32, false],
+        ["tmp_24", 32, false],
+        ["tmp_25", 19, false],
+        ["tmp_26", 19, false],
+        ["tmp_27", 19, false],
+        ["tmp_28", 19, false],
+        ["tmp_29", 19, false],
+        ["tmp_30", 19, false],
+        ["tmp_31", 19, false],
+        ["tmp_32", 19, false],
         ["count_0", 32, false],
+        ["q0_0", 19, false],
+        ["q1_0", 19, false],
+        ["q2_0", 19, false],
+        ["q3_0", 19, false],
+        ["q4_0", 19, false],
+        ["q5_0", 19, false],
+        ["q6_0", 19, false],
+        ["q7_0", 19, false],
         ["metadata_t._dummy0", 1, false],
         ["metadata_t._random_number1", 5, false],
         ["metadata_t._queue_length2", 32, false],
@@ -51,7 +74,7 @@
         ["metadata_t._neighbor_switch_indicator_6", 1, false],
         ["metadata_t._port_idx_in_reg25", 16, false],
         ["metadata_t._is_fw_port_full26", 1, false],
-        ["_padding_0", 6, false]
+        ["_padding_0", 2, false]
       ]
     },
     {
@@ -143,8 +166,9 @@
       "name" : "bee_h",
       "id" : 7,
       "fields" : [
-        ["port_idx_in_reg", 31, false],
-        ["queue_occ_info", 1, false]
+        ["port_idx_in_reg", 28, false],
+        ["queue_occ_info", 1, false],
+        ["queue_depth", 19, false]
       ]
     }
   ],
@@ -446,7 +470,7 @@
       "id" : 0,
       "source_info" : {
         "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-        "line" : 26,
+        "line" : 27,
         "column" : 36,
         "source_fragment" : "normal_ctr"
       },
@@ -458,7 +482,7 @@
       "id" : 1,
       "source_info" : {
         "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-        "line" : 27,
+        "line" : 28,
         "column" : 36,
         "source_fragment" : "deflected_ctr"
       },
@@ -480,11 +504,23 @@
       "bitwidth" : 1
     },
     {
-      "name" : "SimpleDeflectionIngress.neighbor_switch_indicator",
+      "name" : "SimpleDeflectionIngress.queue_depth_info",
       "id" : 1,
       "source_info" : {
         "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
         "line" : 23,
+        "column" : 25,
+        "source_fragment" : "queue_depth_info"
+      },
+      "size" : 8,
+      "bitwidth" : 19
+    },
+    {
+      "name" : "SimpleDeflectionIngress.neighbor_switch_indicator",
+      "id" : 2,
+      "source_info" : {
+        "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
+        "line" : 24,
         "column" : 24,
         "source_fragment" : "neighbor_switch_indicator"
       },
@@ -493,10 +529,10 @@
     },
     {
       "name" : "SimpleDeflectionIngress.is_fw_port_full_register",
-      "id" : 2,
+      "id" : 3,
       "source_info" : {
         "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-        "line" : 24,
+        "line" : 25,
         "column" : 24,
         "source_fragment" : "is_fw_port_full_register"
       },
@@ -505,10 +541,10 @@
     },
     {
       "name" : "SimpleDeflectionEgress.queue_occupancy_info",
-      "id" : 3,
+      "id" : 4,
       "source_info" : {
         "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-        "line" : 181,
+        "line" : 184,
         "column" : 24,
         "source_fragment" : "queue_occupancy_info"
       },
@@ -516,11 +552,23 @@
       "bitwidth" : 1
     },
     {
-      "name" : "SimpleDeflectionEgress.debug_qdepth",
-      "id" : 4,
+      "name" : "SimpleDeflectionEgress.queue_depth_info",
+      "id" : 5,
       "source_info" : {
         "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-        "line" : 182,
+        "line" : 185,
+        "column" : 25,
+        "source_fragment" : "queue_depth_info"
+      },
+      "size" : 8,
+      "bitwidth" : 19
+    },
+    {
+      "name" : "SimpleDeflectionEgress.debug_qdepth",
+      "id" : 6,
+      "source_info" : {
+        "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
+        "line" : 186,
         "column" : 25,
         "source_fragment" : "debug_qdepth"
       },
@@ -529,10 +577,10 @@
     },
     {
       "name" : "SimpleDeflectionEgress.debug_eg_port",
-      "id" : 5,
+      "id" : 7,
       "source_info" : {
         "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-        "line" : 183,
+        "line" : 187,
         "column" : 24,
         "source_fragment" : "debug_eg_port"
       },
@@ -541,10 +589,10 @@
     },
     {
       "name" : "SimpleDeflectionEgress.arrival_counter",
-      "id" : 6,
+      "id" : 8,
       "source_info" : {
         "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-        "line" : 184,
+        "line" : 188,
         "column" : 25,
         "source_fragment" : "arrival_counter"
       },
@@ -910,7 +958,7 @@
           ],
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 30,
+            "line" : 31,
             "column" : 8,
             "source_fragment" : "mark_to_drop(standard_metadata)"
           }
@@ -940,7 +988,7 @@
           ],
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 34,
+            "line" : 35,
             "column" : 8,
             "source_fragment" : "random(meta.random_number, 0, 7)"
           }
@@ -971,7 +1019,7 @@
           ],
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 38,
+            "line" : 39,
             "column" : 8,
             "source_fragment" : "standard_metadata.egress_spec = idx"
           }
@@ -979,7 +1027,7 @@
       ]
     },
     {
-      "name" : "sd67",
+      "name" : "sd68",
       "id" : 10,
       "runtime_data" : [],
       "primitives" : [
@@ -1010,7 +1058,7 @@
           ],
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 67,
+            "line" : 68,
             "column" : 39,
             "source_fragment" : "(bit<32>)hdr.bee.port_idx_in_reg"
           }
@@ -1033,9 +1081,153 @@
           ],
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 67,
+            "line" : 68,
             "column" : 12,
             "source_fragment" : "queue_occupancy_info.write((bit<32>)hdr.bee.port_idx_in_reg, hdr.bee.queue_occ_info)"
+          }
+        },
+        {
+          "op" : "assign",
+          "parameters" : [
+            {
+              "type" : "field",
+              "value" : ["scalars", "tmp_0"]
+            },
+            {
+              "type" : "expression",
+              "value" : {
+                "type" : "expression",
+                "value" : {
+                  "op" : "&",
+                  "left" : {
+                    "type" : "field",
+                    "value" : ["bee", "port_idx_in_reg"]
+                  },
+                  "right" : {
+                    "type" : "hexstr",
+                    "value" : "0xffffffff"
+                  }
+                }
+              }
+            }
+          ],
+          "source_info" : {
+            "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
+            "line" : 69,
+            "column" : 35,
+            "source_fragment" : "(bit<32>)hdr.bee.port_idx_in_reg"
+          }
+        },
+        {
+          "op" : "register_write",
+          "parameters" : [
+            {
+              "type" : "register_array",
+              "value" : "SimpleDeflectionIngress.queue_depth_info"
+            },
+            {
+              "type" : "field",
+              "value" : ["scalars", "tmp_0"]
+            },
+            {
+              "type" : "field",
+              "value" : ["bee", "queue_depth"]
+            }
+          ],
+          "source_info" : {
+            "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
+            "line" : 69,
+            "column" : 12,
+            "source_fragment" : "queue_depth_info.write((bit<32>)hdr.bee.port_idx_in_reg, hdr.bee.queue_depth)"
+          }
+        },
+        {
+          "op" : "assign",
+          "parameters" : [
+            {
+              "type" : "field",
+              "value" : ["scalars", "tmp_1"]
+            },
+            {
+              "type" : "field",
+              "value" : ["bee", "port_idx_in_reg"]
+            }
+          ],
+          "source_info" : {
+            "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
+            "line" : 72,
+            "column" : 20,
+            "source_fragment" : "hdr.bee.port_idx_in_reg"
+          }
+        },
+        {
+          "op" : "assign",
+          "parameters" : [
+            {
+              "type" : "field",
+              "value" : ["scalars", "tmp_2"]
+            },
+            {
+              "type" : "field",
+              "value" : ["bee", "queue_occ_info"]
+            }
+          ],
+          "source_info" : {
+            "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
+            "line" : 72,
+            "column" : 45,
+            "source_fragment" : "hdr.bee.queue_occ_info"
+          }
+        },
+        {
+          "op" : "assign",
+          "parameters" : [
+            {
+              "type" : "field",
+              "value" : ["scalars", "tmp_3"]
+            },
+            {
+              "type" : "field",
+              "value" : ["bee", "queue_depth"]
+            }
+          ],
+          "source_info" : {
+            "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
+            "line" : 72,
+            "column" : 69,
+            "source_fragment" : "hdr.bee.queue_depth"
+          }
+        },
+        {
+          "op" : "log_msg",
+          "parameters" : [
+            {
+              "type" : "string",
+              "value" : "BeeIngress: port={}, queue_occ={}, queue_depth={}"
+            },
+            {
+              "type" : "parameters_vector",
+              "value" : [
+                {
+                  "type" : "field",
+                  "value" : ["scalars", "tmp_1"]
+                },
+                {
+                  "type" : "field",
+                  "value" : ["scalars", "tmp_2"]
+                },
+                {
+                  "type" : "field",
+                  "value" : ["scalars", "tmp_3"]
+                }
+              ]
+            }
+          ],
+          "source_info" : {
+            "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
+            "line" : 71,
+            "column" : 12,
+            "source_fragment" : "            log_msg(\\\"BeeIngress: port={}, queue_occ={}, queue_depth={}\\\","
           }
         }
       ]
@@ -1090,86 +1282,10 @@
       ]
     },
     {
-      "name" : "sd79",
+      "name" : "sd82",
       "id" : 12,
       "runtime_data" : [],
       "primitives" : [
-        {
-          "op" : "assign",
-          "parameters" : [
-            {
-              "type" : "field",
-              "value" : ["scalars", "tmp_0"]
-            },
-            {
-              "type" : "field",
-              "value" : ["standard_metadata", "ingress_port"]
-            }
-          ],
-          "source_info" : {
-            "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 79,
-            "column" : 92,
-            "source_fragment" : "                    log_msg(\\\"Ingress: port={}, size={}, flow_id={}, seq={}, timestamp={}\\\", {standard_metadata.ingress_port, hdr.ipv4.totalLen, hdr.flow.flow_id, hdr.flow.seq, standard_metadata.ingress_global_timestamp});"
-          }
-        },
-        {
-          "op" : "assign",
-          "parameters" : [
-            {
-              "type" : "field",
-              "value" : ["scalars", "tmp_1"]
-            },
-            {
-              "type" : "field",
-              "value" : ["ipv4", "totalLen"]
-            }
-          ],
-          "source_info" : {
-            "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 79,
-            "column" : 124,
-            "source_fragment" : "                    log_msg(\\\"Ingress: port={}, size={}, flow_id={}, seq={}, timestamp={}\\\", {standard_metadata.ingress_port, hdr.ipv4.totalLen, hdr.flow.flow_id, hdr.flow.seq, standard_metadata.ingress_global_timestamp});"
-          }
-        },
-        {
-          "op" : "assign",
-          "parameters" : [
-            {
-              "type" : "field",
-              "value" : ["scalars", "tmp_2"]
-            },
-            {
-              "type" : "field",
-              "value" : ["flow", "flow_id"]
-            }
-          ],
-          "source_info" : {
-            "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 79,
-            "column" : 143,
-            "source_fragment" : "                    log_msg(\\\"Ingress: port={}, size={}, flow_id={}, seq={}, timestamp={}\\\", {standard_metadata.ingress_port, hdr.ipv4.totalLen, hdr.flow.flow_id, hdr.flow.seq, standard_metadata.ingress_global_timestamp});"
-          }
-        },
-        {
-          "op" : "assign",
-          "parameters" : [
-            {
-              "type" : "field",
-              "value" : ["scalars", "tmp_3"]
-            },
-            {
-              "type" : "field",
-              "value" : ["flow", "seq"]
-            }
-          ],
-          "source_info" : {
-            "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 79,
-            "column" : 161,
-            "source_fragment" : "                    log_msg(\\\"Ingress: port={}, size={}, flow_id={}, seq={}, timestamp={}\\\", {standard_metadata.ingress_port, hdr.ipv4.totalLen, hdr.flow.flow_id, hdr.flow.seq, standard_metadata.ingress_global_timestamp});"
-          }
-        },
         {
           "op" : "assign",
           "parameters" : [
@@ -1179,12 +1295,88 @@
             },
             {
               "type" : "field",
+              "value" : ["standard_metadata", "ingress_port"]
+            }
+          ],
+          "source_info" : {
+            "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
+            "line" : 82,
+            "column" : 92,
+            "source_fragment" : "                    log_msg(\\\"Ingress: port={}, size={}, flow_id={}, seq={}, timestamp={}\\\", {standard_metadata.ingress_port, hdr.ipv4.totalLen, hdr.flow.flow_id, hdr.flow.seq, standard_metadata.ingress_global_timestamp});"
+          }
+        },
+        {
+          "op" : "assign",
+          "parameters" : [
+            {
+              "type" : "field",
+              "value" : ["scalars", "tmp_5"]
+            },
+            {
+              "type" : "field",
+              "value" : ["ipv4", "totalLen"]
+            }
+          ],
+          "source_info" : {
+            "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
+            "line" : 82,
+            "column" : 124,
+            "source_fragment" : "                    log_msg(\\\"Ingress: port={}, size={}, flow_id={}, seq={}, timestamp={}\\\", {standard_metadata.ingress_port, hdr.ipv4.totalLen, hdr.flow.flow_id, hdr.flow.seq, standard_metadata.ingress_global_timestamp});"
+          }
+        },
+        {
+          "op" : "assign",
+          "parameters" : [
+            {
+              "type" : "field",
+              "value" : ["scalars", "tmp_6"]
+            },
+            {
+              "type" : "field",
+              "value" : ["flow", "flow_id"]
+            }
+          ],
+          "source_info" : {
+            "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
+            "line" : 82,
+            "column" : 143,
+            "source_fragment" : "                    log_msg(\\\"Ingress: port={}, size={}, flow_id={}, seq={}, timestamp={}\\\", {standard_metadata.ingress_port, hdr.ipv4.totalLen, hdr.flow.flow_id, hdr.flow.seq, standard_metadata.ingress_global_timestamp});"
+          }
+        },
+        {
+          "op" : "assign",
+          "parameters" : [
+            {
+              "type" : "field",
+              "value" : ["scalars", "tmp_7"]
+            },
+            {
+              "type" : "field",
+              "value" : ["flow", "seq"]
+            }
+          ],
+          "source_info" : {
+            "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
+            "line" : 82,
+            "column" : 161,
+            "source_fragment" : "                    log_msg(\\\"Ingress: port={}, size={}, flow_id={}, seq={}, timestamp={}\\\", {standard_metadata.ingress_port, hdr.ipv4.totalLen, hdr.flow.flow_id, hdr.flow.seq, standard_metadata.ingress_global_timestamp});"
+          }
+        },
+        {
+          "op" : "assign",
+          "parameters" : [
+            {
+              "type" : "field",
+              "value" : ["scalars", "tmp_8"]
+            },
+            {
+              "type" : "field",
               "value" : ["standard_metadata", "ingress_global_timestamp"]
             }
           ],
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 79,
+            "line" : 82,
             "column" : 175,
             "source_fragment" : "                    log_msg(\\\"Ingress: port={}, size={}, flow_id={}, seq={}, timestamp={}\\\", {standard_metadata.ingress_port, hdr.ipv4.totalLen, hdr.flow.flow_id, hdr.flow.seq, standard_metadata.ingress_global_timestamp});"
           }
@@ -1201,30 +1393,30 @@
               "value" : [
                 {
                   "type" : "field",
-                  "value" : ["scalars", "tmp_0"]
-                },
-                {
-                  "type" : "field",
-                  "value" : ["scalars", "tmp_1"]
-                },
-                {
-                  "type" : "field",
-                  "value" : ["scalars", "tmp_2"]
-                },
-                {
-                  "type" : "field",
-                  "value" : ["scalars", "tmp_3"]
-                },
-                {
-                  "type" : "field",
                   "value" : ["scalars", "tmp_4"]
+                },
+                {
+                  "type" : "field",
+                  "value" : ["scalars", "tmp_5"]
+                },
+                {
+                  "type" : "field",
+                  "value" : ["scalars", "tmp_6"]
+                },
+                {
+                  "type" : "field",
+                  "value" : ["scalars", "tmp_7"]
+                },
+                {
+                  "type" : "field",
+                  "value" : ["scalars", "tmp_8"]
                 }
               ]
             }
           ],
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 79,
+            "line" : 82,
             "column" : 20,
             "source_fragment" : "                    log_msg(\\\"Ingress: port={}, size={}, flow_id={}, seq={}, timestamp={}\\\", {standard_metadata.ingress_port, hdr.ipv4.totalLen, hdr.flow.flow_id, hdr.flow.seq, standard_metadata.ingress_global_timestamp});"
           }
@@ -1232,7 +1424,7 @@
       ]
     },
     {
-      "name" : "sd82",
+      "name" : "sd85",
       "id" : 13,
       "runtime_data" : [],
       "primitives" : [
@@ -1254,7 +1446,7 @@
           ],
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 82,
+            "line" : 85,
             "column" : 16,
             "source_fragment" : "queue_occupancy_info.read(meta.is_queue_full_0, (bit<32>)0)"
           }
@@ -1277,7 +1469,7 @@
           ],
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 83,
+            "line" : 86,
             "column" : 16,
             "source_fragment" : "queue_occupancy_info.read(meta.is_queue_full_1, (bit<32>)1)"
           }
@@ -1300,7 +1492,7 @@
           ],
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 84,
+            "line" : 87,
             "column" : 16,
             "source_fragment" : "queue_occupancy_info.read(meta.is_queue_full_2, (bit<32>)2)"
           }
@@ -1323,7 +1515,7 @@
           ],
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 85,
+            "line" : 88,
             "column" : 16,
             "source_fragment" : "queue_occupancy_info.read(meta.is_queue_full_3, (bit<32>)3)"
           }
@@ -1346,7 +1538,7 @@
           ],
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 86,
+            "line" : 89,
             "column" : 16,
             "source_fragment" : "queue_occupancy_info.read(meta.is_queue_full_4, (bit<32>)4)"
           }
@@ -1369,7 +1561,7 @@
           ],
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 87,
+            "line" : 90,
             "column" : 16,
             "source_fragment" : "queue_occupancy_info.read(meta.is_queue_full_5, (bit<32>)5)"
           }
@@ -1392,7 +1584,7 @@
           ],
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 88,
+            "line" : 91,
             "column" : 16,
             "source_fragment" : "queue_occupancy_info.read(meta.is_queue_full_6, (bit<32>)6)"
           }
@@ -1415,7 +1607,7 @@
           ],
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 89,
+            "line" : 92,
             "column" : 16,
             "source_fragment" : "queue_occupancy_info.read(meta.is_queue_full_7, (bit<32>)7)"
           }
@@ -1438,7 +1630,7 @@
           ],
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 91,
+            "line" : 94,
             "column" : 16,
             "source_fragment" : "neighbor_switch_indicator.read(meta.neighbor_switch_indicator_0, (bit<32>)0)"
           }
@@ -1461,7 +1653,7 @@
           ],
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 92,
+            "line" : 95,
             "column" : 16,
             "source_fragment" : "neighbor_switch_indicator.read(meta.neighbor_switch_indicator_1, (bit<32>)1)"
           }
@@ -1484,7 +1676,7 @@
           ],
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 93,
+            "line" : 96,
             "column" : 16,
             "source_fragment" : "neighbor_switch_indicator.read(meta.neighbor_switch_indicator_2, (bit<32>)2)"
           }
@@ -1507,7 +1699,7 @@
           ],
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 94,
+            "line" : 97,
             "column" : 16,
             "source_fragment" : "neighbor_switch_indicator.read(meta.neighbor_switch_indicator_3, (bit<32>)3)"
           }
@@ -1530,7 +1722,7 @@
           ],
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 95,
+            "line" : 98,
             "column" : 16,
             "source_fragment" : "neighbor_switch_indicator.read(meta.neighbor_switch_indicator_4, (bit<32>)4)"
           }
@@ -1553,7 +1745,7 @@
           ],
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 96,
+            "line" : 99,
             "column" : 16,
             "source_fragment" : "neighbor_switch_indicator.read(meta.neighbor_switch_indicator_5, (bit<32>)5)"
           }
@@ -1576,7 +1768,7 @@
           ],
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 97,
+            "line" : 100,
             "column" : 16,
             "source_fragment" : "neighbor_switch_indicator.read(meta.neighbor_switch_indicator_6, (bit<32>)6)"
           }
@@ -1599,7 +1791,7 @@
           ],
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 98,
+            "line" : 101,
             "column" : 16,
             "source_fragment" : "neighbor_switch_indicator.read(meta.neighbor_switch_indicator_7, (bit<32>)7)"
           }
@@ -1609,7 +1801,7 @@
           "parameters" : [
             {
               "type" : "field",
-              "value" : ["scalars", "tmp_5"]
+              "value" : ["scalars", "tmp_9"]
             },
             {
               "type" : "expression",
@@ -1631,7 +1823,7 @@
           ],
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 100,
+            "line" : 103,
             "column" : 64,
             "source_fragment" : "(bit<32>)meta.fw_port_idx"
           }
@@ -1649,12 +1841,12 @@
             },
             {
               "type" : "field",
-              "value" : ["scalars", "tmp_5"]
+              "value" : ["scalars", "tmp_9"]
             }
           ],
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 100,
+            "line" : 103,
             "column" : 16,
             "source_fragment" : "queue_occupancy_info.read(meta.is_fw_port_full, (bit<32>)meta.fw_port_idx)"
           }
@@ -1677,7 +1869,7 @@
           ],
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 103,
+            "line" : 106,
             "column" : 16,
             "source_fragment" : "is_fw_port_full_register.write(0, meta.is_fw_port_full)"
           }
@@ -1685,7 +1877,7 @@
       ]
     },
     {
-      "name" : "sd120",
+      "name" : "sd123",
       "id" : 14,
       "runtime_data" : [],
       "primitives" : [
@@ -1703,7 +1895,7 @@
           ],
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 120,
+            "line" : 123,
             "column" : 24,
             "source_fragment" : "meta.output_port_idx = 0"
           }
@@ -1711,7 +1903,7 @@
       ]
     },
     {
-      "name" : "sd122",
+      "name" : "sd125",
       "id" : 15,
       "runtime_data" : [],
       "primitives" : [
@@ -1729,7 +1921,7 @@
           ],
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 122,
+            "line" : 125,
             "column" : 24,
             "source_fragment" : "meta.output_port_idx = 1"
           }
@@ -1737,7 +1929,7 @@
       ]
     },
     {
-      "name" : "sd124",
+      "name" : "sd127",
       "id" : 16,
       "runtime_data" : [],
       "primitives" : [
@@ -1755,7 +1947,7 @@
           ],
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 124,
+            "line" : 127,
             "column" : 24,
             "source_fragment" : "meta.output_port_idx = 2"
           }
@@ -1763,7 +1955,7 @@
       ]
     },
     {
-      "name" : "sd126",
+      "name" : "sd129",
       "id" : 17,
       "runtime_data" : [],
       "primitives" : [
@@ -1781,7 +1973,7 @@
           ],
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 126,
+            "line" : 129,
             "column" : 24,
             "source_fragment" : "meta.output_port_idx = 3"
           }
@@ -1789,7 +1981,7 @@
       ]
     },
     {
-      "name" : "sd128",
+      "name" : "sd131",
       "id" : 18,
       "runtime_data" : [],
       "primitives" : [
@@ -1807,7 +1999,7 @@
           ],
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 128,
+            "line" : 131,
             "column" : 24,
             "source_fragment" : "meta.output_port_idx = 4"
           }
@@ -1815,7 +2007,7 @@
       ]
     },
     {
-      "name" : "sd130",
+      "name" : "sd133",
       "id" : 19,
       "runtime_data" : [],
       "primitives" : [
@@ -1833,7 +2025,7 @@
           ],
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 130,
+            "line" : 133,
             "column" : 24,
             "source_fragment" : "meta.output_port_idx = 5"
           }
@@ -1841,7 +2033,7 @@
       ]
     },
     {
-      "name" : "sd132",
+      "name" : "sd135",
       "id" : 20,
       "runtime_data" : [],
       "primitives" : [
@@ -1859,7 +2051,7 @@
           ],
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 132,
+            "line" : 135,
             "column" : 24,
             "source_fragment" : "meta.output_port_idx = 6"
           }
@@ -1867,7 +2059,7 @@
       ]
     },
     {
-      "name" : "sd134",
+      "name" : "sd137",
       "id" : 21,
       "runtime_data" : [],
       "primitives" : [
@@ -1885,7 +2077,7 @@
           ],
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 134,
+            "line" : 137,
             "column" : 24,
             "source_fragment" : "meta.output_port_idx = 7"
           }
@@ -1893,7 +2085,7 @@
       ]
     },
     {
-      "name" : "sd138",
+      "name" : "sd141",
       "id" : 22,
       "runtime_data" : [],
       "primitives" : [
@@ -1911,7 +2103,7 @@
           ],
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 138,
+            "line" : 141,
             "column" : 28,
             "source_fragment" : "meta.output_port_idx = 0"
           }
@@ -1919,7 +2111,7 @@
       ]
     },
     {
-      "name" : "sd140",
+      "name" : "sd143",
       "id" : 23,
       "runtime_data" : [],
       "primitives" : [
@@ -1937,7 +2129,7 @@
           ],
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 140,
+            "line" : 143,
             "column" : 28,
             "source_fragment" : "meta.output_port_idx = 1"
           }
@@ -1945,7 +2137,7 @@
       ]
     },
     {
-      "name" : "sd142",
+      "name" : "sd145",
       "id" : 24,
       "runtime_data" : [],
       "primitives" : [
@@ -1963,7 +2155,7 @@
           ],
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 142,
+            "line" : 145,
             "column" : 28,
             "source_fragment" : "meta.output_port_idx = 2"
           }
@@ -1971,7 +2163,7 @@
       ]
     },
     {
-      "name" : "sd144",
+      "name" : "sd147",
       "id" : 25,
       "runtime_data" : [],
       "primitives" : [
@@ -1989,7 +2181,7 @@
           ],
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 144,
+            "line" : 147,
             "column" : 28,
             "source_fragment" : "meta.output_port_idx = 3"
           }
@@ -1997,7 +2189,7 @@
       ]
     },
     {
-      "name" : "sd146",
+      "name" : "sd149",
       "id" : 26,
       "runtime_data" : [],
       "primitives" : [
@@ -2015,7 +2207,7 @@
           ],
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 146,
+            "line" : 149,
             "column" : 28,
             "source_fragment" : "meta.output_port_idx = 4"
           }
@@ -2023,7 +2215,7 @@
       ]
     },
     {
-      "name" : "sd148",
+      "name" : "sd151",
       "id" : 27,
       "runtime_data" : [],
       "primitives" : [
@@ -2041,7 +2233,7 @@
           ],
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 148,
+            "line" : 151,
             "column" : 28,
             "source_fragment" : "meta.output_port_idx = 5"
           }
@@ -2049,7 +2241,7 @@
       ]
     },
     {
-      "name" : "sd150",
+      "name" : "sd153",
       "id" : 28,
       "runtime_data" : [],
       "primitives" : [
@@ -2067,7 +2259,7 @@
           ],
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 150,
+            "line" : 153,
             "column" : 28,
             "source_fragment" : "meta.output_port_idx = 6"
           }
@@ -2075,7 +2267,7 @@
       ]
     },
     {
-      "name" : "sd152",
+      "name" : "sd155",
       "id" : 29,
       "runtime_data" : [],
       "primitives" : [
@@ -2093,7 +2285,7 @@
           ],
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 152,
+            "line" : 155,
             "column" : 28,
             "source_fragment" : "meta.output_port_idx = 7"
           }
@@ -2101,7 +2293,7 @@
       ]
     },
     {
-      "name" : "sd157",
+      "name" : "sd160",
       "id" : 30,
       "runtime_data" : [],
       "primitives" : [
@@ -2119,7 +2311,7 @@
           ],
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 157,
+            "line" : 160,
             "column" : 20,
             "source_fragment" : "deflected_ctr.count(0)"
           }
@@ -2129,7 +2321,7 @@
           "parameters" : [
             {
               "type" : "field",
-              "value" : ["scalars", "tmp_6"]
+              "value" : ["scalars", "tmp_10"]
             },
             {
               "type" : "expression",
@@ -2161,7 +2353,7 @@
           ],
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 160,
+            "line" : 163,
             "column" : 29,
             "source_fragment" : "meta.fw_port_idx+1"
           }
@@ -2171,7 +2363,7 @@
           "parameters" : [
             {
               "type" : "field",
-              "value" : ["scalars", "tmp_7"]
+              "value" : ["scalars", "tmp_11"]
             },
             {
               "type" : "expression",
@@ -2203,7 +2395,7 @@
           ],
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 160,
+            "line" : 163,
             "column" : 49,
             "source_fragment" : "meta.output_port_idx+1"
           }
@@ -2213,7 +2405,7 @@
           "parameters" : [
             {
               "type" : "field",
-              "value" : ["scalars", "tmp_8"]
+              "value" : ["scalars", "tmp_12"]
             },
             {
               "type" : "field",
@@ -2222,7 +2414,7 @@
           ],
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 160,
+            "line" : 163,
             "column" : 73,
             "source_fragment" : "meta"
           }
@@ -2239,22 +2431,22 @@
               "value" : [
                 {
                   "type" : "field",
-                  "value" : ["scalars", "tmp_6"]
+                  "value" : ["scalars", "tmp_10"]
                 },
                 {
                   "type" : "field",
-                  "value" : ["scalars", "tmp_7"]
+                  "value" : ["scalars", "tmp_11"]
                 },
                 {
                   "type" : "field",
-                  "value" : ["scalars", "tmp_8"]
+                  "value" : ["scalars", "tmp_12"]
                 }
               ]
             }
           ],
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 159,
+            "line" : 162,
             "column" : 20,
             "source_fragment" : "                    log_msg(\\\"Deflection: original_port={}, deflected_to={}, random_number={}\\\","
           }
@@ -2262,7 +2454,7 @@
       ]
     },
     {
-      "name" : "sd165",
+      "name" : "sd168",
       "id" : 31,
       "runtime_data" : [],
       "primitives" : [
@@ -2271,7 +2463,7 @@
           "parameters" : [
             {
               "type" : "field",
-              "value" : ["scalars", "tmp_9"]
+              "value" : ["scalars", "tmp_13"]
             },
             {
               "type" : "expression",
@@ -2303,7 +2495,7 @@
           ],
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 165,
+            "line" : 168,
             "column" : 48,
             "source_fragment" : "                    log_msg(\\\"Normal: port={}\\\", {meta.fw_port_idx+1});"
           }
@@ -2320,14 +2512,14 @@
               "value" : [
                 {
                   "type" : "field",
-                  "value" : ["scalars", "tmp_9"]
+                  "value" : ["scalars", "tmp_13"]
                 }
               ]
             }
           ],
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 165,
+            "line" : 168,
             "column" : 20,
             "source_fragment" : "                    log_msg(\\\"Normal: port={}\\\", {meta.fw_port_idx+1});"
           }
@@ -2346,7 +2538,7 @@
           ],
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 166,
+            "line" : 169,
             "column" : 20,
             "source_fragment" : "normal_ctr.count(0)"
           }
@@ -2354,7 +2546,7 @@
       ]
     },
     {
-      "name" : "sd108",
+      "name" : "sd111",
       "id" : 32,
       "runtime_data" : [],
       "primitives" : [
@@ -2385,7 +2577,7 @@
           ],
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 108,
+            "line" : 111,
             "column" : 16,
             "source_fragment" : "meta.is_queue_full_0 = meta.is_queue_full_0 | meta.neighbor_switch_indicator_0"
           }
@@ -2417,7 +2609,7 @@
           ],
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 109,
+            "line" : 112,
             "column" : 16,
             "source_fragment" : "meta.is_queue_full_1 = meta.is_queue_full_1 | meta.neighbor_switch_indicator_1"
           }
@@ -2449,7 +2641,7 @@
           ],
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 110,
+            "line" : 113,
             "column" : 16,
             "source_fragment" : "meta.is_queue_full_2 = meta.is_queue_full_2 | meta.neighbor_switch_indicator_2"
           }
@@ -2481,7 +2673,7 @@
           ],
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 111,
+            "line" : 114,
             "column" : 16,
             "source_fragment" : "meta.is_queue_full_3 = meta.is_queue_full_3 | meta.neighbor_switch_indicator_3"
           }
@@ -2513,7 +2705,7 @@
           ],
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 112,
+            "line" : 115,
             "column" : 16,
             "source_fragment" : "meta.is_queue_full_4 = meta.is_queue_full_4 | meta.neighbor_switch_indicator_4"
           }
@@ -2545,7 +2737,7 @@
           ],
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 113,
+            "line" : 116,
             "column" : 16,
             "source_fragment" : "meta.is_queue_full_5 = meta.is_queue_full_5 | meta.neighbor_switch_indicator_5"
           }
@@ -2577,7 +2769,7 @@
           ],
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 114,
+            "line" : 117,
             "column" : 16,
             "source_fragment" : "meta.is_queue_full_6 = meta.is_queue_full_6 | meta.neighbor_switch_indicator_6"
           }
@@ -2609,7 +2801,7 @@
           ],
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 115,
+            "line" : 118,
             "column" : 16,
             "source_fragment" : "meta.is_queue_full_7 = meta.is_queue_full_7 | meta.neighbor_switch_indicator_7"
           }
@@ -2646,7 +2838,7 @@
           ],
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 189,
+            "line" : 193,
             "column" : 8,
             "source_fragment" : "meta.port_idx_in_reg = index"
           }
@@ -2654,7 +2846,7 @@
       ]
     },
     {
-      "name" : "sd219",
+      "name" : "sd221",
       "id" : 35,
       "runtime_data" : [],
       "primitives" : [
@@ -2663,7 +2855,7 @@
           "parameters" : [
             {
               "type" : "field",
-              "value" : ["scalars", "tmp_10"]
+              "value" : ["scalars", "tmp_14"]
             },
             {
               "type" : "expression",
@@ -2685,7 +2877,7 @@
           ],
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 219,
+            "line" : 221,
             "column" : 62,
             "source_fragment" : "(bit<32>)hdr.bee.port_idx_in_reg"
           }
@@ -2703,14 +2895,158 @@
             },
             {
               "type" : "field",
-              "value" : ["scalars", "tmp_10"]
+              "value" : ["scalars", "tmp_14"]
             }
           ],
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 219,
+            "line" : 221,
             "column" : 12,
             "source_fragment" : "queue_occupancy_info.read(hdr.bee.queue_occ_info, (bit<32>)hdr.bee.port_idx_in_reg)"
+          }
+        },
+        {
+          "op" : "assign",
+          "parameters" : [
+            {
+              "type" : "field",
+              "value" : ["scalars", "tmp_15"]
+            },
+            {
+              "type" : "expression",
+              "value" : {
+                "type" : "expression",
+                "value" : {
+                  "op" : "&",
+                  "left" : {
+                    "type" : "field",
+                    "value" : ["bee", "port_idx_in_reg"]
+                  },
+                  "right" : {
+                    "type" : "hexstr",
+                    "value" : "0xffffffff"
+                  }
+                }
+              }
+            }
+          ],
+          "source_info" : {
+            "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
+            "line" : 222,
+            "column" : 55,
+            "source_fragment" : "(bit<32>)hdr.bee.port_idx_in_reg"
+          }
+        },
+        {
+          "op" : "register_read",
+          "parameters" : [
+            {
+              "type" : "field",
+              "value" : ["bee", "queue_depth"]
+            },
+            {
+              "type" : "register_array",
+              "value" : "SimpleDeflectionEgress.queue_depth_info"
+            },
+            {
+              "type" : "field",
+              "value" : ["scalars", "tmp_15"]
+            }
+          ],
+          "source_info" : {
+            "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
+            "line" : 222,
+            "column" : 12,
+            "source_fragment" : "queue_depth_info.read(hdr.bee.queue_depth, (bit<32>)hdr.bee.port_idx_in_reg)"
+          }
+        },
+        {
+          "op" : "assign",
+          "parameters" : [
+            {
+              "type" : "field",
+              "value" : ["scalars", "tmp_16"]
+            },
+            {
+              "type" : "field",
+              "value" : ["bee", "port_idx_in_reg"]
+            }
+          ],
+          "source_info" : {
+            "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
+            "line" : 225,
+            "column" : 20,
+            "source_fragment" : "hdr.bee.port_idx_in_reg"
+          }
+        },
+        {
+          "op" : "assign",
+          "parameters" : [
+            {
+              "type" : "field",
+              "value" : ["scalars", "tmp_17"]
+            },
+            {
+              "type" : "field",
+              "value" : ["bee", "queue_occ_info"]
+            }
+          ],
+          "source_info" : {
+            "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
+            "line" : 225,
+            "column" : 45,
+            "source_fragment" : "hdr.bee.queue_occ_info"
+          }
+        },
+        {
+          "op" : "assign",
+          "parameters" : [
+            {
+              "type" : "field",
+              "value" : ["scalars", "tmp_18"]
+            },
+            {
+              "type" : "field",
+              "value" : ["bee", "queue_depth"]
+            }
+          ],
+          "source_info" : {
+            "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
+            "line" : 225,
+            "column" : 69,
+            "source_fragment" : "hdr.bee.queue_depth"
+          }
+        },
+        {
+          "op" : "log_msg",
+          "parameters" : [
+            {
+              "type" : "string",
+              "value" : "BeeEgress: port={}, queue_occ={}, queue_depth={}"
+            },
+            {
+              "type" : "parameters_vector",
+              "value" : [
+                {
+                  "type" : "field",
+                  "value" : ["scalars", "tmp_16"]
+                },
+                {
+                  "type" : "field",
+                  "value" : ["scalars", "tmp_17"]
+                },
+                {
+                  "type" : "field",
+                  "value" : ["scalars", "tmp_18"]
+                }
+              ]
+            }
+          ],
+          "source_info" : {
+            "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
+            "line" : 224,
+            "column" : 12,
+            "source_fragment" : "            log_msg(\\\"BeeEgress: port={}, queue_occ={}, queue_depth={}\\\","
           }
         },
         {
@@ -2723,7 +3059,7 @@
           ],
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 220,
+            "line" : 227,
             "column" : 12,
             "source_fragment" : "recirculate_preserving_field_list(0)"
           }
@@ -2731,7 +3067,7 @@
       ]
     },
     {
-      "name" : "sd228",
+      "name" : "sd235",
       "id" : 36,
       "runtime_data" : [],
       "primitives" : [
@@ -2749,7 +3085,7 @@
           ],
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 228,
+            "line" : 235,
             "column" : 20,
             "source_fragment" : "meta.is_fw_port_full = 0"
           }
@@ -2757,7 +3093,7 @@
       ]
     },
     {
-      "name" : "sd230",
+      "name" : "sd237",
       "id" : 37,
       "runtime_data" : [],
       "primitives" : [
@@ -2775,7 +3111,7 @@
           ],
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 230,
+            "line" : 237,
             "column" : 20,
             "source_fragment" : "meta.is_fw_port_full = 1"
           }
@@ -2783,7 +3119,7 @@
       ]
     },
     {
-      "name" : "sd234",
+      "name" : "sd241",
       "id" : 38,
       "runtime_data" : [],
       "primitives" : [
@@ -2805,7 +3141,7 @@
           ],
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 234,
+            "line" : 241,
             "column" : 16,
             "source_fragment" : "debug_eg_port.write((bit<32>)0, standard_metadata.egress_port)"
           }
@@ -2828,7 +3164,7 @@
           ],
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 235,
+            "line" : 242,
             "column" : 16,
             "source_fragment" : "debug_qdepth.write((bit<32>)0, standard_metadata.deq_qdepth)"
           }
@@ -2838,73 +3174,7 @@
           "parameters" : [
             {
               "type" : "field",
-              "value" : ["scalars", "tmp_11"]
-            },
-            {
-              "type" : "field",
-              "value" : ["standard_metadata", "egress_port"]
-            }
-          ],
-          "source_info" : {
-            "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 237,
-            "column" : 58,
-            "source_fragment" : "                log_msg(\\\"Queue: port={}, deq_qdepth={}\\\", {standard_metadata.egress_port, standard_metadata.deq_qdepth});"
-          }
-        },
-        {
-          "op" : "assign",
-          "parameters" : [
-            {
-              "type" : "field",
-              "value" : ["scalars", "tmp_12"]
-            },
-            {
-              "type" : "field",
-              "value" : ["standard_metadata", "deq_qdepth"]
-            }
-          ],
-          "source_info" : {
-            "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 237,
-            "column" : 89,
-            "source_fragment" : "                log_msg(\\\"Queue: port={}, deq_qdepth={}\\\", {standard_metadata.egress_port, standard_metadata.deq_qdepth});"
-          }
-        },
-        {
-          "op" : "log_msg",
-          "parameters" : [
-            {
-              "type" : "string",
-              "value" : "Queue: port={}, deq_qdepth={}"
-            },
-            {
-              "type" : "parameters_vector",
-              "value" : [
-                {
-                  "type" : "field",
-                  "value" : ["scalars", "tmp_11"]
-                },
-                {
-                  "type" : "field",
-                  "value" : ["scalars", "tmp_12"]
-                }
-              ]
-            }
-          ],
-          "source_info" : {
-            "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 237,
-            "column" : 16,
-            "source_fragment" : "                log_msg(\\\"Queue: port={}, deq_qdepth={}\\\", {standard_metadata.egress_port, standard_metadata.deq_qdepth});"
-          }
-        },
-        {
-          "op" : "assign",
-          "parameters" : [
-            {
-              "type" : "field",
-              "value" : ["scalars", "tmp_13"]
+              "value" : ["scalars", "tmp_19"]
             },
             {
               "type" : "expression",
@@ -2926,7 +3196,7 @@
           ],
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 241,
+            "line" : 246,
             "column" : 44,
             "source_fragment" : "(bit<32>)standard_metadata.egress_port"
           }
@@ -2944,12 +3214,12 @@
             },
             {
               "type" : "field",
-              "value" : ["scalars", "tmp_13"]
+              "value" : ["scalars", "tmp_19"]
             }
           ],
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 241,
+            "line" : 246,
             "column" : 16,
             "source_fragment" : "arrival_counter.read(count, (bit<32>)standard_metadata.egress_port)"
           }
@@ -2991,7 +3261,7 @@
           ],
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 242,
+            "line" : 247,
             "column" : 16,
             "source_fragment" : "count = count + 1"
           }
@@ -3001,7 +3271,7 @@
           "parameters" : [
             {
               "type" : "field",
-              "value" : ["scalars", "tmp_14"]
+              "value" : ["scalars", "tmp_20"]
             },
             {
               "type" : "expression",
@@ -3023,7 +3293,7 @@
           ],
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 243,
+            "line" : 248,
             "column" : 38,
             "source_fragment" : "(bit<32>)standard_metadata.egress_port"
           }
@@ -3037,7 +3307,7 @@
             },
             {
               "type" : "field",
-              "value" : ["scalars", "tmp_14"]
+              "value" : ["scalars", "tmp_20"]
             },
             {
               "type" : "field",
@@ -3046,7 +3316,7 @@
           ],
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 243,
+            "line" : 248,
             "column" : 16,
             "source_fragment" : "arrival_counter.write((bit<32>)standard_metadata.egress_port, count)"
           }
@@ -3056,7 +3326,7 @@
           "parameters" : [
             {
               "type" : "field",
-              "value" : ["scalars", "tmp_15"]
+              "value" : ["scalars", "tmp_21"]
             },
             {
               "type" : "field",
@@ -3065,7 +3335,7 @@
           ],
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 244,
+            "line" : 249,
             "column" : 55,
             "source_fragment" : "                log_msg(\\\"Arrival: port={}, count={}\\\", {standard_metadata.egress_port, count});"
           }
@@ -3075,7 +3345,7 @@
           "parameters" : [
             {
               "type" : "field",
-              "value" : ["scalars", "tmp_16"]
+              "value" : ["scalars", "tmp_22"]
             },
             {
               "type" : "field",
@@ -3084,7 +3354,7 @@
           ],
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 244,
+            "line" : 249,
             "column" : 86,
             "source_fragment" : "                log_msg(\\\"Arrival: port={}, count={}\\\", {standard_metadata.egress_port, count});"
           }
@@ -3101,18 +3371,18 @@
               "value" : [
                 {
                   "type" : "field",
-                  "value" : ["scalars", "tmp_15"]
+                  "value" : ["scalars", "tmp_21"]
                 },
                 {
                   "type" : "field",
-                  "value" : ["scalars", "tmp_16"]
+                  "value" : ["scalars", "tmp_22"]
                 }
               ]
             }
           ],
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 244,
+            "line" : 249,
             "column" : 16,
             "source_fragment" : "                log_msg(\\\"Arrival: port={}, count={}\\\", {standard_metadata.egress_port, count});"
           }
@@ -3122,7 +3392,7 @@
           "parameters" : [
             {
               "type" : "field",
-              "value" : ["scalars", "tmp_17"]
+              "value" : ["scalars", "tmp_23"]
             },
             {
               "type" : "expression",
@@ -3144,7 +3414,7 @@
           ],
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 246,
+            "line" : 252,
             "column" : 43,
             "source_fragment" : "(bit<32>)meta.port_idx_in_reg"
           }
@@ -3158,7 +3428,7 @@
             },
             {
               "type" : "field",
-              "value" : ["scalars", "tmp_17"]
+              "value" : ["scalars", "tmp_23"]
             },
             {
               "type" : "field",
@@ -3167,9 +3437,452 @@
           ],
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 246,
+            "line" : 252,
             "column" : 16,
             "source_fragment" : "queue_occupancy_info.write((bit<32>)meta.port_idx_in_reg, meta.is_fw_port_full)"
+          }
+        },
+        {
+          "op" : "assign",
+          "parameters" : [
+            {
+              "type" : "field",
+              "value" : ["scalars", "tmp_24"]
+            },
+            {
+              "type" : "expression",
+              "value" : {
+                "type" : "expression",
+                "value" : {
+                  "op" : "&",
+                  "left" : {
+                    "type" : "field",
+                    "value" : ["scalars", "metadata_t._port_idx_in_reg25"]
+                  },
+                  "right" : {
+                    "type" : "hexstr",
+                    "value" : "0xffffffff"
+                  }
+                }
+              }
+            }
+          ],
+          "source_info" : {
+            "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
+            "line" : 253,
+            "column" : 39,
+            "source_fragment" : "(bit<32>)meta.port_idx_in_reg"
+          }
+        },
+        {
+          "op" : "register_write",
+          "parameters" : [
+            {
+              "type" : "register_array",
+              "value" : "SimpleDeflectionEgress.queue_depth_info"
+            },
+            {
+              "type" : "field",
+              "value" : ["scalars", "tmp_24"]
+            },
+            {
+              "type" : "field",
+              "value" : ["standard_metadata", "deq_qdepth"]
+            }
+          ],
+          "source_info" : {
+            "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
+            "line" : 253,
+            "column" : 16,
+            "source_fragment" : "queue_depth_info.write((bit<32>)meta.port_idx_in_reg, standard_metadata.deq_qdepth)"
+          }
+        },
+        {
+          "op" : "register_read",
+          "parameters" : [
+            {
+              "type" : "field",
+              "value" : ["scalars", "q0_0"]
+            },
+            {
+              "type" : "register_array",
+              "value" : "SimpleDeflectionEgress.queue_depth_info"
+            },
+            {
+              "type" : "hexstr",
+              "value" : "0x00000000"
+            }
+          ],
+          "source_info" : {
+            "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
+            "line" : 264,
+            "column" : 16,
+            "source_fragment" : "queue_depth_info.read(q0, 0)"
+          }
+        },
+        {
+          "op" : "register_read",
+          "parameters" : [
+            {
+              "type" : "field",
+              "value" : ["scalars", "q1_0"]
+            },
+            {
+              "type" : "register_array",
+              "value" : "SimpleDeflectionEgress.queue_depth_info"
+            },
+            {
+              "type" : "hexstr",
+              "value" : "0x00000001"
+            }
+          ],
+          "source_info" : {
+            "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
+            "line" : 265,
+            "column" : 16,
+            "source_fragment" : "queue_depth_info.read(q1, 1)"
+          }
+        },
+        {
+          "op" : "register_read",
+          "parameters" : [
+            {
+              "type" : "field",
+              "value" : ["scalars", "q2_0"]
+            },
+            {
+              "type" : "register_array",
+              "value" : "SimpleDeflectionEgress.queue_depth_info"
+            },
+            {
+              "type" : "hexstr",
+              "value" : "0x00000002"
+            }
+          ],
+          "source_info" : {
+            "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
+            "line" : 266,
+            "column" : 16,
+            "source_fragment" : "queue_depth_info.read(q2, 2)"
+          }
+        },
+        {
+          "op" : "register_read",
+          "parameters" : [
+            {
+              "type" : "field",
+              "value" : ["scalars", "q3_0"]
+            },
+            {
+              "type" : "register_array",
+              "value" : "SimpleDeflectionEgress.queue_depth_info"
+            },
+            {
+              "type" : "hexstr",
+              "value" : "0x00000003"
+            }
+          ],
+          "source_info" : {
+            "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
+            "line" : 267,
+            "column" : 16,
+            "source_fragment" : "queue_depth_info.read(q3, 3)"
+          }
+        },
+        {
+          "op" : "register_read",
+          "parameters" : [
+            {
+              "type" : "field",
+              "value" : ["scalars", "q4_0"]
+            },
+            {
+              "type" : "register_array",
+              "value" : "SimpleDeflectionEgress.queue_depth_info"
+            },
+            {
+              "type" : "hexstr",
+              "value" : "0x00000004"
+            }
+          ],
+          "source_info" : {
+            "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
+            "line" : 268,
+            "column" : 16,
+            "source_fragment" : "queue_depth_info.read(q4, 4)"
+          }
+        },
+        {
+          "op" : "register_read",
+          "parameters" : [
+            {
+              "type" : "field",
+              "value" : ["scalars", "q5_0"]
+            },
+            {
+              "type" : "register_array",
+              "value" : "SimpleDeflectionEgress.queue_depth_info"
+            },
+            {
+              "type" : "hexstr",
+              "value" : "0x00000005"
+            }
+          ],
+          "source_info" : {
+            "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
+            "line" : 269,
+            "column" : 16,
+            "source_fragment" : "queue_depth_info.read(q5, 5)"
+          }
+        },
+        {
+          "op" : "register_read",
+          "parameters" : [
+            {
+              "type" : "field",
+              "value" : ["scalars", "q6_0"]
+            },
+            {
+              "type" : "register_array",
+              "value" : "SimpleDeflectionEgress.queue_depth_info"
+            },
+            {
+              "type" : "hexstr",
+              "value" : "0x00000006"
+            }
+          ],
+          "source_info" : {
+            "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
+            "line" : 270,
+            "column" : 16,
+            "source_fragment" : "queue_depth_info.read(q6, 6)"
+          }
+        },
+        {
+          "op" : "register_read",
+          "parameters" : [
+            {
+              "type" : "field",
+              "value" : ["scalars", "q7_0"]
+            },
+            {
+              "type" : "register_array",
+              "value" : "SimpleDeflectionEgress.queue_depth_info"
+            },
+            {
+              "type" : "hexstr",
+              "value" : "0x00000007"
+            }
+          ],
+          "source_info" : {
+            "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
+            "line" : 271,
+            "column" : 16,
+            "source_fragment" : "queue_depth_info.read(q7, 7)"
+          }
+        },
+        {
+          "op" : "assign",
+          "parameters" : [
+            {
+              "type" : "field",
+              "value" : ["scalars", "tmp_25"]
+            },
+            {
+              "type" : "field",
+              "value" : ["scalars", "q0_0"]
+            }
+          ],
+          "source_info" : {
+            "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
+            "line" : 273,
+            "column" : 25,
+            "source_fragment" : "q0"
+          }
+        },
+        {
+          "op" : "assign",
+          "parameters" : [
+            {
+              "type" : "field",
+              "value" : ["scalars", "tmp_26"]
+            },
+            {
+              "type" : "field",
+              "value" : ["scalars", "q1_0"]
+            }
+          ],
+          "source_info" : {
+            "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
+            "line" : 273,
+            "column" : 29,
+            "source_fragment" : "q1"
+          }
+        },
+        {
+          "op" : "assign",
+          "parameters" : [
+            {
+              "type" : "field",
+              "value" : ["scalars", "tmp_27"]
+            },
+            {
+              "type" : "field",
+              "value" : ["scalars", "q2_0"]
+            }
+          ],
+          "source_info" : {
+            "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
+            "line" : 273,
+            "column" : 33,
+            "source_fragment" : "q2"
+          }
+        },
+        {
+          "op" : "assign",
+          "parameters" : [
+            {
+              "type" : "field",
+              "value" : ["scalars", "tmp_28"]
+            },
+            {
+              "type" : "field",
+              "value" : ["scalars", "q3_0"]
+            }
+          ],
+          "source_info" : {
+            "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
+            "line" : 273,
+            "column" : 37,
+            "source_fragment" : "q3"
+          }
+        },
+        {
+          "op" : "assign",
+          "parameters" : [
+            {
+              "type" : "field",
+              "value" : ["scalars", "tmp_29"]
+            },
+            {
+              "type" : "field",
+              "value" : ["scalars", "q4_0"]
+            }
+          ],
+          "source_info" : {
+            "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
+            "line" : 273,
+            "column" : 41,
+            "source_fragment" : "q4"
+          }
+        },
+        {
+          "op" : "assign",
+          "parameters" : [
+            {
+              "type" : "field",
+              "value" : ["scalars", "tmp_30"]
+            },
+            {
+              "type" : "field",
+              "value" : ["scalars", "q5_0"]
+            }
+          ],
+          "source_info" : {
+            "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
+            "line" : 273,
+            "column" : 45,
+            "source_fragment" : "q5"
+          }
+        },
+        {
+          "op" : "assign",
+          "parameters" : [
+            {
+              "type" : "field",
+              "value" : ["scalars", "tmp_31"]
+            },
+            {
+              "type" : "field",
+              "value" : ["scalars", "q6_0"]
+            }
+          ],
+          "source_info" : {
+            "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
+            "line" : 273,
+            "column" : 49,
+            "source_fragment" : "q6"
+          }
+        },
+        {
+          "op" : "assign",
+          "parameters" : [
+            {
+              "type" : "field",
+              "value" : ["scalars", "tmp_32"]
+            },
+            {
+              "type" : "field",
+              "value" : ["scalars", "q7_0"]
+            }
+          ],
+          "source_info" : {
+            "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
+            "line" : 273,
+            "column" : 53,
+            "source_fragment" : "q7"
+          }
+        },
+        {
+          "op" : "log_msg",
+          "parameters" : [
+            {
+              "type" : "string",
+              "value" : "Queue depths: q0={} q1={} q2={} q3={} q4={} q5={} q6={} q7={}"
+            },
+            {
+              "type" : "parameters_vector",
+              "value" : [
+                {
+                  "type" : "field",
+                  "value" : ["scalars", "tmp_25"]
+                },
+                {
+                  "type" : "field",
+                  "value" : ["scalars", "tmp_26"]
+                },
+                {
+                  "type" : "field",
+                  "value" : ["scalars", "tmp_27"]
+                },
+                {
+                  "type" : "field",
+                  "value" : ["scalars", "tmp_28"]
+                },
+                {
+                  "type" : "field",
+                  "value" : ["scalars", "tmp_29"]
+                },
+                {
+                  "type" : "field",
+                  "value" : ["scalars", "tmp_30"]
+                },
+                {
+                  "type" : "field",
+                  "value" : ["scalars", "tmp_31"]
+                },
+                {
+                  "type" : "field",
+                  "value" : ["scalars", "tmp_32"]
+                }
+              ]
+            }
+          ],
+          "source_info" : {
+            "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
+            "line" : 272,
+            "column" : 16,
+            "source_fragment" : "                log_msg(\\\"Queue depths: q0={} q1={} q2={} q3={} q4={} q5={} q6={} q7={}\\\","
           }
         }
       ]
@@ -3188,13 +3901,13 @@
       "init_table" : "node_2",
       "tables" : [
         {
-          "name" : "tbl_sd67",
+          "name" : "tbl_sd68",
           "id" : 0,
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 67,
+            "line" : 68,
             "column" : 12,
-            "source_fragment" : "queue_occupancy_info.write((bit<32>)hdr.bee.port_idx_in_reg, hdr.bee.queue_occ_info)"
+            "source_fragment" : "queue_occupancy_info.write((bit<32>)hdr.bee.port_idx_in_reg, hdr.bee.queue_occ_info); ..."
           },
           "key" : [],
           "match_type" : "exact",
@@ -3204,10 +3917,10 @@
           "support_timeout" : false,
           "direct_meters" : null,
           "action_ids" : [10],
-          "actions" : ["sd67"],
+          "actions" : ["sd68"],
           "base_default_next" : null,
           "next_tables" : {
-            "sd67" : null
+            "sd68" : null
           },
           "default_entry" : {
             "action_id" : 10,
@@ -3354,7 +4067,7 @@
           "id" : 5,
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 53,
+            "line" : 54,
             "column" : 10,
             "source_fragment" : "debug_enq_qdepth_table"
           },
@@ -3386,11 +4099,11 @@
           }
         },
         {
-          "name" : "tbl_sd79",
+          "name" : "tbl_sd82",
           "id" : 6,
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 79,
+            "line" : 82,
             "column" : 20,
             "source_fragment" : "                    log_msg(\\\"Ingress: port={}, size={}, flow_id={}, seq={}, timestamp={}\\\", {standard_metadata.ingress_port, hdr.ipv4.totalLen, hdr.flow.flow_id, hdr.flow.seq, standard_metadata.ingress_global_timestamp});"
           },
@@ -3402,10 +4115,10 @@
           "support_timeout" : false,
           "direct_meters" : null,
           "action_ids" : [12],
-          "actions" : ["sd79"],
-          "base_default_next" : "tbl_sd82",
+          "actions" : ["sd82"],
+          "base_default_next" : "tbl_sd85",
           "next_tables" : {
-            "sd79" : "tbl_sd82"
+            "sd82" : "tbl_sd85"
           },
           "default_entry" : {
             "action_id" : 12,
@@ -3415,11 +4128,11 @@
           }
         },
         {
-          "name" : "tbl_sd82",
+          "name" : "tbl_sd85",
           "id" : 7,
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 82,
+            "line" : 85,
             "column" : 16,
             "source_fragment" : "queue_occupancy_info.read(meta.is_queue_full_0, (bit<32>)0); ..."
           },
@@ -3431,10 +4144,10 @@
           "support_timeout" : false,
           "direct_meters" : null,
           "action_ids" : [13],
-          "actions" : ["sd82"],
+          "actions" : ["sd85"],
           "base_default_next" : "tbl_generate_random",
           "next_tables" : {
-            "sd82" : "tbl_generate_random"
+            "sd85" : "tbl_generate_random"
           },
           "default_entry" : {
             "action_id" : 13,
@@ -3448,7 +4161,7 @@
           "id" : 8,
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 105,
+            "line" : 108,
             "column" : 16,
             "source_fragment" : "generate_random()"
           },
@@ -3461,9 +4174,9 @@
           "direct_meters" : null,
           "action_ids" : [8],
           "actions" : ["SimpleDeflectionIngress.generate_random"],
-          "base_default_next" : "tbl_sd108",
+          "base_default_next" : "tbl_sd111",
           "next_tables" : {
-            "SimpleDeflectionIngress.generate_random" : "tbl_sd108"
+            "SimpleDeflectionIngress.generate_random" : "tbl_sd111"
           },
           "default_entry" : {
             "action_id" : 8,
@@ -3473,11 +4186,11 @@
           }
         },
         {
-          "name" : "tbl_sd108",
+          "name" : "tbl_sd111",
           "id" : 9,
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 108,
+            "line" : 111,
             "column" : 37,
             "source_fragment" : "= meta.is_queue_full_0 | meta.neighbor_switch_indicator_0; ..."
           },
@@ -3489,10 +4202,10 @@
           "support_timeout" : false,
           "direct_meters" : null,
           "action_ids" : [32],
-          "actions" : ["sd108"],
+          "actions" : ["sd111"],
           "base_default_next" : "node_17",
           "next_tables" : {
-            "sd108" : "node_17"
+            "sd111" : "node_17"
           },
           "default_entry" : {
             "action_id" : 32,
@@ -3502,11 +4215,11 @@
           }
         },
         {
-          "name" : "tbl_sd120",
+          "name" : "tbl_sd123",
           "id" : 10,
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 120,
+            "line" : 123,
             "column" : 45,
             "source_fragment" : "="
           },
@@ -3518,10 +4231,10 @@
           "support_timeout" : false,
           "direct_meters" : null,
           "action_ids" : [14],
-          "actions" : ["sd120"],
+          "actions" : ["sd123"],
           "base_default_next" : "SimpleDeflectionIngress.set_deflect_egress_port_table",
           "next_tables" : {
-            "sd120" : "SimpleDeflectionIngress.set_deflect_egress_port_table"
+            "sd123" : "SimpleDeflectionIngress.set_deflect_egress_port_table"
           },
           "default_entry" : {
             "action_id" : 14,
@@ -3531,11 +4244,11 @@
           }
         },
         {
-          "name" : "tbl_sd122",
+          "name" : "tbl_sd125",
           "id" : 11,
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 122,
+            "line" : 125,
             "column" : 45,
             "source_fragment" : "="
           },
@@ -3547,10 +4260,10 @@
           "support_timeout" : false,
           "direct_meters" : null,
           "action_ids" : [15],
-          "actions" : ["sd122"],
+          "actions" : ["sd125"],
           "base_default_next" : "SimpleDeflectionIngress.set_deflect_egress_port_table",
           "next_tables" : {
-            "sd122" : "SimpleDeflectionIngress.set_deflect_egress_port_table"
+            "sd125" : "SimpleDeflectionIngress.set_deflect_egress_port_table"
           },
           "default_entry" : {
             "action_id" : 15,
@@ -3560,11 +4273,11 @@
           }
         },
         {
-          "name" : "tbl_sd124",
+          "name" : "tbl_sd127",
           "id" : 12,
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 124,
+            "line" : 127,
             "column" : 45,
             "source_fragment" : "="
           },
@@ -3576,10 +4289,10 @@
           "support_timeout" : false,
           "direct_meters" : null,
           "action_ids" : [16],
-          "actions" : ["sd124"],
+          "actions" : ["sd127"],
           "base_default_next" : "SimpleDeflectionIngress.set_deflect_egress_port_table",
           "next_tables" : {
-            "sd124" : "SimpleDeflectionIngress.set_deflect_egress_port_table"
+            "sd127" : "SimpleDeflectionIngress.set_deflect_egress_port_table"
           },
           "default_entry" : {
             "action_id" : 16,
@@ -3589,11 +4302,11 @@
           }
         },
         {
-          "name" : "tbl_sd126",
+          "name" : "tbl_sd129",
           "id" : 13,
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 126,
+            "line" : 129,
             "column" : 45,
             "source_fragment" : "="
           },
@@ -3605,10 +4318,10 @@
           "support_timeout" : false,
           "direct_meters" : null,
           "action_ids" : [17],
-          "actions" : ["sd126"],
+          "actions" : ["sd129"],
           "base_default_next" : "SimpleDeflectionIngress.set_deflect_egress_port_table",
           "next_tables" : {
-            "sd126" : "SimpleDeflectionIngress.set_deflect_egress_port_table"
+            "sd129" : "SimpleDeflectionIngress.set_deflect_egress_port_table"
           },
           "default_entry" : {
             "action_id" : 17,
@@ -3618,11 +4331,11 @@
           }
         },
         {
-          "name" : "tbl_sd128",
+          "name" : "tbl_sd131",
           "id" : 14,
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 128,
+            "line" : 131,
             "column" : 45,
             "source_fragment" : "="
           },
@@ -3634,10 +4347,10 @@
           "support_timeout" : false,
           "direct_meters" : null,
           "action_ids" : [18],
-          "actions" : ["sd128"],
+          "actions" : ["sd131"],
           "base_default_next" : "SimpleDeflectionIngress.set_deflect_egress_port_table",
           "next_tables" : {
-            "sd128" : "SimpleDeflectionIngress.set_deflect_egress_port_table"
+            "sd131" : "SimpleDeflectionIngress.set_deflect_egress_port_table"
           },
           "default_entry" : {
             "action_id" : 18,
@@ -3647,11 +4360,11 @@
           }
         },
         {
-          "name" : "tbl_sd130",
+          "name" : "tbl_sd133",
           "id" : 15,
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 130,
+            "line" : 133,
             "column" : 45,
             "source_fragment" : "="
           },
@@ -3663,10 +4376,10 @@
           "support_timeout" : false,
           "direct_meters" : null,
           "action_ids" : [19],
-          "actions" : ["sd130"],
+          "actions" : ["sd133"],
           "base_default_next" : "SimpleDeflectionIngress.set_deflect_egress_port_table",
           "next_tables" : {
-            "sd130" : "SimpleDeflectionIngress.set_deflect_egress_port_table"
+            "sd133" : "SimpleDeflectionIngress.set_deflect_egress_port_table"
           },
           "default_entry" : {
             "action_id" : 19,
@@ -3676,11 +4389,11 @@
           }
         },
         {
-          "name" : "tbl_sd132",
+          "name" : "tbl_sd135",
           "id" : 16,
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 132,
+            "line" : 135,
             "column" : 45,
             "source_fragment" : "="
           },
@@ -3692,10 +4405,10 @@
           "support_timeout" : false,
           "direct_meters" : null,
           "action_ids" : [20],
-          "actions" : ["sd132"],
+          "actions" : ["sd135"],
           "base_default_next" : "SimpleDeflectionIngress.set_deflect_egress_port_table",
           "next_tables" : {
-            "sd132" : "SimpleDeflectionIngress.set_deflect_egress_port_table"
+            "sd135" : "SimpleDeflectionIngress.set_deflect_egress_port_table"
           },
           "default_entry" : {
             "action_id" : 20,
@@ -3705,11 +4418,11 @@
           }
         },
         {
-          "name" : "tbl_sd134",
+          "name" : "tbl_sd137",
           "id" : 17,
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 134,
+            "line" : 137,
             "column" : 45,
             "source_fragment" : "="
           },
@@ -3721,10 +4434,10 @@
           "support_timeout" : false,
           "direct_meters" : null,
           "action_ids" : [21],
-          "actions" : ["sd134"],
+          "actions" : ["sd137"],
           "base_default_next" : "SimpleDeflectionIngress.set_deflect_egress_port_table",
           "next_tables" : {
-            "sd134" : "SimpleDeflectionIngress.set_deflect_egress_port_table"
+            "sd137" : "SimpleDeflectionIngress.set_deflect_egress_port_table"
           },
           "default_entry" : {
             "action_id" : 21,
@@ -3734,11 +4447,11 @@
           }
         },
         {
-          "name" : "tbl_sd138",
+          "name" : "tbl_sd141",
           "id" : 18,
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 138,
+            "line" : 141,
             "column" : 49,
             "source_fragment" : "="
           },
@@ -3750,10 +4463,10 @@
           "support_timeout" : false,
           "direct_meters" : null,
           "action_ids" : [22],
-          "actions" : ["sd138"],
+          "actions" : ["sd141"],
           "base_default_next" : "SimpleDeflectionIngress.set_deflect_egress_port_table",
           "next_tables" : {
-            "sd138" : "SimpleDeflectionIngress.set_deflect_egress_port_table"
+            "sd141" : "SimpleDeflectionIngress.set_deflect_egress_port_table"
           },
           "default_entry" : {
             "action_id" : 22,
@@ -3763,11 +4476,11 @@
           }
         },
         {
-          "name" : "tbl_sd140",
+          "name" : "tbl_sd143",
           "id" : 19,
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 140,
+            "line" : 143,
             "column" : 49,
             "source_fragment" : "="
           },
@@ -3779,10 +4492,10 @@
           "support_timeout" : false,
           "direct_meters" : null,
           "action_ids" : [23],
-          "actions" : ["sd140"],
+          "actions" : ["sd143"],
           "base_default_next" : "SimpleDeflectionIngress.set_deflect_egress_port_table",
           "next_tables" : {
-            "sd140" : "SimpleDeflectionIngress.set_deflect_egress_port_table"
+            "sd143" : "SimpleDeflectionIngress.set_deflect_egress_port_table"
           },
           "default_entry" : {
             "action_id" : 23,
@@ -3792,11 +4505,11 @@
           }
         },
         {
-          "name" : "tbl_sd142",
+          "name" : "tbl_sd145",
           "id" : 20,
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 142,
+            "line" : 145,
             "column" : 49,
             "source_fragment" : "="
           },
@@ -3808,10 +4521,10 @@
           "support_timeout" : false,
           "direct_meters" : null,
           "action_ids" : [24],
-          "actions" : ["sd142"],
+          "actions" : ["sd145"],
           "base_default_next" : "SimpleDeflectionIngress.set_deflect_egress_port_table",
           "next_tables" : {
-            "sd142" : "SimpleDeflectionIngress.set_deflect_egress_port_table"
+            "sd145" : "SimpleDeflectionIngress.set_deflect_egress_port_table"
           },
           "default_entry" : {
             "action_id" : 24,
@@ -3821,11 +4534,11 @@
           }
         },
         {
-          "name" : "tbl_sd144",
+          "name" : "tbl_sd147",
           "id" : 21,
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 144,
+            "line" : 147,
             "column" : 49,
             "source_fragment" : "="
           },
@@ -3837,10 +4550,10 @@
           "support_timeout" : false,
           "direct_meters" : null,
           "action_ids" : [25],
-          "actions" : ["sd144"],
+          "actions" : ["sd147"],
           "base_default_next" : "SimpleDeflectionIngress.set_deflect_egress_port_table",
           "next_tables" : {
-            "sd144" : "SimpleDeflectionIngress.set_deflect_egress_port_table"
+            "sd147" : "SimpleDeflectionIngress.set_deflect_egress_port_table"
           },
           "default_entry" : {
             "action_id" : 25,
@@ -3850,11 +4563,11 @@
           }
         },
         {
-          "name" : "tbl_sd146",
+          "name" : "tbl_sd149",
           "id" : 22,
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 146,
+            "line" : 149,
             "column" : 49,
             "source_fragment" : "="
           },
@@ -3866,10 +4579,10 @@
           "support_timeout" : false,
           "direct_meters" : null,
           "action_ids" : [26],
-          "actions" : ["sd146"],
+          "actions" : ["sd149"],
           "base_default_next" : "SimpleDeflectionIngress.set_deflect_egress_port_table",
           "next_tables" : {
-            "sd146" : "SimpleDeflectionIngress.set_deflect_egress_port_table"
+            "sd149" : "SimpleDeflectionIngress.set_deflect_egress_port_table"
           },
           "default_entry" : {
             "action_id" : 26,
@@ -3879,11 +4592,11 @@
           }
         },
         {
-          "name" : "tbl_sd148",
+          "name" : "tbl_sd151",
           "id" : 23,
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 148,
+            "line" : 151,
             "column" : 49,
             "source_fragment" : "="
           },
@@ -3895,10 +4608,10 @@
           "support_timeout" : false,
           "direct_meters" : null,
           "action_ids" : [27],
-          "actions" : ["sd148"],
+          "actions" : ["sd151"],
           "base_default_next" : "SimpleDeflectionIngress.set_deflect_egress_port_table",
           "next_tables" : {
-            "sd148" : "SimpleDeflectionIngress.set_deflect_egress_port_table"
+            "sd151" : "SimpleDeflectionIngress.set_deflect_egress_port_table"
           },
           "default_entry" : {
             "action_id" : 27,
@@ -3908,11 +4621,11 @@
           }
         },
         {
-          "name" : "tbl_sd150",
+          "name" : "tbl_sd153",
           "id" : 24,
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 150,
+            "line" : 153,
             "column" : 49,
             "source_fragment" : "="
           },
@@ -3924,10 +4637,10 @@
           "support_timeout" : false,
           "direct_meters" : null,
           "action_ids" : [28],
-          "actions" : ["sd150"],
+          "actions" : ["sd153"],
           "base_default_next" : "SimpleDeflectionIngress.set_deflect_egress_port_table",
           "next_tables" : {
-            "sd150" : "SimpleDeflectionIngress.set_deflect_egress_port_table"
+            "sd153" : "SimpleDeflectionIngress.set_deflect_egress_port_table"
           },
           "default_entry" : {
             "action_id" : 28,
@@ -3937,11 +4650,11 @@
           }
         },
         {
-          "name" : "tbl_sd152",
+          "name" : "tbl_sd155",
           "id" : 25,
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 152,
+            "line" : 155,
             "column" : 49,
             "source_fragment" : "="
           },
@@ -3953,10 +4666,10 @@
           "support_timeout" : false,
           "direct_meters" : null,
           "action_ids" : [29],
-          "actions" : ["sd152"],
+          "actions" : ["sd155"],
           "base_default_next" : "SimpleDeflectionIngress.set_deflect_egress_port_table",
           "next_tables" : {
-            "sd152" : "SimpleDeflectionIngress.set_deflect_egress_port_table"
+            "sd155" : "SimpleDeflectionIngress.set_deflect_egress_port_table"
           },
           "default_entry" : {
             "action_id" : 29,
@@ -3970,7 +4683,7 @@
           "id" : 26,
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 41,
+            "line" : 42,
             "column" : 10,
             "source_fragment" : "set_deflect_egress_port_table"
           },
@@ -3990,10 +4703,10 @@
           "direct_meters" : null,
           "action_ids" : [9, 7],
           "actions" : ["SimpleDeflectionIngress.set_deflect_egress_port_action", "SimpleDeflectionIngress.drop"],
-          "base_default_next" : "tbl_sd157",
+          "base_default_next" : "tbl_sd160",
           "next_tables" : {
-            "SimpleDeflectionIngress.set_deflect_egress_port_action" : "tbl_sd157",
-            "SimpleDeflectionIngress.drop" : "tbl_sd157"
+            "SimpleDeflectionIngress.set_deflect_egress_port_action" : "tbl_sd160",
+            "SimpleDeflectionIngress.drop" : "tbl_sd160"
           },
           "default_entry" : {
             "action_id" : 7,
@@ -4003,11 +4716,11 @@
           }
         },
         {
-          "name" : "tbl_sd157",
+          "name" : "tbl_sd160",
           "id" : 27,
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 157,
+            "line" : 160,
             "column" : 20,
             "source_fragment" : "deflected_ctr.count(0); ..."
           },
@@ -4019,10 +4732,10 @@
           "support_timeout" : false,
           "direct_meters" : null,
           "action_ids" : [30],
-          "actions" : ["sd157"],
+          "actions" : ["sd160"],
           "base_default_next" : null,
           "next_tables" : {
-            "sd157" : null
+            "sd160" : null
           },
           "default_entry" : {
             "action_id" : 30,
@@ -4032,11 +4745,11 @@
           }
         },
         {
-          "name" : "tbl_sd165",
+          "name" : "tbl_sd168",
           "id" : 28,
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 165,
+            "line" : 168,
             "column" : 20,
             "source_fragment" : "                    log_msg(\\\"Normal: port={}\\\", {meta.fw_port_idx+1});"
           },
@@ -4048,10 +4761,10 @@
           "support_timeout" : false,
           "direct_meters" : null,
           "action_ids" : [31],
-          "actions" : ["sd165"],
+          "actions" : ["sd168"],
           "base_default_next" : null,
           "next_tables" : {
-            "sd165" : null
+            "sd168" : null
           },
           "default_entry" : {
             "action_id" : 31,
@@ -4068,7 +4781,7 @@
           "id" : 0,
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 66,
+            "line" : 67,
             "column" : 12,
             "source_fragment" : "hdr.bee.isValid()"
           },
@@ -4083,7 +4796,7 @@
               }
             }
           },
-          "true_next" : "tbl_sd67",
+          "true_next" : "tbl_sd68",
           "false_next" : "node_4"
         },
         {
@@ -4140,7 +4853,7 @@
           "id" : 3,
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 76,
+            "line" : 79,
             "column" : 16,
             "source_fragment" : "hdr.ipv4.isValid() && (hdr.ipv4.protocol == IP_PROTOCOLS_TCP || hdr.ipv4.protocol == IP_PROTOCOLS_UDP)"
           },
@@ -4203,7 +4916,7 @@
           "id" : 4,
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 78,
+            "line" : 81,
             "column" : 20,
             "source_fragment" : "hdr.flow.isValid()"
           },
@@ -4218,15 +4931,15 @@
               }
             }
           },
-          "true_next" : "tbl_sd79",
-          "false_next" : "tbl_sd82"
+          "true_next" : "tbl_sd82",
+          "false_next" : "tbl_sd85"
         },
         {
           "name" : "node_17",
           "id" : 5,
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 117,
+            "line" : 120,
             "column" : 20,
             "source_fragment" : "meta.is_fw_port_full == 1"
           },
@@ -4245,14 +4958,14 @@
             }
           },
           "true_next" : "node_18",
-          "false_next" : "tbl_sd165"
+          "false_next" : "tbl_sd168"
         },
         {
           "name" : "node_18",
           "id" : 6,
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 119,
+            "line" : 122,
             "column" : 24,
             "source_fragment" : "meta.random_number <= 0 && meta.is_queue_full_0 == 0"
           },
@@ -4290,7 +5003,7 @@
               }
             }
           },
-          "true_next" : "tbl_sd120",
+          "true_next" : "tbl_sd123",
           "false_next" : "node_20"
         },
         {
@@ -4298,7 +5011,7 @@
           "id" : 7,
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 121,
+            "line" : 124,
             "column" : 31,
             "source_fragment" : "meta.random_number <= 1 && meta.is_queue_full_1 == 0"
           },
@@ -4336,7 +5049,7 @@
               }
             }
           },
-          "true_next" : "tbl_sd122",
+          "true_next" : "tbl_sd125",
           "false_next" : "node_22"
         },
         {
@@ -4344,7 +5057,7 @@
           "id" : 8,
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 123,
+            "line" : 126,
             "column" : 31,
             "source_fragment" : "meta.random_number <= 2 && meta.is_queue_full_2 == 0"
           },
@@ -4382,7 +5095,7 @@
               }
             }
           },
-          "true_next" : "tbl_sd124",
+          "true_next" : "tbl_sd127",
           "false_next" : "node_24"
         },
         {
@@ -4390,7 +5103,7 @@
           "id" : 9,
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 125,
+            "line" : 128,
             "column" : 31,
             "source_fragment" : "meta.random_number <= 3 && meta.is_queue_full_3 == 0"
           },
@@ -4428,7 +5141,7 @@
               }
             }
           },
-          "true_next" : "tbl_sd126",
+          "true_next" : "tbl_sd129",
           "false_next" : "node_26"
         },
         {
@@ -4436,7 +5149,7 @@
           "id" : 10,
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 127,
+            "line" : 130,
             "column" : 31,
             "source_fragment" : "meta.random_number <= 4 && meta.is_queue_full_4 == 0"
           },
@@ -4474,7 +5187,7 @@
               }
             }
           },
-          "true_next" : "tbl_sd128",
+          "true_next" : "tbl_sd131",
           "false_next" : "node_28"
         },
         {
@@ -4482,7 +5195,7 @@
           "id" : 11,
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 129,
+            "line" : 132,
             "column" : 31,
             "source_fragment" : "meta.random_number <= 5 && meta.is_queue_full_5 == 0"
           },
@@ -4520,7 +5233,7 @@
               }
             }
           },
-          "true_next" : "tbl_sd130",
+          "true_next" : "tbl_sd133",
           "false_next" : "node_30"
         },
         {
@@ -4528,7 +5241,7 @@
           "id" : 12,
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 131,
+            "line" : 134,
             "column" : 31,
             "source_fragment" : "meta.random_number <= 6 && meta.is_queue_full_6 == 0"
           },
@@ -4566,7 +5279,7 @@
               }
             }
           },
-          "true_next" : "tbl_sd132",
+          "true_next" : "tbl_sd135",
           "false_next" : "node_32"
         },
         {
@@ -4574,7 +5287,7 @@
           "id" : 13,
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 133,
+            "line" : 136,
             "column" : 31,
             "source_fragment" : "meta.random_number <= 7 && meta.is_queue_full_7 == 0"
           },
@@ -4612,7 +5325,7 @@
               }
             }
           },
-          "true_next" : "tbl_sd134",
+          "true_next" : "tbl_sd137",
           "false_next" : "node_34"
         },
         {
@@ -4620,7 +5333,7 @@
           "id" : 14,
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 137,
+            "line" : 140,
             "column" : 28,
             "source_fragment" : "meta.is_queue_full_0 == 0"
           },
@@ -4638,7 +5351,7 @@
               }
             }
           },
-          "true_next" : "tbl_sd138",
+          "true_next" : "tbl_sd141",
           "false_next" : "node_36"
         },
         {
@@ -4646,7 +5359,7 @@
           "id" : 15,
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 139,
+            "line" : 142,
             "column" : 35,
             "source_fragment" : "meta.is_queue_full_1 == 0"
           },
@@ -4664,7 +5377,7 @@
               }
             }
           },
-          "true_next" : "tbl_sd140",
+          "true_next" : "tbl_sd143",
           "false_next" : "node_38"
         },
         {
@@ -4672,7 +5385,7 @@
           "id" : 16,
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 141,
+            "line" : 144,
             "column" : 35,
             "source_fragment" : "meta.is_queue_full_2 == 0"
           },
@@ -4690,7 +5403,7 @@
               }
             }
           },
-          "true_next" : "tbl_sd142",
+          "true_next" : "tbl_sd145",
           "false_next" : "node_40"
         },
         {
@@ -4698,7 +5411,7 @@
           "id" : 17,
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 143,
+            "line" : 146,
             "column" : 35,
             "source_fragment" : "meta.is_queue_full_3 == 0"
           },
@@ -4716,7 +5429,7 @@
               }
             }
           },
-          "true_next" : "tbl_sd144",
+          "true_next" : "tbl_sd147",
           "false_next" : "node_42"
         },
         {
@@ -4724,7 +5437,7 @@
           "id" : 18,
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 145,
+            "line" : 148,
             "column" : 35,
             "source_fragment" : "meta.is_queue_full_4 == 0"
           },
@@ -4742,7 +5455,7 @@
               }
             }
           },
-          "true_next" : "tbl_sd146",
+          "true_next" : "tbl_sd149",
           "false_next" : "node_44"
         },
         {
@@ -4750,7 +5463,7 @@
           "id" : 19,
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 147,
+            "line" : 150,
             "column" : 35,
             "source_fragment" : "meta.is_queue_full_5 == 0"
           },
@@ -4768,7 +5481,7 @@
               }
             }
           },
-          "true_next" : "tbl_sd148",
+          "true_next" : "tbl_sd151",
           "false_next" : "node_46"
         },
         {
@@ -4776,7 +5489,7 @@
           "id" : 20,
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 149,
+            "line" : 152,
             "column" : 35,
             "source_fragment" : "meta.is_queue_full_6 == 0"
           },
@@ -4794,7 +5507,7 @@
               }
             }
           },
-          "true_next" : "tbl_sd150",
+          "true_next" : "tbl_sd153",
           "false_next" : "node_48"
         },
         {
@@ -4802,7 +5515,7 @@
           "id" : 21,
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 151,
+            "line" : 154,
             "column" : 35,
             "source_fragment" : "meta.is_queue_full_7 == 0"
           },
@@ -4820,7 +5533,7 @@
               }
             }
           },
-          "true_next" : "tbl_sd152",
+          "true_next" : "tbl_sd155",
           "false_next" : "SimpleDeflectionIngress.set_deflect_egress_port_table"
         }
       ]
@@ -4830,18 +5543,18 @@
       "id" : 1,
       "source_info" : {
         "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-        "line" : 177,
+        "line" : 180,
         "column" : 8,
         "source_fragment" : "SimpleDeflectionEgress"
       },
       "init_table" : "node_55",
       "tables" : [
         {
-          "name" : "tbl_sd219",
+          "name" : "tbl_sd221",
           "id" : 29,
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 219,
+            "line" : 221,
             "column" : 12,
             "source_fragment" : "queue_occupancy_info.read(hdr.bee.queue_occ_info, (bit<32>)hdr.bee.port_idx_in_reg); ..."
           },
@@ -4853,10 +5566,10 @@
           "support_timeout" : false,
           "direct_meters" : null,
           "action_ids" : [35],
-          "actions" : ["sd219"],
+          "actions" : ["sd221"],
           "base_default_next" : null,
           "next_tables" : {
-            "sd219" : null
+            "sd221" : null
           },
           "default_entry" : {
             "action_id" : 35,
@@ -4866,11 +5579,11 @@
           }
         },
         {
-          "name" : "tbl_sd228",
+          "name" : "tbl_sd235",
           "id" : 30,
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 228,
+            "line" : 235,
             "column" : 41,
             "source_fragment" : "="
           },
@@ -4882,10 +5595,10 @@
           "support_timeout" : false,
           "direct_meters" : null,
           "action_ids" : [36],
-          "actions" : ["sd228"],
+          "actions" : ["sd235"],
           "base_default_next" : "SimpleDeflectionEgress.get_eg_port_idx_in_reg_table",
           "next_tables" : {
-            "sd228" : "SimpleDeflectionEgress.get_eg_port_idx_in_reg_table"
+            "sd235" : "SimpleDeflectionEgress.get_eg_port_idx_in_reg_table"
           },
           "default_entry" : {
             "action_id" : 36,
@@ -4895,11 +5608,11 @@
           }
         },
         {
-          "name" : "tbl_sd230",
+          "name" : "tbl_sd237",
           "id" : 31,
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 230,
+            "line" : 237,
             "column" : 41,
             "source_fragment" : "="
           },
@@ -4911,10 +5624,10 @@
           "support_timeout" : false,
           "direct_meters" : null,
           "action_ids" : [37],
-          "actions" : ["sd230"],
+          "actions" : ["sd237"],
           "base_default_next" : "SimpleDeflectionEgress.get_eg_port_idx_in_reg_table",
           "next_tables" : {
-            "sd230" : "SimpleDeflectionEgress.get_eg_port_idx_in_reg_table"
+            "sd237" : "SimpleDeflectionEgress.get_eg_port_idx_in_reg_table"
           },
           "default_entry" : {
             "action_id" : 37,
@@ -4928,7 +5641,7 @@
           "id" : 32,
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 192,
+            "line" : 196,
             "column" : 10,
             "source_fragment" : "get_eg_port_idx_in_reg_table"
           },
@@ -4948,10 +5661,10 @@
           "direct_meters" : null,
           "action_ids" : [34, 33],
           "actions" : ["SimpleDeflectionEgress.get_eg_port_idx_in_reg_action", "NoAction"],
-          "base_default_next" : "tbl_sd234",
+          "base_default_next" : "tbl_sd241",
           "next_tables" : {
-            "SimpleDeflectionEgress.get_eg_port_idx_in_reg_action" : "tbl_sd234",
-            "NoAction" : "tbl_sd234"
+            "SimpleDeflectionEgress.get_eg_port_idx_in_reg_action" : "tbl_sd241",
+            "NoAction" : "tbl_sd241"
           },
           "default_entry" : {
             "action_id" : 33,
@@ -4961,11 +5674,11 @@
           }
         },
         {
-          "name" : "tbl_sd234",
+          "name" : "tbl_sd241",
           "id" : 33,
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 234,
+            "line" : 241,
             "column" : 16,
             "source_fragment" : "debug_eg_port.write((bit<32>)0, standard_metadata.egress_port); ..."
           },
@@ -4977,10 +5690,10 @@
           "support_timeout" : false,
           "direct_meters" : null,
           "action_ids" : [38],
-          "actions" : ["sd234"],
+          "actions" : ["sd241"],
           "base_default_next" : null,
           "next_tables" : {
-            "sd234" : null
+            "sd241" : null
           },
           "default_entry" : {
             "action_id" : 38,
@@ -4997,7 +5710,7 @@
           "id" : 22,
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 215,
+            "line" : 219,
             "column" : 12,
             "source_fragment" : "hdr.bee.isValid()"
           },
@@ -5012,7 +5725,7 @@
               }
             }
           },
-          "true_next" : "tbl_sd219",
+          "true_next" : "tbl_sd221",
           "false_next" : "node_57"
         },
         {
@@ -5020,7 +5733,7 @@
           "id" : 23,
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 223,
+            "line" : 230,
             "column" : 16,
             "source_fragment" : "hdr.ipv4.isValid() && (hdr.ipv4.protocol == IP_PROTOCOLS_TCP || hdr.ipv4.protocol == IP_PROTOCOLS_UDP)"
           },
@@ -5083,7 +5796,7 @@
           "id" : 24,
           "source_info" : {
             "filename" : "/home/ubuntu/p4burst/p4src/sd/sd.p4",
-            "line" : 227,
+            "line" : 234,
             "column" : 20,
             "source_fragment" : "standard_metadata.deq_qdepth < QUEUE_CAPACITY"
           },
@@ -5101,8 +5814,8 @@
               }
             }
           },
-          "true_next" : "tbl_sd228",
-          "false_next" : "tbl_sd230"
+          "true_next" : "tbl_sd235",
+          "false_next" : "tbl_sd237"
         }
       ]
     }
