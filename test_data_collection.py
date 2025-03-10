@@ -47,8 +47,8 @@ def run_mininet(n_pkts, interval, num_flows, n_senders):
     Run a simple client-server application that sends one single packet from a client to a server.
     """
 
-    bw = 10
-    delay = 0
+    bw = 1
+    delay = 0.01
     p4_program = 'sd/sd.p4' 
     exp_id = "0000-deflection"
     queue_rate = 1000
@@ -95,6 +95,7 @@ def run_mininet(n_pkts, interval, num_flows, n_senders):
         server_receiver_log = f"tmp/{exp_id}/receiver_log_{i+1}.csv"
         receiver_logs.append(server_receiver_log)
         server_log_file = f"tmp/{exp_id}/rx_reord_server_{i+1}.log"
+        server.cmd(f'sysctl -w net.core.rmem_max=26214400')  # Increase receive buffer
         server.cmd(f'echo "Starting rx_reord.py on port 520{i+1} at $(date)" > {server_log_file} && '
                   f'python3 rx_reord.py --port 520{i+1} --intf {server.name}-eth0 --log {server_receiver_log} >> {server_log_file} 2>&1 &')
     time.sleep(1)
@@ -102,21 +103,27 @@ def run_mininet(n_pkts, interval, num_flows, n_senders):
     # run the queue logger
     os.system("python3 queue_logger.py &")
 
-    # run the clients
+    # Add synchronization for incast pattern
+    time.sleep(2)
+    
+    print("Starting traffic generation with incast pattern...")
+
     for i, client in enumerate(clients):
-        print(f"Starting client on {client.name} ({client.IP()})...")
         log_file_str = f'tmp/{exp_id}/tx_reord_client_{i+1}.log'
-        log_file = open(log_file_str, "w")
-        intf = f'h{1+2*i}-eth0' # h1, h3, h5, h7, .. can we use client.defaultIntf()?
-        client_cmd = f"python3 tx_reord.py --intf {intf} --src_ip {client.IP()} --dst_ip {server.IP()} --port 520{i+1} \
-                --num_packets {n_pkts} --interval {interval} --num_flows {num_flows}"
-        #procs.append(client.popen(client_cmd, shell=True, stderr=log_file, stdout=log_file))
-        client.cmd(f'{client_cmd} > {log_file_str} 2>&1 &')
+        intf = f'h{1+2*i}-eth0'        
 
-    # for proc in procs:
-    #     proc.wait()
+        client_cmd = f"python3 -u tx_reord.py --intf {intf} --src_ip {client.IP()} --dst_ip {server.IP()} --port 520{i+1} \
+                --num_packets {n_pkts} --interval {interval} --num_flows {num_flows} > {log_file_str} 2>&1 &"
+        client.sendCmd(client_cmd)
+        # All clients should now be running in parallel
+        print("All clients started simultaneously")
 
-    time.sleep(20)
+    # Wait for a reasonable amount of time for traffic to complete
+    wait_time = max(10, n_pkts * interval * 2)  # Base wait time on packet count and interval
+    print(f"Waiting {wait_time} seconds for traffic to complete...")
+    time.sleep(wait_time)
+
+    time.sleep(30)
 
     # kill the queue logger
     os.system("killall python3")
@@ -165,6 +172,13 @@ def run_mininet(n_pkts, interval, num_flows, n_senders):
         print(f"Warning: Switch log {switch_log} not found")
     
     print("--- RL dataset creation complete ---\n")
+
+    # Ensure clean network shutdown
+    print("Stopping network...")
+    for node in topology.net.net.hosts + topology.net.net.switches:
+        # Make sure no pending commands before stopping
+        if hasattr(node, 'waiting') and node.waiting:
+            node.waitOutput()
 
     topology.net.stopNetwork()
 
