@@ -79,21 +79,20 @@ def send_custom_traffic(src_ip, iface, dst_ip, dst_port, num_packets=1000, inter
     sendp(packet_list, iface=iface, inter=interval, verbose=False)
     print("Done sending packets.")
 
-if __name__ == '__main__':
-    # Example usage: send 1000 packets from interface intf to server at server_ip port port
-    parser = ArgumentParser()
-    parser.add_argument("--intf", help="Interface to send packets from")
-    parser.add_argument("--src_ip", help="Source IP address")
-    parser.add_argument("--dst_ip", help="Destination IP address")
-    parser.add_argument("--port", type=int, help="Destination port")
-    parser.add_argument("--num_packets", type=int, help="Number of packets per flow", default=100)
-    parser.add_argument("--interval", type=float, help="Interval between packets", default=0.001)
-    parser.add_argument("--reorder_prob", type=float, help="Probability of out-of-order packets", default=0)
-    parser.add_argument("--num_flows", type=int, help="Number of flows to generate", default=1)
+# Example usage: send 1000 packets from interface intf to server at server_ip port port
+parser = ArgumentParser()
+parser.add_argument("--intf", help="Interface to send packets from")
+parser.add_argument("--src_ip", help="Source IP address")
+parser.add_argument("--dst_ip", help="Destination IP address")
+parser.add_argument("--port", type=int, help="Destination port")
+parser.add_argument("--num_packets", type=int, help="Number of packets per flow", default=100)
+parser.add_argument("--interval", type=float, help="Interval between packets", default=0.001)
+parser.add_argument("--reorder_prob", type=float, help="Probability of out-of-order packets", default=0)
+parser.add_argument("--num_flows", type=int, help="Number of flows to generate", default=1)
 
-    args = parser.parse_args()
-    # send 1 flow of #num_packets packets
-    # loopppa on the number of flows to debug different flow ids
-    bind_layers(UDP, FlowHeader, dport=int(args.port))
-    #send_custom_traffic(args.src_ip, args.intf, args.dst_ip, int(args.port), num_packets=args.num_packets, interval=args.interval)
-    send_out_of_order_pkts(args.src_ip, args.intf, args.dst_ip, int(args.port), num_packets=args.num_packets, interval=args.interval, out_of_order_probability=args.reorder_prob, num_flows=args.num_flows)
+args = parser.parse_args()
+# send 1 flow of #num_packets packets
+# loopppa on the number of flows to debug different flow ids
+bind_layers(UDP, FlowHeader, dport=int(args.port))
+#send_custom_traffic(args.src_ip, args.intf, args.dst_ip, int(args.port), num_packets=args.num_packets, interval=args.interval)
+send_out_of_order_pkts(args.src_ip, args.intf, args.dst_ip, int(args.port), num_packets=args.num_packets, interval=args.interval, out_of_order_probability=args.reorder_prob, num_flows=args.num_flows)
