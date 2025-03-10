@@ -26,67 +26,63 @@ def compute_reward(state):
 
 def merge_by_flow_seq(rl_csv, receiver_csv, output_csv):
     """
-    Merges RL dataset with receiver log based on flow_id and seq.
+    Merge RL dataset with receiver logs to incorporate reordering information.
     
     Args:
-        rl_csv: Path to CSV file with RL data (including flow_id, seq)
-        receiver_csv: Path to receiver log CSV with reordering flags
-        output_csv: Path to write the merged output CSV
+        rl_csv: Path to the RL dataset CSV from parse_switch_log()
+        receiver_csv: Path to the receiver log CSV with reordering flags
+        output_csv: Path to write the final merged dataset
     """
-    # Check if input files exist
-    if not os.path.exists(rl_csv):
-        print(f"Error: RL dataset file {rl_csv} does not exist")
-        return False
-        
-    if not os.path.exists(receiver_csv):
-        print(f"Error: Receiver log file {receiver_csv} does not exist")
-        return False
-        
-    # Create directory for output if it doesn't exist
-    os.makedirs(os.path.dirname(output_csv), exist_ok=True)
+    print(f"Merging RL dataset {rl_csv} with receiver log {receiver_csv}")
     
-    print(f"Loading RL dataset from {rl_csv}")
+    # Read RL dataset
     rl_df = pd.read_csv(rl_csv)
     
-    print(f"Loading receiver logs from {receiver_csv}")
-    recv_df = pd.read_csv(receiver_csv)
-    
-    print(f"Merging datasets on flow_id and seq...")
-    # Only keep the columns we need from receiver log
-    recv_columns = ['flow_id', 'seq', 'reordering_flag']
-    if all(col in recv_df.columns for col in recv_columns):
-        recv_subset = recv_df[recv_columns]
+    # Read receiver logs
+    if os.path.exists(receiver_csv):
+        receiver_df = pd.read_csv(receiver_csv)
+        
+        # Convert the reordering_flag column to integer explicitly
+        receiver_df['reordering_flag'] = receiver_df['reordering_flag'].astype(int)
+        
+        # Create a combined key for merging
+        receiver_df['key'] = receiver_df['flow_id'].astype(str) + '_' + receiver_df['seq'].astype(str)
+        
+        # Create similar key in the RL dataset
+        rl_df['key'] = rl_df['flow_id'].astype(str) + '_' + rl_df['seq'].astype(str)
+        
+        # Merge the datasets
+        merged_df = pd.merge(rl_df, receiver_df[['key', 'reordering_flag']], on='key', how='left')
+        
+        # Identify rows where reordering_flag is missing
+        missing_mask = merged_df['reordering_flag'].isna()
+        if missing_mask.sum() > 0:
+            print(f"Warning: {missing_mask.sum()} rows have missing reordering flags")
+            print(f"Setting missing reordering_flag values to 0 (assuming in-order)")
+            merged_df.loc[missing_mask, 'reordering_flag'] = 0
+        
+        # Ensure reordering_flag is an integer
+        merged_df['reordering_flag'] = merged_df['reordering_flag'].astype(int)
+        
+        # Drop the temporary key column
+        merged_df.drop(columns=['key'], inplace=True)
     else:
-        print(f"Error: Receiver log is missing required columns: {recv_columns}")
-        print(f"Available columns: {recv_df.columns.tolist()}")
-        sys.exit(1)
+        print(f"Warning: Receiver log {receiver_csv} not found, using RL dataset without reordering info")
+        merged_df = rl_df
+        # Add reordering flag column with default value 0
+        merged_df['reordering_flag'] = 0
     
-    # Perform the merge
-    merged_df = pd.merge(
-        rl_df,
-        recv_subset,
-        on=['flow_id', 'seq'],
-        how='left'
-    )
-    
-    # Check for missing matches and handle them
-    missing_mask = merged_df['reordering_flag'].isna()
-    missing_count = missing_mask.sum()
-    
-    if missing_count > 0:
-        print(f"Warning: {missing_count} rows in RL dataset do not have corresponding entries in receiver log")
-        print(f"Setting missing reordering_flag values to 0 (assuming in-order)")
-        merged_df.loc[missing_mask, 'reordering_flag'] = 0
-
-    # Drop the flow_id column
-    merged_df.drop(columns=['flow_id', 'seq'], inplace=True)
+    # Drop the flow_id, seq columns, and timestamp which are no longer needed
+    merged_df.drop(columns=['flow_id', 'seq', 'timestamp'], inplace=True)
     
     # Incorporate reorder penalty into reward
     print("Adjusting rewards based on reordering flags...")
     def incorporate_reorder(row):
-        base_reward = row['reward']
-        penalty = 5 * row['reordering_flag']  # 5 points penalty for reordered packets
-        return base_reward - penalty
+        # Apply a penalty to the reward if packet was reordered
+        if row['reordering_flag'] == 1:
+            return row['reward'] - 10  # Penalty for reordering
+        else:
+            return row['reward']
     
     merged_df['reward'] = merged_df.apply(incorporate_reorder, axis=1)
     
@@ -94,6 +90,7 @@ def merge_by_flow_seq(rl_csv, receiver_csv, output_csv):
     print(f"Writing merged dataset to {output_csv}")
     merged_df.to_csv(output_csv, index=False)
     print(f"Merge complete: {len(merged_df)} total rows in final dataset")
+    return True
 
 def parse_switch_log(log_file, output_csv):
     """
@@ -119,7 +116,8 @@ def parse_switch_log(log_file, output_csv):
     ingress_pattern = re.compile(r'Ingress: port=(\d+), size=(\d+), flow_id=(\d+), seq=(\d+), timestamp=(\d+)')
     deflection_pattern = re.compile(r'Deflection: original_port=(\d+), deflected_to=(\d+), random_number=(\d+)')
     normal_pattern = re.compile(r'Normal: port=(\d+)')
-    queue_pattern = re.compile(r'Queue: port=(\d+), deq_qdepth=(\d+)')
+    # queue_pattern = re.compile(r'Queue: port=(\d+), deq_qdepth=(\d+)')
+    queue_depths_pattern = re.compile(r'Queue depths: q0=(\d+) q1=(\d+) q2=(\d+) q3=(\d+) q4=(\d+) q5=(\d+) q6=(\d+) q7=(\d+)')
     
     # Data storage for events
     events = []
@@ -148,10 +146,23 @@ def parse_switch_log(log_file, output_csv):
             elif normal_match := normal_pattern.search(line):
                 event['type'] = 'normal'
                 event['port'] = int(normal_match.group(1))
-            elif queue_match := queue_pattern.search(line):
-                event['type'] = 'queue'
-                event['port'] = int(queue_match.group(1))
-                event['deq_qdepth'] = int(queue_match.group(2))
+            # elif queue_match := queue_pattern.search(line):
+            #     event['type'] = 'queue'
+            #     event['port'] = int(queue_match.group(1))
+            #     event['deq_qdepth'] = int(queue_match.group(2))
+            elif queue_depths_match := queue_depths_pattern.search(line):
+                # TODO parametrize the number of egress ports
+                event['type'] = 'queue_depths'
+                event['queue_depths'] = [
+                    int(queue_depths_match.group(1)),  # q0
+                    int(queue_depths_match.group(2)),  # q1
+                    int(queue_depths_match.group(3)),  # q2
+                    int(queue_depths_match.group(4)),  # q3
+                    int(queue_depths_match.group(5)),  # q4
+                    int(queue_depths_match.group(6)),  # q5
+                    int(queue_depths_match.group(7)),  # q6
+                    int(queue_depths_match.group(8))   # q7
+                ]
                 
             if 'type' in event:
                 events.append(event)
@@ -177,8 +188,11 @@ def parse_switch_log(log_file, output_csv):
     # Dataset creation
     dataset = []
     for event in events:
-        if event['type'] == 'queue':
-            current_queue_depth[event['port']] = event['deq_qdepth']
+        # if event['type'] == 'queue':
+        #     current_queue_depth[event['port']] = event['deq_qdepth']
+        if event['type'] == 'queue_depths':
+            for i, depth in enumerate(event['queue_depths']):
+                current_queue_depth[i] = depth
         elif event['type'] == 'ingress':
             flow_id = event['flow_id']
             seq = event['seq']
@@ -230,8 +244,8 @@ def main():
     
     # Parse logs subcommand
     parse_parser = subparsers.add_parser('parse', help='Parse P4 switch logs')
-    parse_parser.add_argument('--log', required=True, help='Path to P4 switch log file')
-    parse_parser.add_argument('--output', required=True, help='Path for output RL dataset CSV')
+    parse_parser.add_argument('--log', default='log/p4s.s1.log', help='Path to P4 switch log file')
+    parse_parser.add_argument('--output', required=True, help='Path to output RL dataset CSV')
     parse_parser.add_argument('--window', type=int, default=100000, 
                               help='Window size in microseconds (note: simplified feature set ignores this)')
     
@@ -253,7 +267,7 @@ def main():
     args = parser.parse_args()
     
     if args.command == 'parse':
-        parse_switch_log(args.log, args.output, args.window)
+        parse_switch_log(args.log, args.output)
     elif args.command == 'merge':
         merge_by_flow_seq(args.rl, args.receiver, args.output)
     elif args.command == 'full':
