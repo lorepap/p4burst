@@ -1476,8 +1476,26 @@ control SimpleDeflectionEgress(inout header_t hdr,
                 queue_depth_info.read(q5, 5);
                 queue_depth_info.read(q6, 6);
                 queue_depth_info.read(q7, 7);
+
                 log_msg("Queue depths: q0={} q1={} q2={} q3={} q4={} q5={} q6={} q7={}",
                         {q0, q1, q2, q3, q4, q5, q6, q7});
+
+                bit<1> occ0; bit<1> occ1; bit<1> occ2; bit<1> occ3;
+                bit<1> occ4; bit<1> occ5; bit<1> occ6; bit<1> occ7;
+                queue_occupancy_info.read(occ0, (bit<32>)0);
+                queue_occupancy_info.read(occ1, (bit<32>)1);
+                queue_occupancy_info.read(occ2, (bit<32>)2);
+                queue_occupancy_info.read(occ3, (bit<32>)3);
+                queue_occupancy_info.read(occ4, (bit<32>)4);
+                queue_occupancy_info.read(occ5, (bit<32>)5);
+                queue_occupancy_info.read(occ6, (bit<32>)6);
+                queue_occupancy_info.read(occ7, (bit<32>)7);
+
+                log_msg("Queue occupancy: q0={} q1={} q2={} q3={} q4={} q5={} q6={} q7={}",
+                        {occ0, occ1, occ2, occ3, occ4, occ5, occ6, occ7});
+
+                // Dequeue queue depth
+                debug_deq_qdepth_table.apply();
             }
         }
     }
