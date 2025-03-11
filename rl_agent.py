@@ -17,19 +17,16 @@ class DQNAgent:
         self.action_size = action_size
         self.memory = deque(maxlen=10000)
         self.gamma = gamma  # discount factor
-        self.epsilon = 1.0  # exploration rate
-        self.epsilon_min = 0.01
-        self.epsilon_decay = 0.995
         self.batch_size = batch_size
         self.model = self._build_model()
         self.target_model = self._build_model()
         self.update_target_model()
 
     def _build_model(self):
-        # Neural Net for Deep-Q learning Model
         model = keras.Sequential([
-            keras.layers.Dense(24, input_dim=self.state_size, activation='relu'),
-            keras.layers.Dense(24, activation='relu'),
+            keras.layers.Dense(64, input_dim=self.state_size, activation='relu'),
+            keras.layers.Dense(64, activation='relu'),
+            keras.layers.Dense(32, activation='relu'),
             keras.layers.Dense(self.action_size, activation='linear')
         ])
         model.compile(loss='mse', optimizer=keras.optimizers.Adam(learning_rate=0.001))
@@ -40,11 +37,16 @@ class DQNAgent:
         self.target_model.set_weights(self.model.get_weights())
 
     def memorize(self, state, action, reward, next_state, done):
+        # Ensure state and next_state have consistent shapes
+        if hasattr(state, 'shape') and len(state.shape) > 1:
+            state = state.flatten()
+        if hasattr(next_state, 'shape') and len(next_state.shape) > 1:
+            next_state = next_state.flatten()
+            
         self.memory.append((state, action, reward, next_state, done))
 
     def act(self, state):
-        if np.random.rand() <= self.epsilon:
-            return np.random.randint(self.action_size)
+        # Always choose the best action without exploration
         act_values = self.model.predict(state, verbose=0)
         return np.argmax(act_values[0])  # returns action
 
@@ -52,12 +54,15 @@ class DQNAgent:
         if len(self.memory) < self.batch_size:
             return 0
         
-        minibatch = np.array(random.sample(self.memory, self.batch_size))
-        states = np.vstack(minibatch[:, 0])
-        actions = minibatch[:, 1].astype(np.int32)
-        rewards = minibatch[:, 2].astype(np.float32)
-        next_states = np.vstack(minibatch[:, 3])
-        dones = minibatch[:, 4].astype(np.bool_)
+        # Sample from memory but don't convert to numpy array yet
+        minibatch = random.sample(self.memory, self.batch_size)
+        
+        # Extract components separately
+        states = np.array([experience[0] for experience in minibatch])
+        actions = np.array([experience[1] for experience in minibatch], dtype=np.int32)
+        rewards = np.array([experience[2] for experience in minibatch], dtype=np.float32)
+        next_states = np.array([experience[3] for experience in minibatch])
+        dones = np.array([experience[4] for experience in minibatch], dtype=np.bool_)
 
         # Q(s', a)
         target = rewards + self.gamma * np.max(self.target_model.predict(next_states, verbose=0), axis=1) * ~dones
@@ -70,10 +75,6 @@ class DQNAgent:
         # Train the neural network
         history = self.model.fit(states, target_f, epochs=1, verbose=0)
         
-        # Decay epsilon
-        if self.epsilon > self.epsilon_min:
-            self.epsilon *= self.epsilon_decay
-            
         return history.history['loss'][0]
 
     def load(self, name):
@@ -89,16 +90,32 @@ def preprocess_dataset(csv_file):
     """
     data = pd.read_csv(csv_file)
     
-    # Extract features (state variables)
-    feature_cols = [col for col in data.columns if col.startswith('queue_depth_')]
+    # print("\nDataset sample:")
+    # print(data.head())
+    print(f"\nAction distribution: {data['action'].value_counts().to_dict()}")
+    print(f"Reward statistics: Min={data['reward'].min()}, Max={data['reward'].max()}, Mean={data['reward'].mean():.2f}")
+    
+    # Extract features for state representation
+    queue_depth_cols = [col for col in data.columns if col.startswith('queue_depth_')]
+    queue_occ_cols = [col for col in data.columns if col.startswith('queue_occ_')]
+    feature_cols = queue_depth_cols + queue_occ_cols
+    
+    # Add reordering flag as a state feature
+    if 'reordering_flag' in data.columns:
+        feature_cols.append('reordering_flag')
+    
+    print(f"\nState features: {feature_cols}")
     
     # Normalize state features
     data_norm = data.copy()
-    for col in feature_cols:
+    for col in queue_depth_cols:
         max_val = data[col].max()
         if max_val > 0:  # Avoid division by zero
             data_norm[col] = data[col] / max_val
-            
+            print(f"Normalized {col}: max value = {max_val}")
+    
+    # Queue occupancy is already normalized (0 or 1)
+    
     # Extract state, action, reward
     states = data_norm[feature_cols].values
     actions = data_norm['action'].values
@@ -128,8 +145,17 @@ def train_offline_dqn(csv_file, model_dir, epochs=100, batch_size=32):
     state_size = states.shape[1]
     action_size = len(np.unique(actions))
     
-    print(f"State size: {state_size}, Action size: {action_size}")
+    print(f"\nState size: {state_size}, Action size: {action_size}")
     print(f"Dataset size: {len(states)} samples")
+    
+    # Print some example state-action-reward triples
+    print("\nExample state-action-reward samples:")
+    for i in range(min(5, len(states))):
+        print(f"State {i}: {states[i]}")
+        print(f"Action: {actions[i]}")
+        print(f"Reward: {rewards[i]}")
+        print(f"Next state: {next_states[i]}")
+        print("---")
     
     # Initialize the agent
     agent = DQNAgent(state_size, action_size, batch_size=batch_size)
@@ -145,8 +171,8 @@ def train_offline_dqn(csv_file, model_dir, epochs=100, batch_size=32):
         loss = agent.replay()
         losses.append(loss)
         
-        if e % 10 == 0:
-            print(f"Epoch {e}/{epochs}, Loss: {loss:.4f}, Epsilon: {agent.epsilon:.4f}")
+        #if e % 10 == 0:
+        print(f"Epoch {e}/{epochs}, Loss: {loss:.4f}")
         
         # Update target model periodically
         if e % 50 == 0:
@@ -163,7 +189,7 @@ def train_offline_dqn(csv_file, model_dir, epochs=100, batch_size=32):
     plt.ylabel('Loss')
     plt.savefig(os.path.join(model_dir, 'training_loss.png'))
     
-    print(f"Training completed. Model saved to {os.path.join(model_dir, 'dqn_model.h5')}")
+    print(f"\nTraining completed. Model saved to {os.path.join(model_dir, 'dqn_model.h5')}")
     
     return agent
 
@@ -173,12 +199,26 @@ def evaluate_agent(agent, csv_file):
     Evaluate the trained agent based on cumulative reward.
     """
     # Load and preprocess the dataset
-    states, _, rewards, next_states, dones = preprocess_dataset(csv_file)
+    states, actions, rewards, next_states, dones = preprocess_dataset(csv_file)
 
+    # Track agent's predictions
+    predicted_actions = []
     total_reward = 0
+    
+    print("\nEvaluating agent on test set...")
     for i in range(len(states)):
-        action = agent.act(states[i].reshape(1, -1))  # Agent chooses action
-        total_reward += rewards[i]  # Sum rewards (assumes rewards are aligned with states)
+        state = states[i].reshape(1, -1)
+        action = agent.act(state)  # Agent chooses action
+        predicted_actions.append(action)
+        total_reward += rewards[i]
+    
+    # Compare predictions with dataset actions
+    actions_match = np.array(predicted_actions) == actions
+    match_percentage = 100 * np.mean(actions_match)
+    
+    print(f"\nAction match percentage: {match_percentage:.2f}%")
+    print(f"Predicted action distribution: {np.unique(predicted_actions, return_counts=True)}")
+    print(f"Actual action distribution: {np.unique(actions, return_counts=True)}")
     
     avg_reward = total_reward / len(states)
     print(f"Agent evaluation: Average reward = {avg_reward:.4f}")
@@ -206,7 +246,7 @@ def evaluate_network_performance(agent, csv_file):
 def main():
     parser = argparse.ArgumentParser(description='Train offline DQN agent')
     parser.add_argument('--csv', required=True, help='Path to the dataset CSV')
-    parser.add_argument('--model_dir', default='trained_models', help='Directory to save the model')
+    parser.add_argument('--model_dir', default='model', help='Directory to save the model')
     parser.add_argument('--epochs', type=int, default=1000, help='Number of training epochs')
     parser.add_argument('--batch_size', type=int, default=32, help='Batch size for training')
     parser.add_argument('--random_seed', type=int, default=42, help='Random seed for reproducibility')
@@ -222,7 +262,7 @@ def main():
     agent = train_offline_dqn(args.csv, args.model_dir, epochs=args.epochs, batch_size=args.batch_size)
     
     # Evaluate the agent
-    evaluate_agent(agent, args.csv)
+    #evaluate_agent(agent, args.csv)
 
 
 if __name__ == '__main__':
