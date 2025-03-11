@@ -15,13 +15,21 @@ def parse_timestamp(ts_str):
     dt = datetime.strptime(ts_str, "%H:%M:%S.%f")
     return dt.hour * 3600 + dt.minute * 60 + dt.second + dt.microsecond / 1e6
 
-def compute_reward(state):
-    """Compute reward based on queue depths."""
-    depths = [state[f'queue_depth_{p}'] for p in range(1, 8)]
-    avg_depth = sum(depths) / len(depths) if depths else 0
-    diff_depth = max(depths) - min(depths) if depths else 0
-    # Reward as a negative weighted sum; lower queues yield higher reward
-    reward = -sum(depths)
+def compute_reward(row):
+    """
+    Compute reward based on queue depths and reordering.
+    Lower queue depths are better, reordering incurs penalties.
+    """
+    # Extract queue depths (skip port 0 which starts with index 1)
+    queue_depths = [row[f'queue_depth_{p+1}'] for p in range(8)]
+    
+    # Basic reward: negative sum of queue depths (lower is better)
+    reward = -sum(queue_depths)
+    
+    # Apply penalty for reordering
+    if row['reordering_flag'] == 1:
+        reward -= 10  # Significant penalty for reordering
+        
     return reward
 
 def merge_by_flow_seq(rl_csv, receiver_csv, output_csv):
@@ -72,19 +80,20 @@ def merge_by_flow_seq(rl_csv, receiver_csv, output_csv):
         # Add reordering flag column with default value 0
         merged_df['reordering_flag'] = 0
     
-    # Drop the flow_id, seq columns, and timestamp which are no longer needed
-    merged_df.drop(columns=['flow_id', 'seq', 'timestamp'], inplace=True)
+    # Drop unnecessary columns
+    if 'timestamp' in merged_df.columns:
+        merged_df.drop(columns=['timestamp'], inplace=True)
     
-    # Incorporate reorder penalty into reward
-    print("Adjusting rewards based on reordering flags...")
-    def incorporate_reorder(row):
-        # Apply a penalty to the reward if packet was reordered
-        if row['reordering_flag'] == 1:
-            return row['reward'] - 10  # Penalty for reordering
-        else:
-            return row['reward']
+    # Now compute rewards after all features are available
+    print("Computing rewards based on queue depths and reordering flags...")
+    merged_df['reward'] = merged_df.apply(compute_reward, axis=1)
     
-    merged_df['reward'] = merged_df.apply(incorporate_reorder, axis=1)
+    # Rearrange columns to put reward after action
+    cols = merged_df.columns.tolist()
+    cols.remove('reward')
+    cols.insert(cols.index('action') + 1, 'reward')
+    merged_df = merged_df[cols]
+    merged_df.drop(columns=['seq', 'flow_id'], inplace=True)
     
     # Write the final CSV
     print(f"Writing merged dataset to {output_csv}")
@@ -99,8 +108,6 @@ def parse_switch_log(log_file, output_csv):
     Args:
         log_file: Path to the P4 switch log file
         output_csv: Path to write the output RL dataset CSV
-        window_size_us: Window size in microseconds (unused with simplified features)
-        capacity_bps: Link capacity in bits per second (unused with simplified features)
     """
     print(f"Parsing switch log from {log_file}")
     
@@ -116,8 +123,8 @@ def parse_switch_log(log_file, output_csv):
     ingress_pattern = re.compile(r'Ingress: port=(\d+), size=(\d+), flow_id=(\d+), seq=(\d+), timestamp=(\d+)')
     deflection_pattern = re.compile(r'Deflection: original_port=(\d+), deflected_to=(\d+), random_number=(\d+)')
     normal_pattern = re.compile(r'Normal: port=(\d+)')
-    # queue_pattern = re.compile(r'Queue: port=(\d+), deq_qdepth=(\d+)')
     queue_depths_pattern = re.compile(r'Queue depths: q0=(\d+) q1=(\d+) q2=(\d+) q3=(\d+) q4=(\d+) q5=(\d+) q6=(\d+) q7=(\d+)')
+    queue_occ_pattern = re.compile(r'Queue occupancy: q0=(\d+) q1=(\d+) q2=(\d+) q3=(\d+) q4=(\d+) q5=(\d+) q6=(\d+) q7=(\d+)')
     
     # Data storage for events
     events = []
@@ -146,12 +153,7 @@ def parse_switch_log(log_file, output_csv):
             elif normal_match := normal_pattern.search(line):
                 event['type'] = 'normal'
                 event['port'] = int(normal_match.group(1))
-            # elif queue_match := queue_pattern.search(line):
-            #     event['type'] = 'queue'
-            #     event['port'] = int(queue_match.group(1))
-            #     event['deq_qdepth'] = int(queue_match.group(2))
             elif queue_depths_match := queue_depths_pattern.search(line):
-                # TODO parametrize the number of egress ports
                 event['type'] = 'queue_depths'
                 event['queue_depths'] = [
                     int(queue_depths_match.group(1)),  # q0
@@ -162,6 +164,18 @@ def parse_switch_log(log_file, output_csv):
                     int(queue_depths_match.group(6)),  # q5
                     int(queue_depths_match.group(7)),  # q6
                     int(queue_depths_match.group(8))   # q7
+                ]
+            elif queue_occ_match := queue_occ_pattern.search(line):
+                event['type'] = 'queue_occ'
+                event['queue_occ'] = [
+                    int(queue_occ_match.group(1)),  # q0
+                    int(queue_occ_match.group(2)),  # q1
+                    int(queue_occ_match.group(3)),  # q2
+                    int(queue_occ_match.group(4)),  # q3
+                    int(queue_occ_match.group(5)),  # q4
+                    int(queue_occ_match.group(6)),  # q5
+                    int(queue_occ_match.group(7)),  # q6
+                    int(queue_occ_match.group(8))   # q7
                 ]
                 
             if 'type' in event:
@@ -180,62 +194,58 @@ def parse_switch_log(log_file, output_csv):
         print("Error: No ingress events found in the log.")
         return False
     
-    # Track current state - only queue depths now
-    current_queue_depth = {p: 0 for p in range(1, 8)}
+    # Track current state
+    current_queue_depth = {p: 0 for p in range(8)}
+    current_queue_occ = {p: 0 for p in range(8)}
     flow_id = 0
     seq = 0
     
     # Dataset creation
     dataset = []
     for event in events:
-        # if event['type'] == 'queue':
-        #     current_queue_depth[event['port']] = event['deq_qdepth']
         if event['type'] == 'queue_depths':
             for i, depth in enumerate(event['queue_depths']):
                 current_queue_depth[i] = depth
+        if event['type'] == 'queue_occ':
+            for i, occ in enumerate(event['queue_occ']):
+                current_queue_occ[i] = occ
         elif event['type'] == 'ingress':
             flow_id = event['flow_id']
             seq = event['seq']
         if event['type'] in ['deflection', 'normal']:
-            # State: only queue depths for all ports
-            state = {
-                f'queue_depth_{p}': current_queue_depth[p] for p in range(1, 8)
-            }
-            state['flow_id'] = flow_id
-            state['seq'] = seq
+            # First create a record with just the state features and action
+            # Reward will be computed after merging with receiver logs
+            action = 1 if event['type'] == 'deflection' else 0
             
-            deflected = 1 if event['type'] == 'deflection' else 0
-            action = deflected
-            
-            # Initial reward (will be updated after merging with reordering info)
-            reward = compute_reward(state)
-            
-            dataset.append({
+            # Create data entry with all features
+            entry = {
                 'timestamp': event['timestamp_str'],
-                'state': state,
                 'action': action,
-                'reward': reward
-            })
+                'reward': 0,  # Placeholder, will be computed later
+                'flow_id': flow_id,
+                'seq': seq
+            }
+            
+            # Add queue depths for all ports
+            for p in range(8):
+                entry[f'queue_depth_{p+1}'] = current_queue_depth[p]
+                entry[f'queue_occ_{p+1}'] = current_queue_occ[p]
+            
+            dataset.append(entry)
     
     # Write to CSV
     with open(output_csv, 'w', newline='') as csv_out:
-        # Simplified headers - only queue depths
         headers = ['timestamp', 'action', 'reward'] + \
-                  [f'queue_depth_{p}' for p in range(1, 8)] + \
+                  [f'queue_depth_{p+1}' for p in range(8)] + \
+                  [f'queue_occ_{p+1}' for p in range(8)] + \
                   ['flow_id', 'seq']
                   
-        writer = csv.writer(csv_out)
-        writer.writerow(headers)
-        
-        for entry in dataset:
-            row = [entry['timestamp'], entry['action'], entry['reward']]
-            row += [entry['state'][f'queue_depth_{p}'] for p in range(1, 8)]
-            row += [entry['state']['flow_id']]
-            row += [entry['state']['seq']]
-            writer.writerow(row)
+        writer = csv.DictWriter(csv_out, fieldnames=headers)
+        writer.writeheader()
+        writer.writerows(dataset)
     
-    print(f"Dataset with {len(dataset)} records written to {output_csv}")
-    print("Note: Using simplified feature set with queue depths only for real-time RL processing")
+    print(f"Initial dataset with {len(dataset)} records written to {output_csv}")
+    print("Note: Rewards are placeholders, will be computed after merging with receiver logs")
     return True
 
 def main():
@@ -247,7 +257,7 @@ def main():
     parse_parser.add_argument('--log', default='log/p4s.s1.log', help='Path to P4 switch log file')
     parse_parser.add_argument('--output', required=True, help='Path to output RL dataset CSV')
     parse_parser.add_argument('--window', type=int, default=100000, 
-                              help='Window size in microseconds (note: simplified feature set ignores this)')
+                              help='Window size in microseconds (not used in this version)')
     
     # Merge logs subcommand
     merge_parser = subparsers.add_parser('merge', help='Merge RL dataset with receiver logs')
@@ -260,9 +270,7 @@ def main():
     full_parser.add_argument('--log', required=True, help='Path to P4 switch log file')
     full_parser.add_argument('--receiver', required=True, help='Path to receiver log CSV')
     full_parser.add_argument('--output', required=True, help='Path for final output CSV')
-    full_parser.add_argument('--intermediate', default='rl_dataset_temp.csv', help='Path for intermediate RL dataset')
-    full_parser.add_argument('--window', type=int, default=100000, 
-                             help='Window size in microseconds (note: simplified feature set ignores this)')
+    full_parser.add_argument('--intermediate', default='tmp/rl_dataset_temp.csv', help='Path for intermediate RL dataset')
     
     args = parser.parse_args()
     
@@ -273,7 +281,7 @@ def main():
     elif args.command == 'full':
         # Run the full pipeline
         os.makedirs(os.path.dirname(args.intermediate), exist_ok=True)
-        if parse_switch_log(args.log, args.intermediate, args.window) is not False:
+        if parse_switch_log(args.log, args.intermediate) is not False:
             merge_by_flow_seq(args.intermediate, args.receiver, args.output)
             print(f"Full pipeline complete! Intermediate file: {args.intermediate}, Final output: {args.output}")
         else:
