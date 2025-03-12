@@ -10,6 +10,19 @@ import argparse
 import matplotlib.pyplot as plt
 import random
 import os
+import importlib.util
+
+# Import FEATURE_NAMES from create_rl_dataset.py
+def import_feature_names():
+    """Import FEATURE_NAMES from create_rl_dataset.py"""
+    spec = importlib.util.spec_from_file_location(
+        "create_rl_dataset", "/home/ubuntu/p4burst/create_rl_dataset.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.FEATURE_NAMES
+
+# Get feature names from create_rl_dataset.py
+FEATURE_NAMES = import_feature_names()
 
 class DQNAgent:
     def __init__(self, state_size, action_size, batch_size=32, gamma=0.95):
@@ -58,14 +71,15 @@ class DQNAgent:
         minibatch = random.sample(self.memory, self.batch_size)
         
         # Extract components separately
-        states = np.array([experience[0] for experience in minibatch])
+        states = np.array([experience[0] for experience in minibatch], dtype=np.float32)
         actions = np.array([experience[1] for experience in minibatch], dtype=np.int32)
         rewards = np.array([experience[2] for experience in minibatch], dtype=np.float32)
-        next_states = np.array([experience[3] for experience in minibatch])
-        dones = np.array([experience[4] for experience in minibatch], dtype=np.bool_)
+        next_states = np.array([experience[3] for experience in minibatch], dtype=np.float32)
+        dones = np.array([experience[4] for experience in minibatch], dtype=np.float32)
 
         # Q(s', a)
-        target = rewards + self.gamma * np.max(self.target_model.predict(next_states, verbose=0), axis=1) * ~dones
+        # Use 1-dones instead of ~dones (bitwise not doesn't work with TensorFlow)
+        target = rewards + self.gamma * np.max(self.target_model.predict(next_states, verbose=0), axis=1) * (1-dones)
         target_f = self.model.predict(states, verbose=0)
         
         # Q(s, a)
@@ -87,37 +101,46 @@ class DQNAgent:
 def preprocess_dataset(csv_file):
     """
     Preprocess the dataset for offline DQN training.
+    Uses the FEATURE_NAMES list from create_rl_dataset.py for consistency.
     """
     data = pd.read_csv(csv_file)
     
-    # print("\nDataset sample:")
-    # print(data.head())
+    print("\nDataset sample:")
+    print(data.head())
     print(f"\nAction distribution: {data['action'].value_counts().to_dict()}")
     print(f"Reward statistics: Min={data['reward'].min()}, Max={data['reward'].max()}, Mean={data['reward'].mean():.2f}")
     
-    # Extract features for state representation
-    queue_depth_cols = [col for col in data.columns if col.startswith('queue_depth_')]
-    queue_occ_cols = [col for col in data.columns if col.startswith('queue_occ_')]
-    feature_cols = queue_depth_cols + queue_occ_cols
+    # Use the imported FEATURE_NAMES for state representation
+    feature_cols = list(FEATURE_NAMES)  # Make a copy to avoid modifying the original
     
-    # Add reordering flag as a state feature
-    if 'reordering_flag' in data.columns:
-        feature_cols.append('reordering_flag')
+    # Check which features are actually available in the dataset
+    available_features = [col for col in feature_cols if col in data.columns]
+    missing_features = [col for col in feature_cols if col not in data.columns]
     
-    print(f"\nState features: {feature_cols}")
+    if missing_features:
+        print(f"\nWarning: Some expected features are missing from the dataset: {missing_features}")
+    
+    print(f"\nUsing {len(available_features)} state features: {available_features}")
     
     # Normalize state features
     data_norm = data.copy()
+    
+    # Normalize queue depth features
+    queue_depth_cols = [col for col in available_features if col.startswith('queue_depth_')]
     for col in queue_depth_cols:
         max_val = data[col].max()
         if max_val > 0:  # Avoid division by zero
             data_norm[col] = data[col] / max_val
             print(f"Normalized {col}: max value = {max_val}")
     
-    # Queue occupancy is already normalized (0 or 1)
+    if 'packet_size' in available_features:
+        max_pkt_size = data['packet_size'].max()
+        if max_pkt_size > 0:
+            data_norm['packet_size'] = (data['packet_size'] / max_pkt_size).round(2)
+            print(f"Normalized packet_size: max value = {max_pkt_size}")
     
     # Extract state, action, reward
-    states = data_norm[feature_cols].values
+    states = data_norm[available_features].values
     actions = data_norm['action'].values
     rewards = data_norm['reward'].values
     
@@ -128,7 +151,7 @@ def preprocess_dataset(csv_file):
     dones = np.zeros(len(states), dtype=bool)
     dones[-1] = True
     
-    return states, actions, rewards, next_states, dones
+    return states, actions, rewards, next_states, dones, available_features
 
 
 def train_offline_dqn(csv_file, model_dir, epochs=100, batch_size=32):
@@ -139,7 +162,7 @@ def train_offline_dqn(csv_file, model_dir, epochs=100, batch_size=32):
     os.makedirs(model_dir, exist_ok=True)
     
     # Load and preprocess the dataset
-    states, actions, rewards, next_states, dones = preprocess_dataset(csv_file)
+    states, actions, rewards, next_states, dones, _ = preprocess_dataset(csv_file)
     
     # Get state and action dimensions
     state_size = states.shape[1]
@@ -178,7 +201,7 @@ def train_offline_dqn(csv_file, model_dir, epochs=100, batch_size=32):
         if e % 50 == 0:
             agent.update_target_model()
     
-    # Save the trained model
+    # Save the trained model 
     agent.save(os.path.join(model_dir, "dqn_model.h5"))
     
     # Plot training loss
@@ -199,7 +222,7 @@ def evaluate_agent(agent, csv_file):
     Evaluate the trained agent based on cumulative reward.
     """
     # Load and preprocess the dataset
-    states, actions, rewards, next_states, dones = preprocess_dataset(csv_file)
+    states, actions, rewards, next_states, dones, _ = preprocess_dataset(csv_file)
 
     # Track agent's predictions
     predicted_actions = []
@@ -208,7 +231,7 @@ def evaluate_agent(agent, csv_file):
     print("\nEvaluating agent on test set...")
     for i in range(len(states)):
         state = states[i].reshape(1, -1)
-        action = agent.act(state)  # Agent chooses action
+        action = agent.act(state)
         predicted_actions.append(action)
         total_reward += rewards[i]
     
@@ -229,7 +252,7 @@ def evaluate_network_performance(agent, csv_file):
     """
     Evaluate agent based on network performance metrics like queue depth.
     """
-    states, _, rewards, next_states, dones = preprocess_dataset(csv_file)
+    states, _, rewards, next_states, dones, _ = preprocess_dataset(csv_file)
 
     total_queue_depth_reduction = 0
     for i in range(len(states)):
