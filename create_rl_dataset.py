@@ -9,6 +9,20 @@ from datetime import datetime
 import sys
 import os
 
+# Feature names for the RL dataset
+FEATURE_NAMES = (
+    [f'queue_depth_{p+1}' for p in range(8)] + 
+    [f'queue_occ_{p+1}' for p in range(8)] + 
+    ['packet_size', 'switch_id']
+)
+
+# All column names including metadata and targets
+ALL_COLUMN_NAMES = (
+    ['timestamp', 'action', 'reward'] + 
+    FEATURE_NAMES + 
+    ['flow_id', 'seq']
+)
+
 def parse_timestamp(ts_str):
     """Convert timestamp string to seconds."""
     ts_str = ts_str.strip("[]")
@@ -65,9 +79,11 @@ def merge_by_flow_seq(rl_csv, receiver_csv, output_csv):
         # Identify rows where reordering_flag is missing
         missing_mask = merged_df['reordering_flag'].isna()
         if missing_mask.sum() > 0:
-            print(f"Warning: {missing_mask.sum()} rows have missing reordering flags")
-            print(f"Setting missing reordering_flag values to 0 (assuming in-order)")
-            merged_df.loc[missing_mask, 'reordering_flag'] = 0
+            #raise ValueError(f"Error: {missing_mask.sum()} rows have missing reordering flags")
+            print(f"Warning: {missing_mask.sum()} rows have missing reordering flags, prolly due to missing data in the switch log.")
+            print("Skipping merged csv")
+            #merged_df.loc[missing_mask, 'reordering_flag'] = 0
+            return False
         
         # Ensure reordering_flag is an integer
         merged_df['reordering_flag'] = merged_df['reordering_flag'].astype(int)
@@ -120,7 +136,8 @@ def parse_switch_log(log_file, output_csv):
     os.makedirs(os.path.dirname(output_csv), exist_ok=True)
     
     # Regex patterns for parsing logs
-    ingress_pattern = re.compile(r'Ingress: port=(\d+), size=(\d+), flow_id=(\d+), seq=(\d+), timestamp=(\d+)')
+    # Updated ingress pattern to capture source IP, destination IP, and packet size
+    ingress_pattern = re.compile(r'Ingress: switch_id=(\d+), port=(\d+), size=(\d+), flow_id=(\d+), seq=(\d+), timestamp=(\d+)')
     deflection_pattern = re.compile(r'Deflection: original_port=(\d+), deflected_to=(\d+), random_number=(\d+)')
     normal_pattern = re.compile(r'Normal: port=(\d+)')
     queue_depths_pattern = re.compile(r'Queue depths: q0=(\d+) q1=(\d+) q2=(\d+) q3=(\d+) q4=(\d+) q5=(\d+) q6=(\d+) q7=(\d+)')
@@ -140,11 +157,12 @@ def parse_switch_log(log_file, output_csv):
             # Parse event type and details
             if ingress_match := ingress_pattern.search(line):
                 event['type'] = 'ingress'
-                event['port'] = int(ingress_match.group(1))
-                event['size'] = int(ingress_match.group(2))
-                event['flow_id'] = int(ingress_match.group(3))
-                event['seq'] = int(ingress_match.group(4))
-                event['timestamp'] = int(ingress_match.group(5))
+                event['switch_id'] = int(ingress_match.group(1))
+                event['port'] = int(ingress_match.group(2))
+                event['size'] = int(ingress_match.group(3))  # Packet size
+                event['flow_id'] = int(ingress_match.group(4))
+                event['seq'] = int(ingress_match.group(5))
+                event['timestamp'] = int(ingress_match.group(6))
             elif deflection_match := deflection_pattern.search(line):
                 event['type'] = 'deflection'
                 event['original_port'] = int(deflection_match.group(1))
@@ -197,8 +215,6 @@ def parse_switch_log(log_file, output_csv):
     # Track current state
     current_queue_depth = {p: 0 for p in range(8)}
     current_queue_occ = {p: 0 for p in range(8)}
-    flow_id = 0
-    seq = 0
     
     # Dataset creation
     dataset = []
@@ -210,8 +226,10 @@ def parse_switch_log(log_file, output_csv):
             for i, occ in enumerate(event['queue_occ']):
                 current_queue_occ[i] = occ
         elif event['type'] == 'ingress':
+            switch_id = event['switch_id']
             flow_id = event['flow_id']
             seq = event['seq']
+            packet_size = event['size']  # Keep packet size
         if event['type'] in ['deflection', 'normal']:
             # First create a record with just the state features and action
             # Reward will be computed after merging with receiver logs
@@ -223,7 +241,9 @@ def parse_switch_log(log_file, output_csv):
                 'action': action,
                 'reward': 0,  # Placeholder, will be computed later
                 'flow_id': flow_id,
-                'seq': seq
+                'seq': seq,
+                'packet_size': packet_size,
+                'switch_id': switch_id
             }
             
             # Add queue depths for all ports
@@ -238,7 +258,7 @@ def parse_switch_log(log_file, output_csv):
         headers = ['timestamp', 'action', 'reward'] + \
                   [f'queue_depth_{p+1}' for p in range(8)] + \
                   [f'queue_occ_{p+1}' for p in range(8)] + \
-                  ['flow_id', 'seq']
+                  ['packet_size', 'switch_id', 'flow_id', 'seq']
                   
         writer = csv.DictWriter(csv_out, fieldnames=headers)
         writer.writeheader()
