@@ -104,6 +104,7 @@ struct metadata_t {
 
     bit<16> port_idx_in_reg;
     bit<1> is_fw_port_full;
+    bit<8> switch_id;  // Add this field
 
 }
 

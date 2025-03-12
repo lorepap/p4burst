@@ -3,7 +3,6 @@
 #include <core.p4>
 #include <v1model.p4>
 
-
 #include "includes/sd_consts.p4"
 #include "includes/sd_headers.p4"
 #include "includes/sd_parser.p4"
@@ -19,10 +18,17 @@ control SimpleDeflectionIngress(inout header_t hdr,
 
     Forward() forward;
 
+    // Add a register for the switch ID
+    register<bit<8>>(1) switch_id_register;
+    // Other registers
     register<bit<1>>(8) queue_occupancy_info;
     register<bit<19>>(8) queue_depth_info;
     register<bit<1>>(8) neighbor_switch_indicator;
     register<bit<1>>(1) is_fw_port_full_register;
+
+    action read_switch_id() {
+        switch_id_register.read(meta.switch_id, 0);
+    }
 
     counter(1, CounterType.packets) normal_ctr;
     counter(1, CounterType.packets) deflected_ctr;
@@ -64,7 +70,8 @@ control SimpleDeflectionIngress(inout header_t hdr,
      
 
     apply {
-        if (hdr.bee.isValid()) {
+        read_switch_id();    // This should be a constant (requires different p4 program per switch) 
+        if (hdr.bee.isValid()) { 
             queue_occupancy_info.write((bit<32>)hdr.bee.port_idx_in_reg, hdr.bee.queue_occ_info);
             queue_depth_info.write((bit<32>)hdr.bee.port_idx_in_reg, hdr.bee.queue_depth);
             
@@ -72,14 +79,13 @@ control SimpleDeflectionIngress(inout header_t hdr,
                    {hdr.bee.port_idx_in_reg, hdr.bee.queue_occ_info, hdr.bee.queue_depth});
         } else {
             //ingress_ctr.count(ingress_ctr_index);
-            
             forward.apply(hdr, meta, standard_metadata);
             debug_enq_qdepth_table.apply();
             
             if (hdr.ipv4.isValid() && (hdr.ipv4.protocol == IP_PROTOCOLS_TCP || hdr.ipv4.protocol == IP_PROTOCOLS_UDP)) {
                 
                 if (hdr.flow.isValid()) {
-                    log_msg("Ingress: port={}, size={}, flow_id={}, seq={}, timestamp={}", {standard_metadata.ingress_port, hdr.ipv4.totalLen, hdr.flow.flow_id, hdr.flow.seq, standard_metadata.ingress_global_timestamp});
+                    log_msg("Ingress: switch_id={}, port={}, size={}, flow_id={}, seq={}, timestamp={}", {meta.switch_id, standard_metadata.ingress_port, hdr.ipv4.totalLen, hdr.flow.flow_id, hdr.flow.seq, standard_metadata.ingress_global_timestamp});
                 }
                 
                 queue_occupancy_info.read(meta.is_queue_full_0, (bit<32>)0);
