@@ -32,6 +32,7 @@ control SimpleDeflectionIngress(inout header_t hdr,
 
     counter(1, CounterType.packets) normal_ctr;
     counter(1, CounterType.packets) deflected_ctr;
+    counter(1, CounterType.packets) flow_header_counter;
 
     action drop() {
         mark_to_drop(standard_metadata);
@@ -85,6 +86,7 @@ control SimpleDeflectionIngress(inout header_t hdr,
             if (hdr.ipv4.isValid() && (hdr.ipv4.protocol == IP_PROTOCOLS_TCP || hdr.ipv4.protocol == IP_PROTOCOLS_UDP)) {
                 
                 if (hdr.flow.isValid()) {
+                    flow_header_counter.count(0);
                     log_msg("Ingress: switch_id={}, port={}, size={}, flow_id={}, seq={}, timestamp={}", {meta.switch_id, standard_metadata.ingress_port, hdr.ipv4.totalLen, hdr.flow.flow_id, hdr.flow.seq, standard_metadata.ingress_global_timestamp});
                 }
                 
