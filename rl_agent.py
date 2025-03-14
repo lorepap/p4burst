@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 import random
 import os
 import importlib.util
+import json
 
 # Import FEATURE_NAMES from create_rl_dataset.py
 def import_feature_names():
@@ -124,21 +125,32 @@ def preprocess_dataset(csv_file):
     
     # Normalize state features
     data_norm = data.copy()
+
+    # Keep scale factors dict for denormalization
+    scale_factors = {}
     
     # Normalize queue depth features
     queue_depth_cols = [col for col in available_features if col.startswith('queue_depth_')]
     for col in queue_depth_cols:
         max_val = data[col].max()
+        scale_factors[col] = int(max_val)
         if max_val > 0:  # Avoid division by zero
             data_norm[col] = data[col] / max_val
             print(f"Normalized {col}: max value = {max_val}")
     
     if 'packet_size' in available_features:
         max_pkt_size = data['packet_size'].max()
+        scale_factors['packet_size'] = int(max_pkt_size)
         if max_pkt_size > 0:
             data_norm['packet_size'] = (data['packet_size'] / max_pkt_size).round(2)
             print(f"Normalized packet_size: max value = {max_pkt_size}")
-    
+
+    # Save scale factors to a file
+    scale_factors_file = f'model/scale_factors.json'
+    with open(scale_factors_file, 'w') as f:
+        json.dump(scale_factors, f)
+    print("\nScale factors for denormalization saved to", scale_factors_file)
+
     # Extract state, action, reward
     states = data_norm[available_features].values
     actions = data_norm['action'].values
