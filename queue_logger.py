@@ -1,5 +1,12 @@
 import subprocess
 import time
+import argparse
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Queue logger for P4 switch")
+    parser.add_argument("--log", "-l", default="tmp/0000-deflection/queue_log.txt", 
+                        help="Path to the output log file (default: tmp/0000-deflection/queue_log.txt)")
+    return parser.parse_args()
 
 def extract_values(output, register_name):
     """ Extracts numeric values from a register output, handling errors and unexpected text. """
@@ -25,8 +32,8 @@ def extract_single_value(output, register_name):
             return None
     return None
 
-def main():
-    log_file = "tmp/0000-deflection/queue_log.txt"
+def main(args):
+    log_file = args.log
 
     # BMv2 CLI commands
     cli_cmd_queue = "echo 'register_read SimpleDeflectionIngress.queue_occupancy_info' | simple_switch_CLI --thrift-port 9090"
@@ -36,6 +43,7 @@ def main():
     cli_cmd_normal_counter = "echo 'counter_read SimpleDeflectionIngress.normal_ctr 0' | simple_switch_CLI --thrift-port 9090"
     cli_cmd_deflected_counter = "echo 'counter_read SimpleDeflectionIngress.deflected_ctr 0' | simple_switch_CLI --thrift-port 9090"
     cli_cmd_queue_depths = "echo 'register_read SimpleDeflectionEgress.queue_depth_info' | simple_switch_CLI --thrift-port 9090"
+    cli_cmd_flow_pkt_counter = "echo 'counter_read SimpleDeflectionIngress.flow_header_counter 0' | simple_switch_CLI --thrift-port 9090"
 
 
     with open(log_file, "w") as f:
@@ -52,6 +60,7 @@ def main():
             result_counter_normal = subprocess.run(cli_cmd_normal_counter, shell=True, capture_output=True, text=True)
             result_counter_deflected = subprocess.run(cli_cmd_deflected_counter, shell=True, capture_output=True, text=True)
             result_queue_depths = subprocess.run(cli_cmd_queue_depths, shell=True, capture_output=True, text=True)
+            result_flow_pkt_counter = subprocess.run(cli_cmd_flow_pkt_counter, shell=True, capture_output=True, text=True)
 
             output_queue = result_queue.stdout.strip()
             output_fw_full = result_fw_full.stdout.strip()
@@ -60,6 +69,7 @@ def main():
             output_counter_normal = result_counter_normal.stdout.strip()
             output_counter_deflected = result_counter_deflected.stdout.strip()
             output_queue_depths = result_queue_depths.stdout.strip()
+            output_flow_pkt_counter = result_flow_pkt_counter.stdout.strip()
 
             # Debugging: Print raw output
             # print("Raw Queue Output:", output_queue)
@@ -69,13 +79,14 @@ def main():
 
             with open(log_file, "a") as f:
                 f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')}\n")
-                f.write(f"{output_queue}\n")
-                f.write(f"{output_fw_full}\n")
-                f.write(f"{output_deq_depth_eg}\n")
-                f.write(f"{output_debug_eg_port}\n")
+                #f.write(f"{output_queue}\n")
+                #f.write(f"{output_fw_full}\n")
+                #f.write(f"{output_deq_depth_eg}\n")
+                #f.write(f"{output_debug_eg_port}\n")
                 f.write(f"{output_counter_normal}\n")
                 f.write(f"{output_counter_deflected}\n")
                 f.write(f"{output_queue_depths}\n")
+                f.write(f"{output_flow_pkt_counter}\n")
                 f.write("\n")
 
 
@@ -110,5 +121,8 @@ def main():
     except KeyboardInterrupt:
         print("\n[*] Stopping queue logging. Log saved in queue_log.txt")
 
+
+
 if __name__ == "__main__":
-    main()
+    args = parse_args()
+    main(args)
