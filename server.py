@@ -8,10 +8,13 @@ import csv
 from metrics import FlowMetricsManager
 import threading
 import os
+from scapy.all import sniff, Ether, IP, UDP, Packet, BitField, bind_layers
+import threading
+import struct
 
 class BaseServer(ABC):
     def __init__(self, port=12345, ip=None, congestion_control='cubic', exp_id=''):
-        self.port = port
+        self.port = int(port)
         self.congestion_control = congestion_control
         self.exp_id = exp_id
         # self.ip = self.get_host_ip()
@@ -105,7 +108,7 @@ class BurstyServer(BaseServer):
 
 class BackgroundServer(BaseServer):
     def __init__(self, ip=None, port=12345, exp_id='', cong_control='cubic'):
-        super().__init__(port, ip, cong_control, exp_id)
+        super().__init__(ip, port, cong_control, exp_id)
 
     def start(self):
         """Start the server with multi-threading support."""
@@ -165,6 +168,118 @@ class BackgroundServer(BaseServer):
     def get_metrics(self):
         """Retrieve collected flow metrics."""
         return self.flowtracker.get_metrics()
+
+class CollectionServer(BaseServer):
+    def __init__(self, ip=None, port=12345, exp_id='', log_file='receiver_log.csv'):
+        super().__init__(port, ip, exp_id=exp_id)
+        self.log_file = log_file
+        self.highest_seq = {}  # Store the highest sequence number seen per flow.
+
+        # Initialize the CSV log file
+        with open(self.log_file, 'w', newline='') as csvfile:
+            writer = csv.writer(csvfile)
+            writer.writerow(["timestamp", "src_ip", "dst_ip", "port", "flow_id", "seq", "reordering_flag"])
+            
+        logging.info(f"[{self.ip}]: Collection server initialized with log file: {self.log_file}")
+
+    def read_exactly(self, conn, nbytes):
+        """
+        Helper function to read exactly nbytes from the TCP connection.
+        Returns the bytes read or None if the connection is closed prematurely.
+        """
+        data = b""
+        while len(data) < nbytes:
+            packet = conn.recv(nbytes - len(data))
+            if not packet:
+                return None
+            data += packet
+        return data
+
+    def handle_connection(self, conn, addr):
+        """Handle a single TCP connection."""
+        src_ip = addr[0]
+        dst_ip = self.ip
+        port = self.port
+        PACKET_SIZE = 72  # 4 bytes flow_id, 4 bytes seq, 64 bytes payload
+        try:
+            while True:
+                data = self.read_exactly(conn, PACKET_SIZE)
+                if data is None:
+                    logging.info(f"[{self.ip}]: Connection closed by {src_ip}")
+                    break
+                self.process_packet(data, addr)
+        except Exception as e:
+            logging.error(f"[{self.ip}]: Error handling connection from {src_ip}: {e}")
+            logging.error(traceback.format_exc())
+        finally:
+            conn.close()
+
+    def start(self):
+        """Start the TCP server for packet collection."""
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            # Set TCP socket options if needed
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            s.bind(('0.0.0.0', self.port))
+            #s.listen()
+            logging.info(f"[{self.ip}]: Collection server listening on UDP port {self.port}")
+
+            try:
+                while True:
+                    try:
+                        #conn, addr = s.accept()
+                        data, addr = s.recvfrom(4096)
+                        #logging.info(f"[{self.ip}]: Accepted connection from {addr[0]}:{addr[1]}")
+                        # Handle each connection in a separate thread
+                        #threading.Thread(target=self.handle_connection, args=(conn, addr), daemon=True).start()
+                        self.process_packet(data, addr)
+                    except KeyboardInterrupt:
+                        raise
+                    except Exception as e:
+                        logging.error(f"[{self.ip}]: Error accepting connection: {e}")
+                        logging.error(traceback.format_exc())
+            except KeyboardInterrupt:
+                logging.info(f"[{self.ip}]: Collection server shutting down gracefully.")
+
+    def process_packet(self, data, addr):
+        """Process received TCP packet and check for reordering."""
+        try:
+            # Check packet length
+            if len(data) < 8:
+                logging.warning(f"[{self.ip}]: Received malformed packet (too short): {len(data)} bytes")
+                return
+
+            # Extract flow_id and seq from the first 8 bytes.
+            # Using struct.unpack for clarity.
+            flow_id, seq = struct.unpack("!II", data[0:8])
+            
+            arrival_time = time.time()
+            src_ip = addr[0]
+            dst_ip = self.ip
+            dport = self.port
+
+            # Define a flow key (using src, dst, port, flow_id)
+            key = (src_ip, dst_ip, dport, flow_id)
+            
+            # Check for packet reordering
+            reorder_flag = 0
+            if key in self.highest_seq:
+                if seq < self.highest_seq[key]:
+                    reorder_flag = 1  # Out-of-order packet
+                else:
+                    self.highest_seq[key] = seq
+            else:
+                self.highest_seq[key] = seq
+
+            logging.debug(f"Received packet: flow_id={flow_id}, seq={seq} from {src_ip} to {dst_ip}:{dport}. Reorder flag: {reorder_flag}")
+
+            # Log packet details to CSV
+            with open(self.log_file, 'a', newline='') as csvfile:
+                writer = csv.writer(csvfile)
+                writer.writerow([arrival_time, src_ip, dst_ip, dport, flow_id, seq, reorder_flag])
+                
+        except Exception as e:
+            logging.error(f"[{self.ip}]: Error processing packet from {addr[0]}:{addr[1]}: {e}")
+            logging.error(traceback.format_exc())
 
 
 class IperfServer(BaseServer):

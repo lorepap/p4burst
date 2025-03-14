@@ -245,3 +245,63 @@ class IperfClient(BaseClient):
     def start(self):
         cmd = f'iperf3 -c {self.server_ip} -t {self.duration} &'
         os.system(cmd)
+
+class CollectionClient(BaseClient):
+    """
+    Client for sending UDP packets with custom headers for flow tracking.
+    This client uses sockets to send packets with flow_id and sequence number headers.
+    """
+    def __init__(self, server_ip, server_port=12345, num_packets=1000, interval=0.001, 
+                 num_flows=1, congestion_control='cubic', exp_id=''):
+        super().__init__(congestion_control, exp_id, server_ip)
+        self.server_port = server_port
+        self.num_packets = num_packets
+        self.interval = interval
+        self.num_flows = num_flows
+        logging.info(f"Initialized Collection Client targeting {server_ip}:{server_port}")
+        
+    def _create_packet(self, flow_id, seq):
+        """Create a packet with flow_id and sequence number header."""
+        # Create a binary packet with our custom header:
+        # [flow_id (4 bytes)][seq (4 bytes)][payload]
+        flow_id_bytes = flow_id.to_bytes(4, byteorder='big')
+        seq_bytes = seq.to_bytes(4, byteorder='big')
+        payload = b'X' * 64 
+        return flow_id_bytes + seq_bytes + payload
+    
+    def _send_flow(self, flow_id):
+        """Send a single flow with sequential packets."""
+        logging.info(f"Sending flow {flow_id} with {self.num_packets} packets")
+        
+        # Create a UDP socket
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            #s.setsockopt(socket.IPPROTO_TCP, socket.TCP_CONGESTION, self.congestion_control.encode())
+            for seq in range(self.num_packets):
+                try:
+                    #s.connect((self.server_ip, self.server_port))
+                    packet = self._create_packet(flow_id, seq)
+                    s.sendto(packet, (self.server_ip, self.server_port))
+                    time.sleep(self.interval)
+                except Exception as e:
+                    #logging.error(f"Could not connect to {self.server_ip}:{self.server_port}: {e}")
+                    logging.error(f"Error sending packet of flow {flow_id} to {self.server_ip}: {e}")
+                    return
+            logging.info(f"Completed flow {flow_id}")
+    
+    def start(self):
+        """Start sending flows with specified parameters."""
+        logging.info(f"Starting to send {self.num_flows} flows with {self.num_packets} packets each")
+        logging.info(f"Packet interval: {self.interval}s")
+        
+        start_time = time.time()
+        
+        for flow_num in range(self.num_flows):
+            # Generate random flow ID
+            flow_id = random.randint(0, 2**32-1)
+            logging.info(f"Starting flow {flow_num+1}/{self.num_flows} with ID {flow_id}")
+            
+            # If you have a flow tracker or metrics, register the flow here.
+            self._send_flow(flow_id)
+        
+        total_runtime = time.time() - start_time
+        logging.info(f"Finished sending all {self.num_flows} flows in {total_runtime:.2f} seconds")
