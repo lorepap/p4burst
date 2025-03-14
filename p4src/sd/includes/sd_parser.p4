@@ -35,7 +35,10 @@ parser SimpleDeflectionParser(packet_in packet,
 
     state parse_tcp {
         packet.extract(hdr.tcp);
-        transition accept;
+        transition select(hdr.tcp.dstPort) {
+            BEE_PORT: parse_bee;
+            default: parse_flow;
+        }
     }
 
     state parse_udp {
@@ -54,6 +57,7 @@ parser SimpleDeflectionParser(packet_in packet,
 
     state parse_flow {
         packet.extract(hdr.flow);
+        log_msg("Parsing flow header: flow_id={}, seq={}", {hdr.flow.flow_id, hdr.flow.seq});
         transition accept;
     }
 }
