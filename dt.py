@@ -12,6 +12,7 @@ import os
 import tensorflow as tf
 from tensorflow import keras
 import sys
+import json
 
 def generate_dataset_from_dqn(dqn_model, states, num_samples=None):
     """
@@ -115,6 +116,36 @@ def main():
     dqn_test_orig_actions = orig_actions[-len(y_test):]  # Using the same test set indices
     dt_vs_orig = accuracy_score(dqn_test_orig_actions, y_pred)
     print(f"Decision tree vs original actions match: {dt_vs_orig * 100:.2f}%")
+
+    # Denormalize features
+    try:
+        # Load scale factors from the file saved during training
+        with open('model/scale_factors.json', 'r') as f:
+            scale_factors = json.load(f)
+        
+        print("\nDenormalizing features for interpretation...")
+
+        # Get tree nodes and thresholds
+        tree_structure = decision_tree.tree_
+        feature_indices = tree_structure.feature
+        thresholds = tree_structure.threshold
+        
+        # Only consider non-leaf nodes (where feature >= 0)
+        valid_nodes = [i for i in range(len(feature_indices)) if feature_indices[i] >= 0]
+        
+        print("\nDenormalized Decision Thresholds (for top nodes):")
+        for node_id in min(15, len(valid_nodes)):  
+            feature_idx = feature_indices[node_id]
+            feature_name = feature_cols[feature_idx]
+            threshold = thresholds[node_id]
+            
+            if feature_name in scale_factors:
+                denorm_threshold = threshold * scale_factors[feature_name]
+                print(f"Node {node_id}: {feature_name} <= {denorm_threshold:.2f} (normalized: {threshold:.2f})")
+            else:
+                print(f"Node {node_id}: {feature_name} <= {threshold:.2f} (no scale factor found)")
+    except Exception as e:
+        print(f"Warning: Could not denormalize features: {e}")
     
     # Save the decision tree model
     dt_path = os.path.join(args.output_dir, "decision_tree.pkl")
