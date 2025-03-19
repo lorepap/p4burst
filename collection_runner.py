@@ -46,7 +46,7 @@ from datetime import datetime
 from topology import LeafSpineTopology, DumbbellTopology
 from control_plane import SimpleDeflectionControlPlane
 from metrics import FlowMetricsManager
-from utils.data_handling import collect_switch_logs, combine_datasets
+from utils.rl_data_utils import collect_switch_logs, combine_datasets
 
 # Add a sanity check log to verify logging is working
 logger.info("Collection Runner starting - logging is active")
@@ -58,14 +58,14 @@ class CollectionRunner:
     """
     def __init__(self, args):
         self.args = args
-        self.exp_id = args.exp_id or datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.processes = []
+        self.exp_id = datetime.now().strftime("%Y%m%d_%H%M%S") if args.exp_id is None else args.exp_id
         
         # Create experiment directory
         self.exp_dir = f'tmp/{self.exp_id}'
         os.makedirs(self.exp_dir, exist_ok=True)
         
         # Configure experiment parameters - fixed to simple deflection
+        self.processes = []
         self.topology_type = 'leafspine'  # Only using leaf-spine topology
         self.n_hosts = args.n_hosts
         self.n_leaf = args.n_leaf
@@ -77,10 +77,16 @@ class CollectionRunner:
         self.queue_depth = args.queue_depth
         
         # Collection parameters
-        self.num_flows = args.num_flows
+        self.n_clients = args.n_clients
+        self.n_servers = args.n_servers
+        #self.num_flows = args.num_flows
         self.num_packets = args.num_packets
         self.interval = args.interval
+        self.packet_size = args.packet_size
         self.congestion_control = args.congestion_control
+        self.burst_reply_size = args.bursty_reply_size
+        self.burst_interval = args.burst_interval
+        self.burst_servers = args.burst_servers
         
         # Initialize flow metrics if tracking enabled
         if not args.disable_metrics:
@@ -143,13 +149,23 @@ class CollectionRunner:
                     host.cmd(cmd)
         logger.info("Host packet capture enabled")
 
-    def run_collection(self):
+    def run_test_collection(self):
         """Run the collection experiment."""
         logger.info("Starting collection experiment...")
         receiver_logs = []
         
         # Select client and server hosts
-        client_host = self.topology.net.net.get('h1')
+
+        # Select hosts attached to switch s1
+        s1 = self.topology.net.net.get('s1')
+        s1_hosts = [h for h in self.topology.net.net.hosts if self.topology.net.areNeighbors(s1.name, h.name)]
+        if self.n_clients > len(s1_hosts):
+            raise ValueError("Number of clients exceeds number of hosts on s1")
+
+        client_hosts = []
+        for i in range(self.n_clients):
+            client_hosts.append(s1_hosts[i])
+            
         server_host = self.topology.net.net.get('h2')
         
         # Prepare log file path
@@ -158,35 +174,38 @@ class CollectionRunner:
         # Start the server
         logger.info(f"Starting collection server on {server_host.name} ({server_host.IP()})...")
         server_cmd = (
-            f'python3 -m app --mode server --type collect '
-            f'--port 12345 '
-            f'--server_ips {server_host.IP()} '
+            'python3 -m app --mode server '
             f'--exp_id {self.exp_id} '
+            '--type collect '
+            '--port 12345 '
+            f'--server_ips {server_host.IP()} '
             f'--server_csv_file {server_csv_file} > {self.exp_dir}/server_out.log 2>&1 &'
         )
         server_host.cmd(server_cmd)
         # Give server time to initialize
         time.sleep(1)
         
-        # Start the client
-        logger.info(f"Starting collection client on {client_host.name} ({client_host.IP()})...")
-        client_cmd = (
-            f'python3 -m app --mode client '
-            f'--type collect '
-            f'--server_ips {server_host.IP()} '
-            f'--num_packets {self.num_packets} '
-            f'--interval {self.interval} '
-            f'--num_flows {self.num_flows} '
-            f'--congestion_control {self.congestion_control} '
-            f'--exp_id {self.exp_id}'
-        )
-        
-        proc = client_host.popen(client_cmd, shell=True, stderr=sys.stderr, stdout=subprocess.DEVNULL)
-        self.processes.append(proc)
+        # Start the clients
+        for client_host in client_hosts:
+            logger.info(f"Starting collection client on {client_host.name} ({client_host.IP()})...")
+            client_cmd = (
+                'python3 -m app '
+                '--mode client '
+                f'--exp_id {self.exp_id} '
+                '--type collect '
+                f'--server_ips {server_host.IP()} '
+                f'--num_packets {self.num_packets} '
+                f'--interval {self.interval} '
+                #f'--num_flows {self.num_flows} '
+                f'--congestion_control {self.congestion_control} '
+                f'--packet_size {self.packet_size} '
+            )
+            proc = client_host.popen(client_cmd, shell=True, stderr=sys.stderr, stdout=subprocess.DEVNULL)
+            self.processes.append(proc)
         
         # Wait for client to finish
         logger.info(f"Waiting for collection to complete (duration: {self.args.duration}s)...")
-        time.sleep(self.args.duration + 2)  # Add a small buffer
+        time.sleep(self.args.duration + 2)
         
         # Add the receiver log to the list
         receiver_logs.append(server_csv_file)
@@ -194,6 +213,77 @@ class CollectionRunner:
         
         # Return the receiver logs for dataset generation later
         return receiver_logs
+
+    def run_collection(self):
+        """Run the traffic collection experiment with bursty and background traffic."""
+        logger.info("Starting mixed traffic experiment...")
+        receiver_logs = []
+        
+        # Use all available hosts as servers except one for the client
+        hosts = self.topology.net.net.hosts
+        # Random servers
+        servers = random.sample(hosts, self.n_servers)
+        # Random clients
+        clients = random.sample([h for h in hosts if h not in servers], self.n_clients)
+        
+        # Prepare log files
+        server_csv_files = []
+        
+        # Start all servers
+        for i, server_host in enumerate(servers):
+            server_csv_file = f"{self.exp_dir}/server_{i}_log.csv"
+            server_csv_files.append(server_csv_file)
+            
+            logger.info(f"Starting mixed server on {server_host.name} ({server_host.IP()})...")
+            server_cmd = (
+                'python3 -m app --mode server '
+                f'--exp_id {self.exp_id} '
+                '--type collect '
+                '--port 12345 '
+                f'--server_ips {server_host.IP()} '
+                f'--server_csv_file {server_csv_file} '
+                f'--burst_reply_size {self.burst_reply_size} '
+                f'> {self.exp_dir}/server_{i}_out.log 2>&1 &'
+            )
+            server_host.cmd(server_cmd)
+        
+        # Give servers time to initialize
+        time.sleep(2)
+        
+        # Start the clients
+        for client_host in clients:
+            logger.info(f"Starting mixed client on {client_host.name} ({client_host.IP()})...")
+            
+            # Get all server IPs as a space-separated string
+            server_ips = ' '.join([server.IP() for server in servers])
+            
+            client_cmd = (
+                'python3 -m app '
+                '--mode client '
+                f'--exp_id {self.exp_id} '
+                '--type collect '
+                f'--server_ips {server_ips} '
+                f'--num_packets {self.num_packets} '
+                f'--interval {self.interval} '
+                #f'--num_flows {self.num_flows} '
+                f'--burst_interval {self.burst_interval} '
+                f'--burst_servers {self.burst_servers} '
+                f'--burst_reply_size {self.burst_reply_size} '
+                f'--packet_size {self.packet_size} '
+                f'> {self.exp_dir}/client_out.log 2>&1 &'
+            )
+            proc = client_host.popen(client_cmd, shell=True)
+            self.processes.append(proc)
+            
+            # Wait for the experiment to finish
+            logger.info(f"Waiting for mixed traffic experiment to complete (duration: {self.args.duration}s)...")
+            time.sleep(self.args.duration + 2)
+            
+            # Collect all server logs for dataset generation
+            receiver_logs.extend(server_csv_files)
+            logger.info("Mixed traffic experiment completed")
+            
+            return receiver_logs
 
     def run_experiment(self):
         """Run the complete experiment."""
@@ -210,14 +300,14 @@ class CollectionRunner:
                 self.control_plane.send_bee_packets(switch='s1')
             
             # Run queue logger for debugging
-            queue_logger_proc = subprocess.Popen(
-                f"python3 queue_logger.py --log {self.exp_dir}/queue_log.txt",
-                shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-            )
-            self.processes.append(queue_logger_proc)
+            for i, switch in enumerate(self.topology.get_leaf_switches()):
+                queue_logger_proc = subprocess.Popen(
+                    f"python3 queue_logger.py --port 909{i} --log {self.exp_dir}/queue_log_{switch}.txt",
+                    shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                self.processes.append(queue_logger_proc)
             
             # Run CLI if requested
-            if self.args.cli:
+            if (self.args.cli):
                 logger.info("Starting Mininet CLI for debugging")
                 self.topology.net.start_net_cli()
             
@@ -227,20 +317,27 @@ class CollectionRunner:
             # Wait for all processes to finish
             logger.info("Waiting for all processes to complete...")
             for proc in self.processes:
-                try:
-                    proc.wait(timeout=10)
-                except subprocess.TimeoutExpired:
-                    logger.warning("Process timeout - terminating")
-                    proc.terminate()
+                proc.terminate()
+                # try:
+                #     proc.wait(timeout=5)
+                # except subprocess.TimeoutExpired:
+                #     logger.warning("Process timeout - terminating")
+                #     proc.terminate()
             
             # Kill queue logger
-            queue_logger_proc.terminate()
+            os.system("sudo killall python3")
             
             # Now generate the dataset after all processes have finished but before stopping the network
             logger.info("Generating final dataset...")
+            combined_switch_csv = f"{self.exp_dir}/combined_switch_log.csv"
+            final_receiver_csv = f"{self.exp_dir}/final_receiver_log.csv"
+            final_dataset_file = f"{self.exp_dir}/final_dataset.csv"
             switch_datasets = collect_switch_logs(self.topology, self.exp_dir)
-            dataset = combine_datasets(switch_datasets, receiver_logs, self.exp_dir)
-            logger.info(f"Final dataset created at {self.exp_dir}/combined_dataset.csv")
+            if combine_datasets(switch_datasets, receiver_logs, self.exp_dir):
+                logger.info("Successfully created final dataset")
+            else:
+                logger.error("Failed to combine switch and receiver logs")
+                raise RuntimeError("Dataset creation failed")
             
             return dataset
             
@@ -256,10 +353,10 @@ def parse_args():
     parser = argparse.ArgumentParser(description='Run SimpleDeflection packet collection experiment')
     
     # Basic experiment parameters
-    parser.add_argument('--exp_id', type=str, default=None, 
-                        help='Experiment ID (default: timestamp)')
-    parser.add_argument('--duration', '-d', type=int, default=30, 
+    parser.add_argument('--duration', '-d', type=int, default=5, 
                         help='Duration of the experiment in seconds (default: 30)')
+    parser.add_argument('--exp_id', type=str, default=None,
+                        help='Experiment ID (default: timestamp)')
     
     # Network configuration - only leaf-spine parameters since we're fixed to SimpleDeflection
     parser.add_argument('--n_hosts', type=int, default=4, 
@@ -278,14 +375,26 @@ def parse_args():
                         help='Queue depth in packets (default: 100)')
     
     # Collection parameters
-    parser.add_argument('--num_flows', type=int, default=1, 
-                        help='Number of flows to generate (default: 1)')
-    parser.add_argument('--num_packets', type=int, default=1000, 
+    parser.add_argument('--n_clients', type=int, default=1,
+                        help='Number of clients (default: 1)')
+    parser.add_argument('--n_servers', type=int, default=1,
+                        help='Number of servers (default: 1)')
+    # parser.add_argument('--num_flows', type=int, default=1, 
+    #                     help='Number of flows to generate (default: 1)')
+    parser.add_argument('--num_packets', type=int, default=100, 
                         help='Number of packets per flow (default: 1000)')
-    parser.add_argument('--interval', type=float, default=0.001, 
-                        help='Inter-packet interval in seconds (default: 0.001)')
-    parser.add_argument('--congestion_control', type=str, default='cubic', 
+    parser.add_argument('--interval', type=float, default=0.1, 
+                        help='Inter-packet interval in seconds (default: 0.1)')
+    parser.add_argument('--congestion_control', type=str, default='cubic', # not happening yet since it's udp
                         help='Congestion control algorithm (default: cubic)')
+    parser.add_argument('--packet_size', type=int, default=64,
+                        help='Packet size in bytes (default: 64)')
+    parser.add_argument('--bursty_reply_size', type=int, default=64,
+                        help='Bursty reply size in bytes (default: 64)')
+    parser.add_argument('--burst_interval', type=float, default=0.2,
+                        help='Bursty interval in seconds (default: 0.5)')
+    parser.add_argument('--burst_servers', type=int, default=1,
+                        help='Number of servers to use for bursty traffic (default: 1)')
     
     # Debug options
     parser.add_argument('--cli', action='store_true', 
