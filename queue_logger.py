@@ -2,8 +2,11 @@ import subprocess
 import time
 import argparse
 
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Queue logger for P4 switch")
+    parser.add_argument("--port", "-p", type=int, default=9090, 
+                        help="Thrift port for the P4 switch (default: 9090)")
     parser.add_argument("--log", "-l", default="tmp/0000-deflection/queue_log.txt", 
                         help="Path to the output log file (default: tmp/0000-deflection/queue_log.txt)")
     return parser.parse_args()
@@ -34,16 +37,17 @@ def extract_single_value(output, register_name):
 
 def main(args):
     log_file = args.log
+    port = args.port
 
     # BMv2 CLI commands
-    cli_cmd_queue = "echo 'register_read SimpleDeflectionIngress.queue_occupancy_info' | simple_switch_CLI --thrift-port 9090"
-    cli_cmd_fw_full = "echo 'register_read SimpleDeflectionIngress.is_fw_port_full_register' | simple_switch_CLI --thrift-port 9090"
-    cli_cmd_deq_depth_eg = "echo 'register_read SimpleDeflectionEgress.debug_qdepth' | simple_switch_CLI --thrift-port 9090"
-    cli_cmd_eg_port = "echo 'register_read SimpleDeflectionEgress.debug_eg_port' | simple_switch_CLI --thrift-port 9090"
-    cli_cmd_normal_counter = "echo 'counter_read SimpleDeflectionIngress.normal_ctr 0' | simple_switch_CLI --thrift-port 9090"
-    cli_cmd_deflected_counter = "echo 'counter_read SimpleDeflectionIngress.deflected_ctr 0' | simple_switch_CLI --thrift-port 9090"
-    cli_cmd_queue_depths = "echo 'register_read SimpleDeflectionEgress.queue_depth_info' | simple_switch_CLI --thrift-port 9090"
-    cli_cmd_flow_pkt_counter = "echo 'counter_read SimpleDeflectionIngress.flow_header_counter 0' | simple_switch_CLI --thrift-port 9090"
+    cli_cmd_queue = f"echo 'register_read SimpleDeflectionIngress.queue_occupancy_info' | simple_switch_CLI --thrift-port {port}"
+    cli_cmd_fw_full = f"echo 'register_read SimpleDeflectionIngress.is_fw_port_full_register' | simple_switch_CLI --thrift-port {port}"
+    cli_cmd_deq_depth_eg = f"echo 'register_read SimpleDeflectionEgress.debug_qdepth' | simple_switch_CLI --thrift-port {port}"
+    cli_cmd_eg_port = f"echo 'register_read SimpleDeflectionEgress.debug_eg_port' | simple_switch_CLI --thrift-port {port}"
+    cli_cmd_normal_counter = f"echo 'counter_read SimpleDeflectionIngress.normal_ctr 0' | simple_switch_CLI --thrift-port {port}"
+    cli_cmd_deflected_counter = f"echo 'counter_read SimpleDeflectionIngress.deflected_ctr 0' | simple_switch_CLI --thrift-port {port}"
+    cli_cmd_queue_depths = f"echo 'register_read SimpleDeflectionEgress.queue_depth_info' | simple_switch_CLI --thrift-port {port}"
+    cli_cmd_flow_pkt_counter = f"echo 'counter_read SimpleDeflectionIngress.flow_header_counter 0' | simple_switch_CLI --thrift-port {port}"
 
 
     with open(log_file, "w") as f:

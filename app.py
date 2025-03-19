@@ -3,8 +3,8 @@ import socket
 import time
 import random
 from abc import ABC, abstractmethod
-from client import BaseClient, BurstyClient, BackgroundClient, IperfClient, CollectionClient
-from server import BaseServer, BurstyServer, BackgroundServer, IperfServer, CollectionServer
+from client import BaseClient, BurstyClient, BackgroundClient, IperfClient, DataCollectionClient, TestCollectionClient
+from server import BaseServer, BurstyServer, BackgroundServer, IperfServer, DataCollectionServer, TestCollectionServer
 import logging
 import os
 import csv
@@ -171,57 +171,117 @@ class IperfApp(App):
             self.client.start()  # Send a single packet and then exit
 
 
-class DataCollectionApp(App):
+class TestCollectionApp(App):
     """
     N clients to 1 server
     """
     def __init__(self, args):
         super().__init__(args)
         if self.mode == 'server':
-            self.server = CollectionServer(ip=args.server_ips[0], port=args.port, exp_id=args.exp_id, log_file=args.server_csv_file)
+            self.server = TestCollectionServer(ip=args.server_ips[0], port=args.port, exp_id=args.exp_id, log_file=args.server_csv_file)
         elif self.mode == 'client':
-            self.client = CollectionClient(server_ip=args.server_ips[0], server_port=args.port, 
+            self.client = TestCollectionClient(server_ip=args.server_ips[0], server_port=args.port, 
                             num_packets=args.num_packets, interval=args.interval, num_flows=args.num_flows,
-                            exp_id=args.exp_id, congestion_control=args.congestion_control)
+                            exp_id=args.exp_id, congestion_control=args.congestion_control, packet_size=args.packet_size)
 
     def run(self):
         if self.mode == 'server':
             self.server.start()
         elif self.mode == 'client':
             self.client.start()
-        
+
+class DataCollectionApp(App):
+    """
+    Client-server app that simulates mixed background and bursty traffic.
+    """
+    def __init__(self, args):
+        super().__init__(args)
+        if self.mode == 'server':
+            self.server = DataCollectionServer(
+                ip=args.server_ips[0], 
+                port=args.port, 
+                exp_id=args.exp_id, 
+                log_file=args.server_csv_file,
+                burst_reply_size=args.burst_reply_size
+            )
+        elif self.mode == 'client':
+            self.client = DataCollectionClient(
+                server_ips=args.server_ips, 
+                server_port=args.port,
+                num_packets=args.num_packets, 
+                interval=args.interval, 
+                #num_flows=args.num_flows,
+                exp_id=args.exp_id, 
+                congestion_control=args.congestion_control, 
+                packet_size=args.packet_size,
+                burst_interval=args.burst_interval,
+                burst_servers=args.burst_servers,
+                burst_reply_size=args.burst_reply_size
+            )
+
+    def run(self):
+        if self.mode == 'server':
+            self.server.start()
+        elif self.mode == 'client':
+            self.client.start()
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--mode', choices=['server', 'client'], required=True)
-    parser.add_argument('--type', choices=['bursty', 'background', 'single', 'collect'], required=True)
-    parser.add_argument('--host_ip', type=str, required=False, help="host IP address (required for servers)")
-    parser.add_argument('--port', type=int, default=12345, help="Port (for collect app)")
-    parser.add_argument('--num_packets', type=int, default=1000, help="Number of packets per flow (for collect app)")
-    parser.add_argument('--interval', type=float, default=0.001, help="Interval between packets (for collect app)")
-    parser.add_argument('--num_flows', type=int, default=1, help="Number of flows (for collect app)")
-    parser.add_argument('--server_csv_file', type=str, help="Server CSV file (for collect app)")
     parser.add_argument('--disable_logging', action='store_true', help="Disable logging")
-    parser.add_argument('--server_ips', required=False, nargs='+', help="List of server IPs (bursty app)")
-    parser.add_argument('--reply_size', required=False, type=int, default=40000)
-    parser.add_argument('--flow_ids',  required=False, nargs='+', type=int, help="List of flow IDs (background app)")
-    parser.add_argument('--flow_sizes', required=False, nargs='+', type=int, help="List of flow sizes (background app)")
-    parser.add_argument('--iat', required=False, nargs='+', type=float, help="List of inter-arrival times (background app)")
-    parser.add_argument('--incast_scale', required=False, type=int, help="Number of servers to send requests to in a single query (bursty app)")
-    parser.add_argument('--qps', required=False, type=int, default=4000, help="Queries per second (bursty app)")
     parser.add_argument('--exp_id', required=False, type=str, help="Experiment ID")
-    parser.add_argument('--duration', required=False, type=int, help="Duration for client")
-    parser.add_argument('--congestion_control', required=False, type=str, default='cubic', help="Congestion control algorithm")
+    parser.add_argument('--type', choices=['bursty', 'background', 'single', 'collect'], required=True,
+                      help="Type of application to run")
+    parser.add_argument('--host_ip', type=str, required=False, help="Host IP address")
+    parser.add_argument('--server_ips', required=False, nargs='+', help="List of server IPs")
+    parser.add_argument('--duration', type=int, help="Duration for client (in seconds)")
+    parser.add_argument('--congestion_control', type=str, default='cubic', help="Congestion control algorithm (for background app)")
+    parser.add_argument('--port', type=int, default=12345, help="Port (for mixed app)")
+
+    # Create a group for each application type's arguments
+    bursty_group = parser.add_argument_group('bursty', 'Arguments for bursty application')
+    bursty_group.add_argument('--reply_size', required=False, type=int, default=40000)
+    bursty_group.add_argument('--incast_scale', required=False, type=int, help="Number of servers to send requests in a single query")
+    bursty_group.add_argument('--qps', required=False, type=int, default=4000, help="Queries per second (bursty app)")
+
+    background_group = parser.add_argument_group('background', 'Arguments for background application')
+    background_group.add_argument('--flow_ids', required=False, nargs='+', type=int, help="List of flow IDs")
+    background_group.add_argument('--flow_sizes', required=False, nargs='+', type=int, help="List of flow sizes")
+    background_group.add_argument('--iat', required=False, nargs='+', type=float, help="List of inter-arrival times")
+
+    single_group = parser.add_argument_group('single', 'Arguments for simple packet application')
+    # No additional arguments needed for single group
+
+    # collect_group = parser.add_argument_group('test_collect', 'Arguments for data collection application')
+    # collect_group.add_argument('--num_packets', type=int, default=1000, help="Number of packets per flow")
+    # collect_group.add_argument('--interval', type=float, default=0.001, help="Interval between packets")
+    # collect_group.add_argument('--num_flows', type=int, default=1, help="Number of flows (for collect app)")
+    # collect_group.add_argument('--server_csv_file', type=str, help="Server CSV file (for collect app)")
+    # collect_group.add_argument('--packet_size', type=int, default=1000, help="Packet size (for collect app)")
+
+    mixed_group = parser.add_argument_group('collect', 'Arguments for mixed traffic collection')
+    mixed_group.add_argument('--num_packets', type=int, default=1000, help="Number of packets per background flow")
+    mixed_group.add_argument('--interval', type=float, default=0.001, help="Interval between packets")
+    mixed_group.add_argument('--num_flows', type=int, default=1, help="Number of background flows")
+    mixed_group.add_argument('--server_csv_file', type=str, help="Server CSV file")
+    mixed_group.add_argument('--packet_size', type=int, default=1000, help="Packet size")
+    mixed_group.add_argument('--burst_interval', type=float, default=1.0, help="Time between bursts (seconds)")
+    mixed_group.add_argument('--burst_servers', type=int, default=2, help="Number of servers in each burst")
+    mixed_group.add_argument('--burst_reply_size', type=int, default=40000, help="Size of burst response")
+
+
     args = parser.parse_args()
 
-    # TODO input validation
+    # Rest of your code remains the same
     if args.type == 'bursty':
         app = BurstyApp(args)
     elif args.type == 'background':
         app = BackgroundApp(args)
     elif args.type == 'single':
         app = SimplePacketApp(args)
+    elif args.type == 'test_collect':
+        app = TestCollectionApp(args)
     elif args.type == 'collect':
         app = DataCollectionApp(args)
     else:

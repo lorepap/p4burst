@@ -64,6 +64,15 @@ class BaseServer(ABC):
                 logging.error(traceback.format_exc())
 
 
+class IperfServer(BaseServer):
+    def __init__(self, port=5201):
+        self.port = port
+
+    def start(self):
+        cmd = f'iperf3 -s &'
+        os.system(cmd)
+
+
 class BurstyServer(BaseServer):
     def __init__(self, ip, reply_size, port=12346, exp_id='', cong_control='cubic'):
         super().__init__(port, ip, exp_id=exp_id, congestion_control=cong_control)
@@ -169,7 +178,7 @@ class BackgroundServer(BaseServer):
         """Retrieve collected flow metrics."""
         return self.flowtracker.get_metrics()
 
-class CollectionServer(BaseServer):
+class TestCollectionServer(BaseServer):
     def __init__(self, ip=None, port=12345, exp_id='', log_file='receiver_log.csv'):
         super().__init__(port, ip, exp_id=exp_id)
         self.log_file = log_file
@@ -270,7 +279,7 @@ class CollectionServer(BaseServer):
             else:
                 self.highest_seq[key] = seq
 
-            logging.debug(f"Received packet: flow_id={flow_id}, seq={seq} from {src_ip} to {dst_ip}:{dport}. Reorder flag: {reorder_flag}")
+            #logging.debug(f"Received packet: flow_id={flow_id}, seq={seq} from {src_ip} to {dst_ip}:{dport}. Reorder flag: {reorder_flag}")
 
             # Log packet details to CSV
             with open(self.log_file, 'a', newline='') as csvfile:
@@ -282,11 +291,107 @@ class CollectionServer(BaseServer):
             logging.error(traceback.format_exc())
 
 
-class IperfServer(BaseServer):
-    def __init__(self, port=5201):
-        self.port = port
-
+class DataCollectionServer(BaseServer):
+    """
+    Server that handles both background UDP flows and responds to burst requests.
+    """
+    def __init__(self, ip=None, port=12345, exp_id='', log_file='receiver_log.csv', burst_reply_size=40000):
+        super().__init__(port, ip, exp_id=exp_id)
+        self.log_file = log_file
+        self.highest_seq = {}  # Store highest sequence number seen per flow
+        self.burst_reply_size = burst_reply_size  # Size of response for burst requests
+        
+        # Initialize the CSV log file
+        with open(self.log_file, 'w', newline='') as csvfile:
+            writer = csv.writer(csvfile)
+            writer.writerow(["timestamp", "src_ip", "dst_ip", "port", "flow_id", "seq", "packet_type", "reordering_flag"])
+        
+        logging.info(f"[{self.ip}]: Mixed Collection Server initialized with log file: {self.log_file}")
+    
     def start(self):
-        cmd = f'iperf3 -s &'
-        os.system(cmd)
-
+        """Start the UDP server for packet collection."""
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            s.bind(('0.0.0.0', self.port))
+            logging.info(f"[{self.ip}]: Mixed Collection server listening on UDP port {self.port}")
+            
+            try:
+                while True:
+                    try:
+                        data, addr = s.recvfrom(4096)
+                        # Process received packet (background or burst request)
+                        self.process_packet(data, addr, s)
+                    except KeyboardInterrupt:
+                        raise
+                    except Exception as e:
+                        logging.error(f"[{self.ip}]: Error receiving packet: {e}")
+                        logging.error(traceback.format_exc())
+            except KeyboardInterrupt:
+                logging.info(f"[{self.ip}]: Server shutting down gracefully.")
+    
+    def process_packet(self, data, addr, socket_conn):
+        """Process received UDP packet and check for type."""
+        try:
+            # Check packet length
+            if len(data) < 9:  # flow_id(4) + seq(4) + type(1)
+                logging.warning(f"[{self.ip}]: Received malformed packet (too short): {len(data)} bytes")
+                return
+            
+            # Extract flow_id, seq, and packet type from the header
+            flow_id, seq = struct.unpack("!II", data[0:8])
+            packet_type = data[8]  # 0=background, 1=request, 2=response
+            
+            arrival_time = time.time()
+            src_ip = addr[0]
+            dst_ip = self.ip
+            dport = self.port
+            
+            # Define a flow key (using src, dst, port, flow_id)
+            key = (src_ip, dst_ip, dport, flow_id)
+            
+            # Check for packet reordering (only for background flows)
+            reorder_flag = 0
+            if packet_type == 0:  # Background packet
+                if key in self.highest_seq:
+                    if seq < self.highest_seq[key]:
+                        reorder_flag = 1  # Out-of-order packet
+                    else:
+                        self.highest_seq[key] = seq
+                else:
+                    self.highest_seq[key] = seq
+            
+            # Log packet details to CSV (skip burst responses - they'll be logged by client)
+            if packet_type != 2:  # Don't log response packets
+                with open(self.log_file, 'a', newline='') as csvfile:
+                    writer = csv.writer(csvfile)
+                    writer.writerow([arrival_time, src_ip, dst_ip, dport, flow_id, seq, packet_type, reorder_flag])
+            
+            # If this is a burst request, send a response
+            if packet_type == 1:  # Request packet
+                self._send_burst_response(flow_id, seq, addr, socket_conn)
+                
+        except Exception as e:
+            logging.error(f"[{self.ip}]: Error processing packet from {addr[0]}:{addr[1]}: {e}")
+            logging.error(traceback.format_exc())
+    
+    def _send_burst_response(self, flow_id, req_seq, addr, socket_conn):
+        """Send a response to a burst request."""
+        try:
+            # Create response packet with same flow ID but different type
+            flow_id_bytes = flow_id.to_bytes(4, byteorder='big')
+            seq_bytes = req_seq.to_bytes(4, byteorder='big')
+            type_byte = b'\x02'  # Response type
+            
+            # Create a response packet of requested size
+            payload_size = self.burst_reply_size - 9  # flow_id(4) + seq(4) + type(1)
+            payload = b'R' * payload_size
+            
+            response_packet = flow_id_bytes + seq_bytes + type_byte + payload
+            
+            # Send the response back to the client
+            socket_conn.sendto(response_packet, addr)
+            logging.debug(f"Sent burst response for flow {flow_id} to {addr[0]}:{addr[1]}")
+            
+        except Exception as e:
+            logging.error(f"[{self.ip}]: Error sending burst response to {addr[0]}:{addr[1]}: {e}")
+            logging.error(traceback.format_exc())
