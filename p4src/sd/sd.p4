@@ -35,6 +35,7 @@ control SimpleDeflectionIngress(inout header_t hdr,
     counter(1, CounterType.packets) flow_header_counter;
 
     action drop() {
+        log_msg("Packet dropped: ingress_port={}, reason=explicit_drop", {standard_metadata.ingress_port});
         mark_to_drop(standard_metadata);
     }
 
