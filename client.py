@@ -264,15 +264,15 @@ class TestCollectionClient(BaseClient):
         self.packet_size = packet_size
         logging.info(f"Initialized Collection Client targeting {server_ip}:{server_port}")
         
-    def _create_packet(self, flow_id, seq):
-        """Create a packet with flow_id and sequence number header."""
-        # Create a binary packet with our custom header:
-        # [flow_id (4 bytes)][seq (4 bytes)][payload]
+    def _create_packet(self, flow_id, seq, packet_type='background'):
+        """Create a packet with flow_id, sequence number and packet type header."""
         flow_id_bytes = flow_id.to_bytes(4, byteorder='big')
         seq_bytes = seq.to_bytes(4, byteorder='big')
-        # payload = b'X' * 64 
-        payload = b'X' * (self.packet_size - 8)
-        return flow_id_bytes + seq_bytes + payload
+        # Add packet type (0 for background, 1 for burst traffic)
+        type_byte = b'\x00' if packet_type == 'background' else b'\x01'
+        payload_size = self.packet_size - 9  # flow_id(4) + seq(4) + type(1)
+        payload = b'X' * payload_size
+        return flow_id_bytes + seq_bytes + type_byte + payload
     
     def _send_flow(self, flow_id):
         """Send a single flow with sequential packets."""
@@ -318,7 +318,7 @@ class DataCollectionClient(BaseClient):
     def __init__(self, server_ips, server_port=12345, num_packets=1000, interval=0.001,
                  congestion_control='cubic', exp_id='', packet_size=1000,
                  burst_interval=1.0, burst_servers=2, burst_reply_size=40000,
-                 client_id=0, log_dir=''):
+                 log_file=None, duration=None):
         
         super().__init__(congestion_control, exp_id, server_ips[0])
         self.server_ips = server_ips  # Now a list of servers
@@ -327,6 +327,7 @@ class DataCollectionClient(BaseClient):
         self.interval = interval
         #self.num_flows = num_flows
         self.packet_size = packet_size
+        self.duration = duration if duration is not None else float('inf')
         
         # Bursty traffic parameters
         self.burst_interval = burst_interval  # Time between bursts (seconds)
@@ -338,15 +339,16 @@ class DataCollectionClient(BaseClient):
         self.highest_seq = {}  # For tracking sequence numbers and detecting reordering
         
         # Response logging setup
-        self.client_id = client_id
-        self.log_dir = log_dir if log_dir else os.path.dirname(exp_id)
-        self.log_file = f"{self.log_dir}/sender_{self.client_id}_dataset.csv"
+        self.log_file = log_file
         
         # Initialize the CSV log file for responses
-        os.makedirs(os.path.dirname(self.log_file), exist_ok=True)
-        with open(self.log_file, 'w', newline='') as csvfile:
-            writer = csv.writer(csvfile)
-            writer.writerow(["timestamp", "src_ip", "dst_ip", "port", "flow_id", "seq", "packet_type", "reordering_flag"])
+        if self.log_file:
+            os.makedirs(os.path.dirname(self.log_file), exist_ok=True)
+            with open(self.log_file, 'w', newline='') as csvfile:
+                writer = csv.writer(csvfile)
+                writer.writerow(["timestamp", "src_ip", "dst_ip", "port", "flow_id", "seq", "packet_size", "packet_type", "reordering_flag"])
+        else:
+            logging.warning("No CSV file specified for logging responses. Responses will not be logged.")
         
         logging.info(f"[{self.ip}] Initialized Mixed Collection Client targeting {len(server_ips)} servers")
         logging.info(f"[{self.ip}] Response logging to: {self.log_file}")
@@ -355,11 +357,14 @@ class DataCollectionClient(BaseClient):
         """Create a packet with flow_id, sequence number and packet type header."""
         flow_id_bytes = flow_id.to_bytes(4, byteorder='big')
         seq_bytes = seq.to_bytes(4, byteorder='big')
-        # Add packet type (0 for background, 1 for request, 2 for response)
-        type_byte = b'\x00' if packet_type == 'background' else (b'\x01' if packet_type == 'request' else b'\x02')
-        payload_size = self.packet_size - 9  # flow_id(4) + seq(4) + type(1)
-        payload = b'X' * payload_size
-        return flow_id_bytes + seq_bytes + type_byte + payload
+        # Add packet type (0 for background, 1 for burst traffic)
+        type_byte = b'\x00' if packet_type == 'background' else b'\x01'
+        if packet_type == 'request':
+            return flow_id_bytes + seq_bytes + type_byte
+        else:
+            payload_size = self.packet_size - 9  # flow_id(4) + seq(4) + type(1)
+            payload = b'X' * payload_size
+            return flow_id_bytes + seq_bytes + type_byte + payload
     
     def _send_background_flow(self, flow_id, target_server):
         """Send a single background flow with sequential packets."""
@@ -428,10 +433,12 @@ class DataCollectionClient(BaseClient):
             
             # Extract flow_id, seq, and verify packet type
             flow_id, seq = struct.unpack("!II", data[0:8])
-            packet_type = data[8]
+            packet_type = ord(data[8:9])  # Convert byte to integer correctly
+
+            packet_size = len(data) + 28
             
-            if packet_type != 2:  # Should be response type
-                logging.warning(f"Received non-response packet type: {packet_type}")
+            if packet_type != 1:  # Should be burst traffic type (1)
+                logging.warning(f"Received non-burst packet type: {packet_type}")
                 return
                 
             arrival_time = time.time()
@@ -439,23 +446,15 @@ class DataCollectionClient(BaseClient):
             dst_ip = self.ip
             dport = self.server_port
             
-            # Define a flow key (using src, dst, port, flow_id)
-            key = (src_ip, dst_ip, dport, flow_id)
-            
-            # Check for packet reordering
-            reorder_flag = 0
-            if key in self.highest_seq:
-                if seq < self.highest_seq[key]:
-                    reorder_flag = 1  # Out-of-order packet
-                else:
-                    self.highest_seq[key] = seq
-            else:
-                self.highest_seq[key] = seq
+            # For burst traffic, we don't care about ordering
+            # Since burst responses naturally arrive at approximately the same time
+            reorder_flag = 0  # Always 0 for burst traffic
             
             # Log response details to CSV
-            with open(self.log_file, 'a', newline='') as csvfile:
-                writer = csv.writer(csvfile)
-                writer.writerow([arrival_time, src_ip, dst_ip, dport, flow_id, seq, packet_type, reorder_flag])
+            if self.log_file:
+                with open(self.log_file, 'a', newline='') as csvfile:
+                    writer = csv.writer(csvfile)
+                    writer.writerow([arrival_time, src_ip, dst_ip, dport, flow_id, seq, packet_size, packet_type, reorder_flag])
                 
             logging.debug(f"Logged burst response from {src_ip} for flow {flow_id}, seq {seq}")
             
@@ -469,10 +468,16 @@ class DataCollectionClient(BaseClient):
         while self.background_flow_running:
             #for flow_num in range(self.num_flows):
             # Generate random flow ID and select random server
-            flow_id = random.randint(0, 2**32-1)
+            flow_id = random.randint(0, 999999)
             target_server = random.choice(self.server_ips)
             self._send_background_flow(flow_id, target_server)
-            time.sleep(self.interval * self.num_packets)  # Wait between flows
+            time.sleep(self.interval)  # Wait between flows
+            if time.time() - self.start_time >= self.duration:
+                break
+        self.background_flow_running = False
+        logging.info(f"Background flow worker stopping after {self.duration} seconds")
+        time.sleep(0.1)  # Allow any remaining flows to finish
+
     
     def _burst_worker(self):
         """Worker thread to periodically send burst requests."""
@@ -489,10 +494,14 @@ class DataCollectionClient(BaseClient):
         bg_thread.daemon = True
         bg_thread.start()
         
+        time.sleep(0.1)
+        
         # Start burst thread
         burst_thread = threading.Thread(target=self._burst_worker)
         burst_thread.daemon = True
         burst_thread.start()
+
+        self.start_time = time.time() 
         
         # Keep running until interrupted
         try:

@@ -179,7 +179,7 @@ def run_mininet(n_pkts, interval, num_flows, n_clients):
     bw = 1
     delay = 0.01
     exp_id = "0000-deflection"
-    queue_rate = 200
+    queue_rate = 80
     queue_depth = 30
     n_leaf = 4
     n_spine = 3
@@ -190,6 +190,7 @@ def run_mininet(n_pkts, interval, num_flows, n_clients):
     
     # Set up network topology
     n_hosts = n_clients*n_leaf
+    
     topology = LeafSpineTopology(n_hosts, n_leaf, n_spine, bw, delay, p4_program)
     control_plane = SimpleDeflectionControlPlane(topology, queue_rate=queue_rate, queue_depth=queue_depth)
     
@@ -215,7 +216,7 @@ def run_mininet(n_pkts, interval, num_flows, n_clients):
     time.sleep(1)
     
     # Start queue logger
-    os.system("python3 queue_logger.py &")
+    os.system(f"python3 queue_logger.py &")
     time.sleep(2)
     
     # Start client traffic generators
@@ -225,7 +226,7 @@ def run_mininet(n_pkts, interval, num_flows, n_clients):
     # Wait for traffic to complete
     wait_time = max(10, n_pkts * interval * 2)
     print(f"Waiting for traffic to complete...")
-    time.sleep(wait_time + 30)
+    time.sleep(wait_time + 120)
     
     # Stop processes
     os.system("killall python3")

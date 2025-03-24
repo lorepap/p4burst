@@ -304,7 +304,7 @@ class DataCollectionServer(BaseServer):
         # Initialize the CSV log file
         with open(self.log_file, 'w', newline='') as csvfile:
             writer = csv.writer(csvfile)
-            writer.writerow(["timestamp", "src_ip", "dst_ip", "port", "flow_id", "seq", "packet_type", "reordering_flag"])
+            writer.writerow(["timestamp", "src_ip", "dst_ip", "port", "flow_id", "seq", "packet_size", "packet_type", "reordering_flag"])
         
         logging.info(f"[{self.ip}]: Mixed Collection Server initialized with log file: {self.log_file}")
     
@@ -339,7 +339,10 @@ class DataCollectionServer(BaseServer):
             
             # Extract flow_id, seq, and packet type from the header
             flow_id, seq = struct.unpack("!II", data[0:8])
-            packet_type = data[8]  # 0=background, 1=request, 2=response
+            packet_type = ord(data[8:9])  # Convert byte to integer value properly
+
+            packet_size = len(data) + 28  # 28 bytes for UDP/IP headers
+            logging.debug(f"Received packet: type={packet_type}, size={packet_size}, flow={flow_id}, seq={seq}")
             
             arrival_time = time.time()
             src_ip = addr[0]
@@ -360,14 +363,12 @@ class DataCollectionServer(BaseServer):
                 else:
                     self.highest_seq[key] = seq
             
-            # Log packet details to CSV (skip burst responses - they'll be logged by client)
-            if packet_type != 2:  # Don't log response packets
+            # Log packet details to CSV (only background packets)
+            if packet_type == 0:
                 with open(self.log_file, 'a', newline='') as csvfile:
                     writer = csv.writer(csvfile)
-                    writer.writerow([arrival_time, src_ip, dst_ip, dport, flow_id, seq, packet_type, reorder_flag])
-            
-            # If this is a burst request, send a response
-            if packet_type == 1:  # Request packet
+                    writer.writerow([arrival_time, src_ip, dst_ip, dport, flow_id, seq, packet_size, packet_type, reorder_flag])
+            else: # type = 1
                 self._send_burst_response(flow_id, seq, addr, socket_conn)
                 
         except Exception as e:
@@ -380,7 +381,7 @@ class DataCollectionServer(BaseServer):
             # Create response packet with same flow ID but different type
             flow_id_bytes = flow_id.to_bytes(4, byteorder='big')
             seq_bytes = req_seq.to_bytes(4, byteorder='big')
-            type_byte = b'\x02'  # Response type
+            type_byte = b'\x01'  # Burst traffic type (1 for both requests and responses)
             
             # Create a response packet of requested size
             payload_size = self.burst_reply_size - 9  # flow_id(4) + seq(4) + type(1)

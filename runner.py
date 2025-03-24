@@ -1,5 +1,13 @@
 #!/usr/bin/env python3
 
+"""
+
+TODO:
+    - Sender code for RL data collection (based on tx_order.py)
+    - Receiver code for RL data collection (based on rx_order.py)
+
+"""
+
 import sys
 import os
 import time
@@ -23,9 +31,9 @@ class ExperimentRunner:
         self.control_plane: BaseControlPlane = None
         # Path
         self.db_path = 'data/distributions'
-        self.exp_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.exp_id = datetime.now().strftime("%Y%m%d_%H%M%S") if not args.exp_id else args.exp_id
         if not self.args.disable_metrics:
-            flowtracker = FlowMetricsManager(self.exp_id) # create a new database for tracking simulation metrics
+            FlowMetricsManager(self.exp_id) # create a new database for tracking simulation metrics
         self.config = self.load_config()
         self.p4_program=self.set_p4_program()
         self.processes = []
@@ -42,6 +50,7 @@ class ExperimentRunner:
         self.spine = self.config.getint('leafspine', 'n_spine')
         self.bw = self.config.getfloat('global', 'bw')
         self.delay = self.config.getfloat('global', 'delay')
+        self.loss = self.config.getfloat('global', 'loss')
         self.control_plane_str = self.config.get('global', 'control_plane')
         self.cong_proto = self.config.get('global', 'cong_proto')
         # background
@@ -52,6 +61,11 @@ class ExperimentRunner:
         self.qps = self.config.getint('bursty', 'qps')
         self.incast_degree = self.config.getint('bursty', 'incast_degree')
         self.reply_size = self.config.getint('bursty', 'reply_size')
+        # collect
+        self.n_flows = self.config.getint('collect', 'n_flows')
+        self.n_packets = self.config.getint('collect', 'n_packets')
+        self.interval = self.config.getfloat('collect', 'interval')
+        self.n_clients = self.config.getint('collect', 'n_clients')
 
 
     # TODO refactor
@@ -233,6 +247,7 @@ class ExperimentRunner:
         cmd = f'iperf3 -c {h2.IP()} -t {self.args.duration} -p 5201 --logfile /home/ubuntu/p4burst/tmp/{self.exp_id}/iperf_app_client_h1.log'
         proc = h1.popen(cmd, shell=True, stderr=sys.stderr, stdout=subprocess.DEVNULL)
         self.processes.append(proc)
+
         # print(f"Starting client on h2 ({h2.IP()}) for {self.args.duration}s...")
         # h2.cmd(f'iperf3 -c {h4.IP()} -t {self.args.duration} -p 5202 --logfile /home/ubuntu/p4burst/tmp/{self.exp_id}/iperf_app_client_h2.log &')
   
@@ -316,6 +331,44 @@ class ExperimentRunner:
             traceback.print_exc()
             raise e
 
+    def run_collection(self):
+        from utils.rl_data_utils import collect_switch_logs, combine_datasets
+        exp_dir = f'tmp/{self.exp_id}'
+        receiver_logs = []
+        
+        # Client - Server logic
+        clients = []
+        clients.append(self.topology.net.net.get('h1'))
+
+        client_cmd = (
+                f'python3 -m app --mode client '
+                f'--type collect '
+                f'--server_ip {self.topology.net.net.get("h2").IP()} '
+                f'--num_packets {self.n_packets} '
+                f'--interval {self.interval}'
+                f'--num_flows {self.n_flows}'
+                f'--congestion_control {self.cong_proto} '
+                f'--exp_id {self.exp_id}' # to integrate in the collection client
+            )
+
+        # start server
+        print(f"Starting server on {self.topology.net.net.get('h2').name}...")
+        server = self.topology.net.net.get('h2')
+        server_csv_file = f"{exp_dir}/receiver_log.csv"
+        server.cmd(f'python3 -m app --mode server --type collect --ip {server.IP()} --exp_id {self.exp_id} --log_file {server_csv_file}> /dev/null 2>&1 &')
+
+        for client in clients:
+            print(f"Starting client on {client.name}...")
+            proc = client.popen(client_cmd, shell=True, stderr=sys.stderr, stdout=subprocess.DEVNULL)
+            self.processes.append(proc)
+            
+        # Create the dataset
+        for i, client in enumerate(clients):
+            server_receiver_log = f"{exp_dir}/receiver_log_{i+1}.csv"
+            receiver_logs.append(server_receiver_log)
+        
+        switch_datasets = collect_switch_logs(self.topology, exp_dir)
+        final_dataset = combine_datasets(switch_datasets, receiver_logs, exp_dir)
 
     def run_experiment(self):
         exp_dict = {
@@ -323,7 +376,8 @@ class ExperimentRunner:
                 'bursty': self.run_bursty_app,
                 'background': self.run_background_app,
                 'simple': self.run_simple_app,
-                'iperf': self.run_iperf_app
+                'iperf': self.run_iperf_app,
+                'collect': self.run_collection
             }
         
         try:
@@ -333,7 +387,11 @@ class ExperimentRunner:
             # Pre-run setup
             if isinstance(self.control_plane, SimpleDeflectionControlPlane):
                 # Note: I add the bee packets logic to the SD control plane to keep the runner clean
-                self.control_plane.send_bee_packets(switch='s1') # TODO add bee packets for all deflection switches
+                for switch in self.topology.get_leaf_switches():
+                    print("Sending BEE packets to switch", switch)
+                    self.control_plane.send_bee_packets(switch=switch)
+                # Run the queue logger (debug)
+                os.system(f"python3 queue_logger.py --log tmp/{self.exp_id}/queue_log.txt &")
             
             if self.args.cli:
                 self.topology.net.start_net_cli()  # debugging
@@ -374,13 +432,13 @@ class ExperimentRunner:
 
 
 def get_args():
-    # TODO replace with config file
     parser = argparse.ArgumentParser(description='Run network experiment')
     parser.add_argument('--duration', '-d', type=int, default=10, help='Duration of the experiment in seconds')
     parser.add_argument('--host_pcap', action='store_true', help='Enable pcap on hosts')
     parser.add_argument('--switch_pcap', action='store_true', help='Enable pcap on switches')
     parser.add_argument('--cli', action='store_true', help='Enable Mininet CLI')
     parser.add_argument('--disable_metrics', action='store_true', help='Disable metrics collection')
+    parser.add_argument('--exp_id', type=str, default=None, help='Experiment ID')
     return parser.parse_args()
 
 def main():

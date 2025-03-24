@@ -234,14 +234,14 @@ def merge_by_flow_seq(switch_csv, receiver_csv, output_csv):
         
         # Check if packet_type exists in receiver logs, if not create with default value
         if 'packet_type' not in receiver_df.columns:
-            print("Warning: packet_type not found in receiver logs, using default value of 0")
-            receiver_df['packet_type'] = 0
-        else:
-            receiver_df['packet_type'] = receiver_df['packet_type'].astype(int)
+            raise ValueError("packet_type column not found in receiver logs")
+        # Packet type as an integer
+        receiver_df['packet_type'] = receiver_df['packet_type'].astype(int)
+        receiver_df['packet_size'] = receiver_df['packet_size'].astype(int)
         
         # Create a combined key for merging
-        receiver_df['key'] = receiver_df['flow_id'].astype(str) + '_' + receiver_df['seq'].astype(str)
-        switch_df['key'] = switch_df['flow_id'].astype(str) + '_' + switch_df['seq'].astype(str)
+        receiver_df['key'] = receiver_df['flow_id'].astype(str) + '_' + receiver_df['seq'].astype(str) + '_' + receiver_df['packet_size'].astype(str)
+        switch_df['key'] = switch_df['flow_id'].astype(str) + '_' + switch_df['seq'].astype(str) + '_' + switch_df['packet_size'].astype(str)
         
         # Merge the datasets
         merged_df = pd.merge(switch_df, 
@@ -301,7 +301,7 @@ def merge_by_flow_seq(switch_csv, receiver_csv, output_csv):
     print(f"Merge complete: {len(merged_df)} total rows in final dataset")
     return True
 
-def combine_datasets(switch_datasets, receiver_logs, exp_dir):
+def combine_datasets(switch_datasets, host_logs, exp_dir):
     """Combine switch and receiver csv files, then merge them into the final RL dataset"""
     
     if not switch_datasets:
@@ -312,12 +312,12 @@ def combine_datasets(switch_datasets, receiver_logs, exp_dir):
     combined_switch_csv = f"{exp_dir}/combined_switch_dataset.csv"
     
     # Look for client response logs too
-    sender_logs = [f for f in os.listdir(exp_dir) if f.startswith('sender_') and f.endswith('_dataset.csv')]
-    if sender_logs:
-        print(f"Found {len(sender_logs)} sender logs")
-        all_logs = receiver_logs + [f"{exp_dir}/{log}" for log in sender_logs]
-    else:
-        all_logs = receiver_logs
+    # sender_logs = [f for f in os.listdir(exp_dir) if f.startswith('sender_') and f.endswith('_dataset.csv')]
+    # if sender_logs:
+    #     print(f"Found {len(sender_logs)} sender logs")
+    #     all_logs = receiver_logs + [f"{exp_dir}/{log}" for log in sender_logs]
+    # else:
+    #     all_logs = receiver_logs
         
     final_receiver_csv = f"{exp_dir}/combined_receiver_log.csv"
     
@@ -344,7 +344,7 @@ def combine_datasets(switch_datasets, receiver_logs, exp_dir):
     print(f"Combined {len(switch_datasets)} switch datasets into {combined_switch_csv}")
     
     # Read and combine receiver logs (including client response logs)
-    for log_file in all_logs:
+    for log_file in host_logs:
         if os.path.exists(log_file):
             print(f"Reading log file: {log_file}")
             df = pd.read_csv(log_file)
@@ -359,7 +359,7 @@ def combine_datasets(switch_datasets, receiver_logs, exp_dir):
     
     # Save combined receiver log
     receiver_df.to_csv(final_receiver_csv, index=False)
-    print(f"Combined {len(all_logs)} log files into {final_receiver_csv}")
+    print(f"Combined {len(host_logs)} log files into {final_receiver_csv}")
 
     # Merge the combined switch dataset with the receiver log
     if not merge_by_flow_seq(combined_switch_csv, final_receiver_csv, f"{exp_dir}/final_dataset.csv"):

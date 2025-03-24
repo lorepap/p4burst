@@ -57,9 +57,9 @@ class ExperimentRunner:
         """Generate parameter combinations using predefined ranges"""
         
         # Define parameter ranges
-        bandwidth_values = [10, 50, 100]  # Mbps
-        delay_values = [0, 0.5, 1, 5]  # ms
-        burst_server_values = [1, 2, 3]  # Number of servers for bursty traffic
+        bandwidth_values = [50]  # Mbps
+        delay_values = [0.005]  # ms
+        burst_server_values = [2, 8, 16]  # Number of servers for bursty traffic
         load_values = [0.25, 0.5, 0.75, 1.0]  # Load percentage (0.25 = 25% load)
         
         # Generate parameter combinations
@@ -79,29 +79,31 @@ class ExperimentRunner:
             #num_flows = max(1, int(load * 5))
             
             # Calculate experiment duration - longer for higher load scenarios
-            duration = max(10, int(15 * load))
+            duration = 5
             
-            # Burst interval is inversely proportional to load
-            burst_interval = max(0.1, 1.0 / load)
+            burst_interval = 0.01
             
             # Create parameter set
             params = {
                 'experiment_id': experiment_id,
                 'bw': bw,
                 'delay': delay,
-                'burst_servers': burst_servers,
                 'load': load,
                 #'num_flows': num_flows,
                 'interval': interval,
                 'duration': duration,
                 'burst_interval': burst_interval,
-                'n_hosts': 8,  # Fixed parameters
-                'n_leaf': 4,
-                'n_spine': 8,
-                'packet_size': 128,
-                'bursty_reply_size': 256,
-                'n_clients': 1,
-                'n_servers': 4  # Ensure enough servers for burst traffic
+                'num_packets': 500,
+                'n_hosts': 32,  # Fixed parameters
+                'n_leaf': 8,
+                'n_spine': 4,
+                'packet_size': 1472,
+                'bursty_reply_size': 4000,
+                'n_clients': 16,
+                'n_servers': 16,  # Ensure enough servers for burst traffic
+                'burst_servers': burst_servers,
+                'queue_rate': 100,
+                'queue_depth': 30
             }
             
             combinations.append(params)
@@ -131,12 +133,12 @@ class ExperimentRunner:
         exp_id = params['experiment_id']
         
         # Create descriptive experiment ID
-        desc_exp_id = f"bw_{params['bw']}_delay_{params['delay']}_load_{int(params['load']*100)}_burst_{params['burst_servers']}"
+        desc_exp_id = f"bw_{params['bw']}_delay_{params['delay']}_load_{int(params['load']*100)}_burst_{params['burst_servers']}_burst_reply_{params['bursty_reply_size']}_bursty_interval_{params['burst_interval']}"
         logger.info(f"Starting experiment {exp_id} with ID: {desc_exp_id}")
         
         # Create the command with all necessary parameters
         cmd = [
-            "python3", "collection_runner.py",
+            "sudo", "-E", "python3", "collection_runner.py",
             "--exp_id", desc_exp_id,  # Use the descriptive ID
             "--duration", str(params['duration']),
             "--n_hosts", str(params['n_hosts']),
@@ -151,7 +153,9 @@ class ExperimentRunner:
             "--packet_size", str(params['packet_size']),
             "--bursty_reply_size", str(params['bursty_reply_size']),
             "--burst_interval", str(params['burst_interval']),
-            "--burst_servers", str(params['burst_servers'])
+            "--burst_servers", str(params['burst_servers']),
+            "--queue_rate", str(params['queue_rate']),
+            "--queue_depth", str(params['queue_depth'])
         ]
         
         # Log the command
@@ -193,6 +197,10 @@ class ExperimentRunner:
                 logger.error(f"Failed to copy experiment data: {e}")
         else:
             logger.error(f"Experiment directory '{tmp_exp_dir}' not found")
+
+        # Remove tmp dir
+        # logger.info("Removing tmp dir...")
+        # os.remove(tmp_exp_dir)
         
         # Record experiment result
         result_record = {

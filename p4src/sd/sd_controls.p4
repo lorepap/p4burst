@@ -9,6 +9,7 @@ control Forward(inout header_t hdr,
                inout standard_metadata_t standard_metadata) {
     
     action drop() {
+        log_msg("Dropping packet");
         mark_to_drop(standard_metadata);
     }
 

@@ -5,6 +5,78 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "Collection Runner",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "collection_runner.py",
+            "console": "integratedTerminal",
+            "sudo": true
+        },
+        {
+            "name": "create rl dataset",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "create_rl_dataset.py",
+            "console": "integratedTerminal",
+            "sudo": true,
+            "args": [
+                "merge",
+                "--rl",
+                "tmp/0000-deflection/combined_switch_dataset.csv",
+                "--receiver",
+                "tmp/0000-deflection/combined_receiver_log.csv",
+                "--output",
+                "test_merge_dataset.csv"
+            ]
+        },
+        {
+            "name": "data collection",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "test_data_collection.py",
+            "console": "integratedTerminal",
+            "sudo": true,
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            },
+            "args": [
+                "--n_pkts",
+                "10",
+                "--n_flows",
+                "1",
+                "--n_clients",
+                "1"
+            ]
+        },
+        {
+            "name": "DT Distillation",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "dt.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--csv",
+                "/home/ubuntu/p4burst/tmp/0000-deflection/final_rl_dataset.csv",
+                "--samples",
+                "10",
+                "--model",
+                "model/dqn_model.h5"
+            ]
+        },
+        {
+            "name": "trainer",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "rl_agent.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--csv",
+                "/home/ubuntu/p4burst/tmp/0000-deflection/final_rl_dataset.csv",
+                "--epochs",
+                "10"
+            ]
+        },
+        {
             "name": "Python Debugger: Current File",
             "type": "debugpy",
             "request": "launch",
@@ -12,7 +84,6 @@
             "console": "integratedTerminal",
             "sudo": true,
             "justMyCode": false,
-            "python": "ip netns exec h1 python3"
         },
         {
             "name": "stress_test_dumbbell",
@@ -22,7 +93,6 @@
             "console": "integratedTerminal",
             "sudo": true,
         },
-
         {
             "name": "RUNNER",
             "type": "debugpy",
@@ -33,23 +103,7 @@
             "python": "/usr/bin/python",
             // run as a root
             "sudo": true,
-            "args": [
-                "-t",
-                "leafspine",
-                "-n",
-                "4",
-                "--leaf",
-                "4",
-                "--spine",
-                "2",
-                "-c",
-                "l3",
-                // "-l",
-                // "2",
-                // "-s",
-                // "2",
-                // "--cli"
-            ]
+            "args": []
         }
     ]
 }

@@ -24,7 +24,7 @@ def setup_logging():
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
         handlers=[
             logging.StreamHandler(sys.stdout),
-            logging.FileHandler("collection_runner.log")  # Add file logging too
+            logging.FileHandler("collection_runner.log")
         ]
     )
     
@@ -199,6 +199,7 @@ class CollectionRunner:
                 #f'--num_flows {self.num_flows} '
                 f'--congestion_control {self.congestion_control} '
                 f'--packet_size {self.packet_size} '
+                
             )
             proc = client_host.popen(client_cmd, shell=True, stderr=sys.stderr, stdout=subprocess.DEVNULL)
             self.processes.append(proc)
@@ -231,7 +232,7 @@ class CollectionRunner:
         
         # Start all servers
         for i, server_host in enumerate(servers):
-            server_csv_file = f"{self.exp_dir}/server_{i}_log.csv"
+            server_csv_file = f"{self.exp_dir}/server_{server_host.name}_log.csv"
             server_csv_files.append(server_csv_file)
             
             logger.info(f"Starting mixed server on {server_host.name} ({server_host.IP()})...")
@@ -243,15 +244,20 @@ class CollectionRunner:
                 f'--server_ips {server_host.IP()} '
                 f'--server_csv_file {server_csv_file} '
                 f'--burst_reply_size {self.burst_reply_size} '
-                f'> {self.exp_dir}/server_{i}_out.log 2>&1 &'
+                f'> {self.exp_dir}/server_{server_host.name}_out.log 2>&1 &'
             )
             server_host.cmd(server_cmd)
         
         # Give servers time to initialize
         time.sleep(2)
+
+        # Prepare the client CSV file
+        client_csv_files = []
         
         # Start the clients
-        for client_host in clients:
+        for i, client_host in enumerate(clients):
+            client_csv_file = f"{self.exp_dir}/client_{client_host.name}_log.csv"
+            client_csv_files.append(client_csv_file)
             logger.info(f"Starting mixed client on {client_host.name} ({client_host.IP()})...")
             
             # Get all server IPs as a space-separated string
@@ -270,20 +276,22 @@ class CollectionRunner:
                 f'--burst_servers {self.burst_servers} '
                 f'--burst_reply_size {self.burst_reply_size} '
                 f'--packet_size {self.packet_size} '
-                f'> {self.exp_dir}/client_out.log 2>&1 &'
+                f'--client_csv_file {client_csv_file} '
+                f'> {self.exp_dir}/client_{client_host.name}_out.log 2>&1 &'
             )
             proc = client_host.popen(client_cmd, shell=True)
             self.processes.append(proc)
             
-            # Wait for the experiment to finish
-            logger.info(f"Waiting for mixed traffic experiment to complete (duration: {self.args.duration}s)...")
-            time.sleep(self.args.duration + 2)
+        # Wait for the experiment to finish
+        logger.info(f"Waiting for mixed traffic experiment to complete (duration: {self.args.duration}s)...")
+        time.sleep(self.args.duration + 2)
+        
+        # Collect all server logs for dataset generation
+        receiver_logs.extend(server_csv_files)
+        receiver_logs.extend(client_csv_files)
+        logger.info("Mixed traffic experiment completed")
             
-            # Collect all server logs for dataset generation
-            receiver_logs.extend(server_csv_files)
-            logger.info("Mixed traffic experiment completed")
-            
-            return receiver_logs
+        return receiver_logs
 
     def run_experiment(self):
         """Run the complete experiment."""
@@ -312,28 +320,31 @@ class CollectionRunner:
                 self.topology.net.start_net_cli()
             
             # Run collection experiment - get receiver logs but don't generate dataset yet
-            receiver_logs = self.run_collection()
+            host_logs = self.run_collection()
             
             # Wait for all processes to finish
             logger.info("Waiting for all processes to complete...")
             for proc in self.processes:
-                proc.terminate()
-                # try:
-                #     proc.wait(timeout=5)
-                # except subprocess.TimeoutExpired:
-                #     logger.warning("Process timeout - terminating")
-                #     proc.terminate()
+                try:
+                    proc.wait(timeout=5)  # Wait for each process to finish
+                except subprocess.TimeoutExpired:
+                    logger.warning("Process timeout - terminating")
+                    proc.terminate()
             
             # Kill queue logger
-            os.system("sudo killall python3")
+            for i, switch in enumerate(self.topology.get_leaf_switches()):
+                queue_logger_proc = subprocess.Popen(
+                    f"pkill -f queue_logger.py --port 909{i}",
+                    shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                self.processes.append(queue_logger_proc) 
             
             # Now generate the dataset after all processes have finished but before stopping the network
             logger.info("Generating final dataset...")
-            combined_switch_csv = f"{self.exp_dir}/combined_switch_log.csv"
-            final_receiver_csv = f"{self.exp_dir}/final_receiver_log.csv"
-            final_dataset_file = f"{self.exp_dir}/final_dataset.csv"
+            # combined_switch_csv = f"{self.exp_dir}/combined_switch_log.csv"
+            # final_receiver_csv = f"{self.exp_dir}/final_receiver_log.csv"
+            # final_dataset_file = f"{self.exp_dir}/final_dataset.csv"
             switch_datasets = collect_switch_logs(self.topology, self.exp_dir)
-            if combine_datasets(switch_datasets, receiver_logs, self.exp_dir):
+            if combine_datasets(switch_datasets, host_logs, self.exp_dir):
                 logger.info("Successfully created final dataset")
             else:
                 logger.error("Failed to combine switch and receiver logs")
@@ -371,8 +382,8 @@ def parse_args():
                         help='Link delay in ms (default: 0)')
     parser.add_argument('--queue_rate', type=int, default=1000,
                         help='Queue rate in Mbps (default: 100)')
-    parser.add_argument('--queue_depth', type=int, default=100,
-                        help='Queue depth in packets (default: 100)')
+    parser.add_argument('--queue_depth', type=int, default=64,
+                        help='Queue depth in packets (default: 64)')
     
     # Collection parameters
     parser.add_argument('--n_clients', type=int, default=1,
@@ -384,15 +395,15 @@ def parse_args():
     parser.add_argument('--num_packets', type=int, default=100, 
                         help='Number of packets per flow (default: 1000)')
     parser.add_argument('--interval', type=float, default=0.1, 
-                        help='Inter-packet interval in seconds (default: 0.1)')
+                        help='Background Inter-packet interval in seconds (default: 0.1)')
     parser.add_argument('--congestion_control', type=str, default='cubic', # not happening yet since it's udp
                         help='Congestion control algorithm (default: cubic)')
-    parser.add_argument('--packet_size', type=int, default=64,
-                        help='Packet size in bytes (default: 64)')
-    parser.add_argument('--bursty_reply_size', type=int, default=64,
-                        help='Bursty reply size in bytes (default: 64)')
+    parser.add_argument('--packet_size', type=int, default=1472,
+                        help='Packet size in bytes (default: 1472)')
+    parser.add_argument('--bursty_reply_size', type=int, default=40000,
+                        help='Bursty reply size in bytes (default: 4000)')
     parser.add_argument('--burst_interval', type=float, default=0.2,
-                        help='Bursty interval in seconds (default: 0.5)')
+                        help='Bursty interval in seconds (default: 0.2)')
     parser.add_argument('--burst_servers', type=int, default=1,
                         help='Number of servers to use for bursty traffic (default: 1)')
     

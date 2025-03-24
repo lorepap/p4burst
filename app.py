@@ -216,7 +216,9 @@ class DataCollectionApp(App):
                 packet_size=args.packet_size,
                 burst_interval=args.burst_interval,
                 burst_servers=args.burst_servers,
-                burst_reply_size=args.burst_reply_size
+                burst_reply_size=args.burst_reply_size,
+                log_file=args.client_csv_file,
+                duration=args.duration
             )
 
     def run(self):
@@ -265,6 +267,7 @@ def main():
     mixed_group.add_argument('--interval', type=float, default=0.001, help="Interval between packets")
     mixed_group.add_argument('--num_flows', type=int, default=1, help="Number of background flows")
     mixed_group.add_argument('--server_csv_file', type=str, help="Server CSV file")
+    mixed_group.add_argument('--client_csv_file', type=str, help="Client CSV file")
     mixed_group.add_argument('--packet_size', type=int, default=1000, help="Packet size")
     mixed_group.add_argument('--burst_interval', type=float, default=1.0, help="Time between bursts (seconds)")
     mixed_group.add_argument('--burst_servers', type=int, default=2, help="Number of servers in each burst")

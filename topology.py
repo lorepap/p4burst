@@ -148,6 +148,70 @@ class LeafSpineTopology(BaseTopology):
                 self.net.addLink(f's{leaf}', f's{spine}', bw=self.bw, delay=f'{self.latency}ms')
 
 
+class LeafSpineTopologyDeflection(BaseTopology):
+    def __init__(self, num_hosts, num_leaf, num_spine, bw, latency):
+        super().__init__()
+        self.num_hosts = num_hosts
+        self.num_leaf = num_leaf
+        self.num_spine = num_spine
+        self.bw = bw
+        self.latency = latency
+        self.p4_programs = [f"/home/ubuntu/p4burst/p4src/sd/sd_sw_{i}.p4" for i in range(1, num_leaf + 1)]
+        self.create_switch_commands(num_leaf + num_spine)
+
+    def get_spine_switches(self):
+        return [switch for switch in self.net.switches()
+                if not any(host in nodes 
+                        for _, nodes in self.net.node_ports()[switch].items()
+                        for host in self.net.hosts())]
+        
+    def get_leaf_switches(self):
+        spine_switches = self.get_spine_switches()
+        return [switch for switch in self.net.switches() 
+                if switch not in spine_switches]
+        
+    def get_spine_ports (self, leaf):
+        spine_switches = self.get_spine_switches()
+        return list(filter(None, map(
+            lambda spine: self.get_connecting_port(leaf, spine),
+                spine_switches
+            )))
+
+    def generate_topology(self):
+        hosts_per_leaf = self.num_hosts // self.num_leaf
+
+        # Generate switches
+        for i in range(1, self.num_leaf + self.num_spine + 1):
+            self.net.addP4Switch(f's{i}', cli_input=os.path.join(self.path, f's{i}-commands.txt'))
+        
+        # self.net.setP4SourceAll(os.path.join(P4_PATH, self.p4_program))
+        
+        # Set p4 source depending on the switch type (leaf or spine)
+        # Input program (e.g. deflection) for the leaf
+        # Simple forwarding for the spine 
+        for i in range(1, self.num_leaf + 1):
+            self.net.setP4Source(f's{i}', os.path.join(P4_PATH, self.p4_programs[i - 1]))
+        for i in range(self.num_leaf + 1, self.num_leaf + self.num_spine + 1):
+            self.net.setP4Source(f's{i}', os.path.join(P4_PATH, 'l3_forwarding.p4'))
+
+        # Generate hosts
+        for i in range(1, self.num_hosts + 1):
+            self.net.addHost(f'h{i}')
+
+        # Connect hosts to leaf switches
+        for i in range(1, self.num_hosts + 1):
+            # leaf_num = ((i - 1) // hosts_per_leaf) + 1
+            leaf_id = ((i - 1) % self.num_leaf) + 1
+            print(f'Connecting h{i} to s{leaf_id}')
+            self.net.addLink(f'h{i}', f's{leaf_id}', bw=self.bw, delay=f'{self.latency}ms')
+
+        # Connect leaf switches to spine switches
+        for leaf in range(1, self.num_leaf + 1):
+            for spine in range(self.num_leaf + 1, self.num_leaf + self.num_spine + 1):
+                self.net.addLink(f's{leaf}', f's{spine}', bw=self.bw, delay=f'{self.latency}ms')
+
+
+
 class DumbbellTopology(BaseTopology):
     def __init__(self, num_hosts, bw, delay, p4_program='l3_forwarding.p4'):
         super().__init__()

@@ -886,7 +886,6 @@ package V1Switch<H, M>(Parser<H, M> p,
                        );
 # 5 "/home/ubuntu/p4burst/p4src/sd/sd.p4" 2
 
-
 # 1 "/home/ubuntu/p4burst/p4src/sd/includes/sd_consts.p4" 1
 
 
@@ -898,7 +897,7 @@ const bit<8> IP_PROTOCOLS_UDP = 17;
 const bit<16> BEE_PORT = 9999;
 const bit<32> TABLE_SIZE = 256;
 const bit<19> QUEUE_CAPACITY = 29; // QUEUE CAPACITY 1000 in bmv2
-# 8 "/home/ubuntu/p4burst/p4src/sd/sd.p4" 2
+# 7 "/home/ubuntu/p4burst/p4src/sd/sd.p4" 2
 # 1 "/home/ubuntu/p4burst/p4src/sd/includes/sd_headers.p4" 1
 
 
@@ -1006,6 +1005,7 @@ struct metadata_t {
 
     bit<16> port_idx_in_reg;
     bit<1> is_fw_port_full;
+    bit<8> switch_id; // Add this field
 
 }
 
@@ -1023,7 +1023,7 @@ struct pair16 {
     bit<16> low;
     bit<16> high;
 }
-# 9 "/home/ubuntu/p4burst/p4src/sd/sd.p4" 2
+# 8 "/home/ubuntu/p4burst/p4src/sd/sd.p4" 2
 # 1 "/home/ubuntu/p4burst/p4src/sd/includes/sd_parser.p4" 1
 
 
@@ -1064,7 +1064,10 @@ parser SimpleDeflectionParser(packet_in packet,
 
     state parse_tcp {
         packet.extract(hdr.tcp);
-        transition accept;
+        transition select(hdr.tcp.dstPort) {
+            BEE_PORT: parse_bee;
+            default: parse_flow;
+        }
     }
 
     state parse_udp {
@@ -1083,6 +1086,7 @@ parser SimpleDeflectionParser(packet_in packet,
 
     state parse_flow {
         packet.extract(hdr.flow);
+        log_msg("Parsing flow header: flow_id={}, seq={}", {hdr.flow.flow_id, hdr.flow.seq});
         transition accept;
     }
 }
@@ -1101,7 +1105,7 @@ control SimpleDeflectionDeparser(packet_out packet, in header_t hdr) {
         packet.emit(hdr.bee);
     }
 }
-# 10 "/home/ubuntu/p4burst/p4src/sd/sd.p4" 2
+# 9 "/home/ubuntu/p4burst/p4src/sd/sd.p4" 2
 # 1 "/home/ubuntu/p4burst/p4src/sd/includes/sd_checksums.p4" 1
 
 
@@ -1147,7 +1151,7 @@ control SimpleDeflectionComputeChecksum(inout header_t hdr, inout metadata_t met
             HashAlgorithm.csum16);
     }
 }
-# 11 "/home/ubuntu/p4burst/p4src/sd/sd.p4" 2
+# 10 "/home/ubuntu/p4burst/p4src/sd/sd.p4" 2
 # 1 "/home/ubuntu/p4burst/p4src/sd/sd_controls.p4" 1
 
 
@@ -1160,6 +1164,7 @@ control Forward(inout header_t hdr,
                inout standard_metadata_t standard_metadata) {
 
     action drop() {
+        log_msg("Dropping packet");
         mark_to_drop(standard_metadata);
     }
 
@@ -1215,7 +1220,7 @@ control Forward(inout header_t hdr,
         }
     }
 }
-# 12 "/home/ubuntu/p4burst/p4src/sd/sd.p4" 2
+# 11 "/home/ubuntu/p4burst/p4src/sd/sd.p4" 2
 
 /*
     Switch ingress pipeline
@@ -1226,15 +1231,24 @@ control SimpleDeflectionIngress(inout header_t hdr,
 
     Forward() forward;
 
+    // Add a register for the switch ID
+    register<bit<8>>(1) switch_id_register;
+    // Other registers
     register<bit<1>>(8) queue_occupancy_info;
     register<bit<19>>(8) queue_depth_info;
     register<bit<1>>(8) neighbor_switch_indicator;
     register<bit<1>>(1) is_fw_port_full_register;
 
+    action read_switch_id() {
+        switch_id_register.read(meta.switch_id, 0);
+    }
+
     counter(1, CounterType.packets) normal_ctr;
     counter(1, CounterType.packets) deflected_ctr;
+    counter(1, CounterType.packets) flow_header_counter;
 
     action drop() {
+        log_msg("Packet dropped: ingress_port={}, reason=explicit_drop", {standard_metadata.ingress_port});
         mark_to_drop(standard_metadata);
     }
 
@@ -1271,6 +1285,7 @@ control SimpleDeflectionIngress(inout header_t hdr,
 
 
     apply {
+        read_switch_id(); // This should be a constant (requires different p4 program per switch) 
         if (hdr.bee.isValid()) {
             queue_occupancy_info.write((bit<32>)hdr.bee.port_idx_in_reg, hdr.bee.queue_occ_info);
             queue_depth_info.write((bit<32>)hdr.bee.port_idx_in_reg, hdr.bee.queue_depth);
@@ -1279,14 +1294,14 @@ control SimpleDeflectionIngress(inout header_t hdr,
                    {hdr.bee.port_idx_in_reg, hdr.bee.queue_occ_info, hdr.bee.queue_depth});
         } else {
             //ingress_ctr.count(ingress_ctr_index);
-
             forward.apply(hdr, meta, standard_metadata);
             debug_enq_qdepth_table.apply();
 
             if (hdr.ipv4.isValid() && (hdr.ipv4.protocol == IP_PROTOCOLS_TCP || hdr.ipv4.protocol == IP_PROTOCOLS_UDP)) {
 
                 if (hdr.flow.isValid()) {
-                    log_msg("Ingress: port={}, size={}, flow_id={}, seq={}, timestamp={}", {standard_metadata.ingress_port, hdr.ipv4.totalLen, hdr.flow.flow_id, hdr.flow.seq, standard_metadata.ingress_global_timestamp});
+                    flow_header_counter.count(0);
+                    log_msg("Ingress: switch_id={}, port={}, size={}, flow_id={}, seq={}, timestamp={}", {meta.switch_id, standard_metadata.ingress_port, hdr.ipv4.totalLen, hdr.flow.flow_id, hdr.flow.seq, standard_metadata.ingress_global_timestamp});
                 }
 
                 queue_occupancy_info.read(meta.is_queue_full_0, (bit<32>)0);
