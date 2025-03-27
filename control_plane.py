@@ -305,8 +305,6 @@ class SimpleDeflectionControlPlane(BaseControlPlane):
             # Save all commands
             for i, leaf in enumerate(leaf_switches):
 
-                switch_id_command = [f"register_write SimpleDeflectionIngress.switch_id_register 0 {i}"]
-
                 spine_logical_ports = {port_mappings[leaf][port] for port in self.topology.get_spine_ports(leaf)}
 
                 register_commands = [
@@ -328,7 +326,6 @@ class SimpleDeflectionControlPlane(BaseControlPlane):
 
                 # Combine all commands
                 commands = (
-                    switch_id_command +
                     leaf_defaults + 
                     list(switch_commands[leaf]) +
                     register_commands +

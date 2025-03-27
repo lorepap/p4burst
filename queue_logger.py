@@ -35,6 +35,14 @@ def extract_single_value(output, register_name):
             return None
     return None
 
+def check_thrift_error(result):
+    """Check if the command output contains a Thrift connection error."""
+    error_msg = result.stderr.strip()
+    if "Could not connect to thrift client" in error_msg:
+        print(f"[!] Error: {error_msg}")
+        return True
+    return False
+
 def main(args):
     log_file = args.log
     port = args.port
@@ -58,13 +66,60 @@ def main(args):
         while True:
             # Run BMv2 CLI commands
             result_queue = subprocess.run(cli_cmd_queue, shell=True, capture_output=True, text=True)
+            if check_thrift_error(result_queue):
+                with open(log_file, "a") as f:
+                    f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - Error: Could not connect to thrift client\n")
+                print("\n[*] Stopping queue logging due to connection error. Log saved in queue_log.txt")
+                return
+            
             result_fw_full = subprocess.run(cli_cmd_fw_full, shell=True, capture_output=True, text=True)
+            if check_thrift_error(result_fw_full):
+                with open(log_file, "a") as f:
+                    f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - Error: Could not connect to thrift client\n")
+                print("\n[*] Stopping queue logging due to connection error. Log saved in queue_log.txt")
+                return
+            
             result_deq_depth_eg = subprocess.run(cli_cmd_deq_depth_eg, shell=True, capture_output=True, text=True)
+            if check_thrift_error(result_deq_depth_eg):
+                with open(log_file, "a") as f:
+                    f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - Error: Could not connect to thrift client\n")
+                print("\n[*] Stopping queue logging due to connection error. Log saved in queue_log.txt")
+                return
+            
             result_debug_eg_port = subprocess.run(cli_cmd_eg_port, shell=True, capture_output=True, text=True)
+            if check_thrift_error(result_debug_eg_port):
+                with open(log_file, "a") as f:
+                    f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - Error: Could not connect to thrift client\n")
+                print("\n[*] Stopping queue logging due to connection error. Log saved in queue_log.txt")
+                return
+            
             result_counter_normal = subprocess.run(cli_cmd_normal_counter, shell=True, capture_output=True, text=True)
+            if check_thrift_error(result_counter_normal):
+                with open(log_file, "a") as f:
+                    f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - Error: Could not connect to thrift client\n")
+                print("\n[*] Stopping queue logging due to connection error. Log saved in queue_log.txt")
+                return
+            
             result_counter_deflected = subprocess.run(cli_cmd_deflected_counter, shell=True, capture_output=True, text=True)
+            if check_thrift_error(result_counter_deflected):
+                with open(log_file, "a") as f:
+                    f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - Error: Could not connect to thrift client\n")
+                print("\n[*] Stopping queue logging due to connection error. Log saved in queue_log.txt")
+                return
+            
             result_queue_depths = subprocess.run(cli_cmd_queue_depths, shell=True, capture_output=True, text=True)
+            if check_thrift_error(result_queue_depths):
+                with open(log_file, "a") as f:
+                    f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - Error: Could not connect to thrift client\n")
+                print("\n[*] Stopping queue logging due to connection error. Log saved in queue_log.txt")
+                return
+            
             result_flow_pkt_counter = subprocess.run(cli_cmd_flow_pkt_counter, shell=True, capture_output=True, text=True)
+            if check_thrift_error(result_flow_pkt_counter):
+                with open(log_file, "a") as f:
+                    f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - Error: Could not connect to thrift client\n")
+                print("\n[*] Stopping queue logging due to connection error. Log saved in queue_log.txt")
+                return
 
             output_queue = result_queue.stdout.strip()
             output_fw_full = result_fw_full.stdout.strip()

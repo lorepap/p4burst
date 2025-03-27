@@ -1,3 +1,8 @@
+"""
+TODO:
+- update reward with fw port depth
+"""
+
 import os
 import pandas as pd
 import re
@@ -8,6 +13,18 @@ sys.path.append('/home/ubuntu/p4burst')
 from topology import LeafSpineTopology
 import traceback
 
+# Feature names for the RL dataset
+FEATURE_NAMES = (
+    ['total_queue_depth', 'packet_size']  # Simplified feature set
+)
+
+# All column names including metadata and targets
+ALL_COLUMN_NAMES = (
+    ['timestamp', 'action', 'reward'] + 
+    FEATURE_NAMES + 
+    ['flow_id', 'seq']
+)
+
 def parse_timestamp(ts_str):
     """Convert timestamp string to seconds."""
     ts_str = ts_str.strip("[]")
@@ -16,19 +33,34 @@ def parse_timestamp(ts_str):
 
 def compute_reward(row):
     """
-    Compute reward based on queue depths and reordering.
-    Lower queue depths are better, reordering incurs penalties.
+    Reward penalizes:
+    - High forward port depth when NOT deflecting (missed opportunity).
+    - High total queue depth (general congestion).
+    - Packet reordering strongly discouraged.
     """
-    # Extract queue depths (skip port 0 which starts with index 1)
-    queue_depths = [row[f'queue_depth_{p+1}'] for p in range(8)]
     
-    # Basic reward: negative sum of queue depths (lower is better)
-    reward = -sum(queue_depths)
+    fw_port_depth = row['fw_port_depth']
+    total_queue_depth = row['total_queue_depth']
+    reordering_flag = row['reordering_flag']
+    action = row['action']  # 1=deflect, 0=forward
     
-    # Apply penalty for reordering
-    if row['reordering_flag'] == 1:
-        reward -= 10  # Significant penalty for reordering
-        
+    reward = 0
+    
+    # 1. Penalize general congestion (total queue depth)
+    reward -= total_queue_depth * 0.5  # general penalty factor
+    
+    # 2. Burst-aware penalty: forward port depth
+    # Strong penalty if forward port depth is high and action is NOT deflecting
+    if action == 0:
+        reward -= fw_port_depth * 2.0  # strong penalty (missed deflection during burst)
+    else:
+        # small penalty proportional to forward port depth (encourage deflection only when needed)
+        reward -= fw_port_depth * 0.5
+    
+    # 3. Heavy penalty for reordering
+    if reordering_flag == 1:
+        reward -= 10  # strong penalty to discourage unnecessary deflection
+    
     return reward
 
 def parse_switch_log(log_file, output_csv):
@@ -50,10 +82,11 @@ def parse_switch_log(log_file, output_csv):
     os.makedirs(os.path.dirname(output_csv), exist_ok=True)
     
     # Regex patterns for parsing logs
-    # Updated ingress pattern to capture source IP, destination IP, and packet size
-    ingress_pattern = re.compile(r'Ingress: switch_id=(\d+), port=(\d+), size=(\d+), flow_id=(\d+), seq=(\d+), timestamp=(\d+)')
-    deflection_pattern = re.compile(r'Deflection: original_port=(\d+), deflected_to=(\d+), random_number=(\d+)')
-    normal_pattern = re.compile(r'Normal: port=(\d+)')
+    # Updated pattern to remove switch_id
+    ingress_pattern = re.compile(r'Ingress: port=(\d+), size=(\d+), flow_id=(\d+), seq=(\d+), timestamp=(\d+)')
+    deflection_pattern = re.compile(r'Deflection: original_port=(\d+), deflected_to=(\d+), random_number=(\d+), fw_port_depth=(\d+)')
+    normal_pattern = re.compile(r'Normal: port=(\d+)')  # Updated to match actual P4 log format
+    fw_port_depth_pattern = re.compile(r'Forward port depth: port=(\d+), depth=(\d+)')  # Added to capture fw_port_depth
     queue_depths_pattern = re.compile(r'Queue depths: q0=(\d+) q1=(\d+) q2=(\d+) q3=(\d+) q4=(\d+) q5=(\d+) q6=(\d+) q7=(\d+)')
     queue_occ_pattern = re.compile(r'Queue occupancy: q0=(\d+) q1=(\d+) q2=(\d+) q3=(\d+) q4=(\d+) q5=(\d+) q6=(\d+) q7=(\d+)')
     
@@ -73,20 +106,26 @@ def parse_switch_log(log_file, output_csv):
             if ingress_match := ingress_pattern.search(line):
                 pkt_cnt += 1
                 event['type'] = 'ingress'
-                event['switch_id'] = int(ingress_match.group(1))
-                event['port'] = int(ingress_match.group(2))
-                event['size'] = int(ingress_match.group(3))  # Packet size
-                event['flow_id'] = int(ingress_match.group(4))
-                event['seq'] = int(ingress_match.group(5))
-                event['timestamp'] = int(ingress_match.group(6))
+                # Remove switch_id from ingress pattern
+                event['port'] = int(ingress_match.group(1))
+                event['size'] = int(ingress_match.group(2))  # Packet size
+                event['flow_id'] = int(ingress_match.group(3))
+                event['seq'] = int(ingress_match.group(4))
+                event['timestamp'] = int(ingress_match.group(5))
             elif deflection_match := deflection_pattern.search(line):
                 event['type'] = 'deflection'
                 event['original_port'] = int(deflection_match.group(1))
                 event['deflected_to'] = int(deflection_match.group(2))
                 event['random_number'] = int(deflection_match.group(3))
+                event['fw_port_depth'] = int(deflection_match.group(4))  # Parse fw_port_depth from deflection log
             elif normal_match := normal_pattern.search(line):
                 event['type'] = 'normal'
                 event['port'] = int(normal_match.group(1))
+                # fw_port_depth will be added from the fw_port_depth log message
+            elif fw_port_depth_match := fw_port_depth_pattern.search(line):
+                event['type'] = 'fw_port_depth'
+                event['port'] = int(fw_port_depth_match.group(1))
+                event['depth'] = int(fw_port_depth_match.group(2))
             elif queue_depths_match := queue_depths_pattern.search(line):
                 event['type'] = 'queue_depths'
                 event['queue_depths'] = [
@@ -132,6 +171,9 @@ def parse_switch_log(log_file, output_csv):
     # Track current state
     current_queue_depth = {p: 0 for p in range(8)}
     current_queue_occ = {p: 0 for p in range(8)}
+    total_queue_depth = 0
+    fw_port_depth = 0  # Initialize fw_port_depth
+    fw_port_depths = {}  # Dictionary to store fw_port_depth by port number
     
     # Dataset creation
     dataset = []
@@ -139,20 +181,32 @@ def parse_switch_log(log_file, output_csv):
         if event['type'] == 'queue_depths':
             for i, depth in enumerate(event['queue_depths']):
                 current_queue_depth[i] = depth
+            total_queue_depth = sum(current_queue_depth.values())
         if event['type'] == 'queue_occ':
             for i, occ in enumerate(event['queue_occ']):
                 current_queue_occ[i] = occ
         elif event['type'] == 'ingress':
-            switch_id = event['switch_id']
             flow_id = event['flow_id']
             seq = event['seq']
             packet_size = event['size']  # Keep packet size
+        elif event['type'] == 'fw_port_depth':
+            # Store the fw_port_depth for the port
+            fw_port_depths[event['port']] = event['depth']
+        
         if event['type'] in ['deflection', 'normal']:
             # First create a record with just the state features and action
             # Reward will be computed after merging with receiver logs
             action = 1 if event['type'] == 'deflection' else 0
             
-            # Create data entry with all features
+            # Get fw_port_depth based on event type
+            if event['type'] == 'deflection':
+                fw_port_depth = event['fw_port_depth']
+            else:  # Normal event
+                port = event['port']
+                # Try to get fw_port_depth from the stored values
+                fw_port_depth = fw_port_depths.get(port, 0)
+            
+            # Create data entry without switch_id
             entry = {
                 'timestamp': event['timestamp_str'],
                 'action': action,
@@ -160,22 +214,16 @@ def parse_switch_log(log_file, output_csv):
                 'flow_id': flow_id,
                 'seq': seq,
                 'packet_size': packet_size,
-                'switch_id': switch_id
+                'total_queue_depth': total_queue_depth,
+                'fw_port_depth': fw_port_depth  # Add fw_port_depth
             }
-            
-            # Add queue depths for all ports
-            for p in range(8):
-                entry[f'queue_depth_{p+1}'] = current_queue_depth[p]
-                entry[f'queue_occ_{p+1}'] = current_queue_occ[p]
             
             dataset.append(entry)
     
-    # Write to CSV
+    # Write to CSV - remove switch_id from headers
     with open(output_csv, 'w', newline='') as csv_out:
-        headers = ['timestamp', 'action', 'reward'] + \
-                  [f'queue_depth_{p+1}' for p in range(8)] + \
-                  [f'queue_occ_{p+1}' for p in range(8)] + \
-                  ['packet_size', 'switch_id', 'flow_id', 'seq']
+        headers = ['timestamp', 'action', 'reward', 'total_queue_depth', 'fw_port_depth',
+                  'packet_size', 'flow_id', 'seq']
                   
         writer = csv.DictWriter(csv_out, fieldnames=headers)
         writer.writeheader()
@@ -282,14 +330,11 @@ def merge_by_flow_seq(switch_csv, receiver_csv, output_csv):
     cols = [col for col in cols if col not in ['seq', 'flow_id']]
     merged_df = merged_df[cols]
 
-    # For clarity - only include columns that exist
+    # For clarity - only include columns that exist, remove switch_id
     final_cols = []
     if 'timestamp' in merged_df.columns:
         final_cols.append('timestamp')
-    final_cols.extend(['action', 'reward'])
-    final_cols.extend([f'queue_depth_{p+1}' for p in range(8) if f'queue_depth_{p+1}' in merged_df.columns])
-    final_cols.extend([f'queue_occ_{p+1}' for p in range(8) if f'queue_occ_{p+1}' in merged_df.columns])
-    final_cols.extend(['packet_size', 'switch_id', 'reordering_flag', 'packet_type'])
+    final_cols.extend(['action', 'reward', 'total_queue_depth', 'fw_port_depth', 'packet_size', 'reordering_flag', 'packet_type'])
     
     # Only include columns that actually exist
     final_cols = [col for col in final_cols if col in merged_df.columns]
@@ -310,29 +355,26 @@ def combine_datasets(switch_datasets, host_logs, exp_dir):
 
     # File names
     combined_switch_csv = f"{exp_dir}/combined_switch_dataset.csv"
-    
-    # Look for client response logs too
-    # sender_logs = [f for f in os.listdir(exp_dir) if f.startswith('sender_') and f.endswith('_dataset.csv')]
-    # if sender_logs:
-    #     print(f"Found {len(sender_logs)} sender logs")
-    #     all_logs = receiver_logs + [f"{exp_dir}/{log}" for log in sender_logs]
-    # else:
-    #     all_logs = receiver_logs
-        
     final_receiver_csv = f"{exp_dir}/combined_receiver_log.csv"
     
     # Initialize dataframes
     receiver_df = None
     combined_df = None
     
-    # Read and combine switch datasets
-    for dataset in switch_datasets:
+    # Read and combine switch datasets - add switch_id to track source
+    for i, dataset in enumerate(switch_datasets):
         if os.path.exists(dataset):
             print(f"Reading switch dataset: {dataset}")
             df = pd.read_csv(dataset)
+            
+            # Add switch identifier to maintain separation between switches
+            switch_id = i + 1
+            df['switch_id'] = switch_id
+            
             if combined_df is None:
                 combined_df = df
             else:
+                # Stack datasets without sorting by timestamp
                 combined_df = pd.concat([combined_df, df], ignore_index=True)
     
     if combined_df is None or combined_df.empty:
@@ -342,6 +384,7 @@ def combine_datasets(switch_datasets, host_logs, exp_dir):
     # Save combined switch dataset
     combined_df.to_csv(combined_switch_csv, index=False)
     print(f"Combined {len(switch_datasets)} switch datasets into {combined_switch_csv}")
+    print(f"IMPORTANT: Transitions will be maintained within each switch's data")
     
     # Read and combine receiver logs (including client response logs)
     for log_file in host_logs:
@@ -370,24 +413,19 @@ def combine_datasets(switch_datasets, host_logs, exp_dir):
     return True
 
 
-if __name__ == "__main__":
-    print("Generating final dataset...")
-    exp_dir = 'tmp/20250317_212554'
-    os.makedirs(exp_dir, exist_ok=True)
-    topology = LeafSpineTopology(
-            num_hosts=2, 
-            num_leaf=2, 
-            num_spine=2, 
-            bw=10, 
-            latency=0.01,
-            p4_program="p4src/sd/sd.p4"
-    )
-    topology.generate_topology()
-    switch_datasets = collect_switch_logs(topology, exp_dir)
-    receiver_logs = [f'{exp_dir}/receiver_log.csv']
-    combined_switch_dataset, combined_receiver_dataset = combine_datasets(switch_datasets, receiver_logs, exp_dir)
-    final_dataset_file = f"{exp_dir}/final_dataset.csv"
-    if merge_by_flow_seq(combined_switch_dataset, combined_receiver_dataset, final_dataset_file):
-        print(f"Created final dataset: {final_dataset_file}")
-    print.info(f"Final dataset created at {exp_dir}/combined_dataset.csv")
-    print("RL pipeline execution completed.")
+# if __name__ == "__main__":
+#     print("Generating final dataset...")
+#     exp_dir = 'tmp/20250317_212554' # replace with actual exp_dir
+#     os.makedirs(exp_dir, exist_ok=True)
+#     topology = LeafSpineTopology(
+#             num_hosts=2, 
+#             num_leaf=2, 
+#             num_spine=2, 
+#             bw=10, 
+#             latency=0.01,
+#             p4_program="p4src/sd/sd.p4"
+#     )
+#     topology.generate_topology()
+#     switch_datasets = collect_switch_logs(topology, exp_dir)
+#     if combine_datasets(switch_datasets, host_logs, exp_dir):
+#         print("Successfully created final dataset")

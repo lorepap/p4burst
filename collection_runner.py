@@ -400,7 +400,7 @@ def parse_args():
                         help='Congestion control algorithm (default: cubic)')
     parser.add_argument('--packet_size', type=int, default=1472,
                         help='Packet size in bytes (default: 1472)')
-    parser.add_argument('--bursty_reply_size', type=int, default=40000,
+    parser.add_argument('--bursty_reply_size', type=int, default=4000,
                         help='Bursty reply size in bytes (default: 4000)')
     parser.add_argument('--burst_interval', type=float, default=0.2,
                         help='Bursty interval in seconds (default: 0.2)')

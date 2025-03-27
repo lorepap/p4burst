@@ -18,17 +18,11 @@ control SimpleDeflectionIngress(inout header_t hdr,
 
     Forward() forward;
 
-    // Add a register for the switch ID
-    register<bit<8>>(1) switch_id_register;
     // Other registers
     register<bit<1>>(8) queue_occupancy_info;
     register<bit<19>>(8) queue_depth_info;
     register<bit<1>>(8) neighbor_switch_indicator;
     register<bit<1>>(1) is_fw_port_full_register;
-
-    action read_switch_id() {
-        switch_id_register.read(meta.switch_id, 0);
-    }
 
     counter(1, CounterType.packets) normal_ctr;
     counter(1, CounterType.packets) deflected_ctr;
@@ -72,7 +66,6 @@ control SimpleDeflectionIngress(inout header_t hdr,
      
 
     apply {
-        read_switch_id();    // This should be a constant (requires different p4 program per switch) 
         if (hdr.bee.isValid()) { 
             queue_occupancy_info.write((bit<32>)hdr.bee.port_idx_in_reg, hdr.bee.queue_occ_info);
             queue_depth_info.write((bit<32>)hdr.bee.port_idx_in_reg, hdr.bee.queue_depth);
@@ -88,7 +81,7 @@ control SimpleDeflectionIngress(inout header_t hdr,
                 
                 if (hdr.flow.isValid()) {
                     flow_header_counter.count(0);
-                    log_msg("Ingress: switch_id={}, port={}, size={}, flow_id={}, seq={}, timestamp={}", {meta.switch_id, standard_metadata.ingress_port, hdr.ipv4.totalLen, hdr.flow.flow_id, hdr.flow.seq, standard_metadata.ingress_global_timestamp});
+                    log_msg("Ingress: port={}, size={}, flow_id={}, seq={}, timestamp={}", {standard_metadata.ingress_port, hdr.ipv4.totalLen, hdr.flow.flow_id, hdr.flow.seq, standard_metadata.ingress_global_timestamp});
                 }
                 
                 queue_occupancy_info.read(meta.is_queue_full_0, (bit<32>)0);
@@ -110,6 +103,10 @@ control SimpleDeflectionIngress(inout header_t hdr,
                 neighbor_switch_indicator.read(meta.neighbor_switch_indicator_7, (bit<32>)7);
 
                 queue_occupancy_info.read(meta.is_fw_port_full, (bit<32>)meta.fw_port_idx);
+                
+                // Read queue depth of forward port
+                bit<19> fw_port_depth;
+                queue_depth_info.read(fw_port_depth, (bit<32>)meta.fw_port_idx);
                 
                 // debug
                 is_fw_port_full_register.write(0, meta.is_fw_port_full);
@@ -168,9 +165,8 @@ control SimpleDeflectionIngress(inout header_t hdr,
                     set_deflect_egress_port_table.apply();
                     deflected_ctr.count(0);
                     
-                    log_msg("Deflection: original_port={}, deflected_to={}, random_number={}",
-                            {meta.fw_port_idx+1, meta.output_port_idx+1, meta.random_number});
-                    //ucast_port_debug_alu.execute(0);    // what is the value for idx
+                    log_msg("Deflection: original_port={}, deflected_to={}, random_number={}, fw_port_depth={}",
+                            {meta.fw_port_idx+1, meta.output_port_idx+1, meta.random_number, fw_port_depth});
                 }
                 else {
                     // normal forwarding
@@ -295,6 +291,11 @@ control SimpleDeflectionEgress(inout header_t hdr,
 
                 log_msg("Queue occupancy: q0={} q1={} q2={} q3={} q4={} q5={} q6={} q7={}",
                         {occ0, occ1, occ2, occ3, occ4, occ5, occ6, occ7});
+                
+                // Log the forward port depth in egress to match the queue depths
+                bit<19> fw_port_depth;
+                queue_depth_info.read(fw_port_depth, (bit<32>)meta.fw_port_idx);
+                log_msg("Forward port depth: port={}, depth={}", {meta.fw_port_idx+1, fw_port_depth});
 
                 // Dequeue queue depth
                 debug_deq_qdepth_table.apply();

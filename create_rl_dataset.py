@@ -11,9 +11,7 @@ import os
 
 # Feature names for the RL dataset
 FEATURE_NAMES = (
-    [f'queue_depth_{p+1}' for p in range(8)] + 
-    [f'queue_occ_{p+1}' for p in range(8)] + 
-    ['packet_size', 'switch_id']
+    ['total_queue_depth', 'packet_size']  # Simplified feature set
 )
 
 # All column names including metadata and targets
@@ -31,14 +29,14 @@ def parse_timestamp(ts_str):
 
 def compute_reward(row):
     """
-    Compute reward based on queue depths and reordering.
+    Compute reward based on total queue depth and reordering.
     Lower queue depths are better, reordering incurs penalties.
     """
-    # Extract queue depths (skip port 0 which starts with index 1)
-    queue_depths = [row[f'queue_depth_{p+1}'] for p in range(8)]
+    # Get total queue depth
+    total_depth = row['total_queue_depth']
     
-    # Basic reward: negative sum of queue depths (lower is better)
-    reward = -sum(queue_depths)
+    # Basic reward: negative total depth (lower is better)
+    reward = -total_depth
     
     # Apply penalty for reordering
     if row['reordering_flag'] == 1:
@@ -214,7 +212,7 @@ def parse_switch_log(log_file, output_csv):
     
     # Track current state
     current_queue_depth = {p: 0 for p in range(8)}
-    current_queue_occ = {p: 0 for p in range(8)}
+    current_queue_occ = {p: 0 for p in range(8)}  # Still track this for logging but won't use in features
     
     # Dataset creation
     dataset = []
@@ -226,7 +224,6 @@ def parse_switch_log(log_file, output_csv):
             for i, occ in enumerate(event['queue_occ']):
                 current_queue_occ[i] = occ
         elif event['type'] == 'ingress':
-            switch_id = event['switch_id']
             flow_id = event['flow_id']
             seq = event['seq']
             packet_size = event['size']  # Keep packet size
@@ -235,7 +232,10 @@ def parse_switch_log(log_file, output_csv):
             # Reward will be computed after merging with receiver logs
             action = 1 if event['type'] == 'deflection' else 0
             
-            # Create data entry with all features
+            # Calculate total queue depth
+            total_depth = sum(current_queue_depth.values())
+            
+            # Create data entry with simplified features
             entry = {
                 'timestamp': event['timestamp_str'],
                 'action': action,
@@ -243,22 +243,15 @@ def parse_switch_log(log_file, output_csv):
                 'flow_id': flow_id,
                 'seq': seq,
                 'packet_size': packet_size,
-                'switch_id': switch_id
+                'total_queue_depth': total_depth
             }
-            
-            # Add queue depths for all ports
-            for p in range(8):
-                entry[f'queue_depth_{p+1}'] = current_queue_depth[p]
-                entry[f'queue_occ_{p+1}'] = current_queue_occ[p]
             
             dataset.append(entry)
     
     # Write to CSV
     with open(output_csv, 'w', newline='') as csv_out:
         headers = ['timestamp', 'action', 'reward'] + \
-                  [f'queue_depth_{p+1}' for p in range(8)] + \
-                  [f'queue_occ_{p+1}' for p in range(8)] + \
-                  ['packet_size', 'switch_id', 'flow_id', 'seq']
+                  ['total_queue_depth', 'packet_size', 'flow_id', 'seq']
                   
         writer = csv.DictWriter(csv_out, fieldnames=headers)
         writer.writeheader()

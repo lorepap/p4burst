@@ -13,6 +13,7 @@ import subprocess
 import logging
 import time
 import itertools
+import shutil
 from datetime import datetime
 import pandas as pd
 import json
@@ -193,14 +194,16 @@ class ExperimentRunner:
             try:
                 subprocess.run(f"cp -r {tmp_exp_dir}/* {target_dir}", shell=True, check=True)
                 logger.info(f"Copied experiment data from {tmp_exp_dir} to {target_dir}")
+                
+                # Remove the temporary directory after successful copy
+                shutil.rmtree(tmp_exp_dir)
+                logger.info(f"Removed temporary directory {tmp_exp_dir}")
             except subprocess.CalledProcessError as e:
                 logger.error(f"Failed to copy experiment data: {e}")
+            except Exception as e:
+                logger.error(f"Failed to remove temporary directory: {e}")
         else:
             logger.error(f"Experiment directory '{tmp_exp_dir}' not found")
-
-        # Remove tmp dir
-        # logger.info("Removing tmp dir...")
-        # os.remove(tmp_exp_dir)
         
         # Record experiment result
         result_record = {

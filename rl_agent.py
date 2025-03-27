@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
-# filepath: /home/ubuntu/p4burst/train_rl_agent.py
 
 import pandas as pd
 import numpy as np
 import tensorflow as tf
 from tensorflow import keras
-from collections import deque
+from collections import deque, defaultdict
 import argparse
 import matplotlib.pyplot as plt
 import random
 import os
 import importlib.util
 import json
+import glob
 
 # Import FEATURE_NAMES from create_rl_dataset.py
 def import_feature_names():
@@ -22,8 +22,62 @@ def import_feature_names():
     spec.loader.exec_module(module)
     return module.FEATURE_NAMES
 
-# Get feature names from create_rl_dataset.py
+# If FEATURE_NAMES doesn't include fw_port_depth, we need to add it
+# And ensure switch_id is removed
 FEATURE_NAMES = import_feature_names()
+if 'fw_port_depth' not in FEATURE_NAMES:
+    FEATURE_NAMES.append('fw_port_depth')
+if 'switch_id' in FEATURE_NAMES:
+    FEATURE_NAMES.remove('switch_id')
+
+def discover_experiment_datasets(specific_folder=None):
+    """
+    Discover experiment datasets in the workspace.
+    If specific_folder is provided, look for final_dataset.csv in that folder only.
+    Otherwise, automatically discover all experiment datasets.
+    
+    Args:
+        specific_folder (str, optional): Path to a specific experiment folder.
+        
+    Returns:
+        list: Paths to all final_dataset.csv files found.
+    """
+    dataset_paths = []
+    
+    # If a specific folder is provided, use that instead of auto-discovery
+    if specific_folder:
+        dataset_path = os.path.join(specific_folder, "final_dataset.csv")
+        if os.path.exists(dataset_path):
+            dataset_paths.append(dataset_path)
+            print(f"Using provided dataset: {dataset_path}")
+        else:
+            print(f"Warning: No final_dataset.csv found in {specific_folder}")
+        return dataset_paths
+        
+    # Automatic discovery (existing functionality)
+    base_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "experiments")
+    
+    print(f"Looking for experiment directories in: {base_path}")
+    
+    # Find all directories matching experiment_* pattern
+    all_dirs = sorted(glob.glob(os.path.join(base_path, "experiment_*")))
+    
+    # Filter to only include directories where the last character is a digit
+    experiment_dirs = [d for d in all_dirs if os.path.basename(d)[-1].isdigit()]
+    
+    print(f"Found {len(experiment_dirs)} experiment directories")
+    print(f"Filtered out {len(all_dirs) - len(experiment_dirs)} non-experiment directories")
+    
+    # Find final_dataset.csv in each experiment directory
+    for exp_dir in experiment_dirs:
+        dataset_path = os.path.join(exp_dir, "final_dataset.csv")
+        if os.path.exists(dataset_path):
+            dataset_paths.append(dataset_path)
+            print(f"Found dataset: {dataset_path}")
+        else:
+            print(f"Warning: No final_dataset.csv found in {exp_dir}")
+    
+    return dataset_paths
 
 class DQNAgent:
     def __init__(self, state_size, action_size, batch_size=32, gamma=0.95):
@@ -58,6 +112,11 @@ class DQNAgent:
             next_state = next_state.flatten()
             
         self.memory.append((state, action, reward, next_state, done))
+    
+    def memorize_batch(self, states, actions, rewards, next_states, dones):
+        """Add multiple experiences to memory at once"""
+        for i in range(len(states)):
+            self.memorize(states[i], actions[i], rewards[i], next_states[i], dones[i])
 
     def act(self, state):
         # Always choose the best action without exploration
@@ -99,106 +158,150 @@ class DQNAgent:
         self.model.save_weights(name)
 
 
-def preprocess_dataset(csv_file):
+def get_global_normalization_parameters(csv_files):
     """
-    Preprocess the dataset for offline DQN training.
-    Uses the FEATURE_NAMES list from create_rl_dataset.py for consistency.
+    Calculate global normalization parameters across all datasets.
+    Returns a dictionary of scale factors for each feature.
     """
-    data = pd.read_csv(csv_file)
-    
-    print("\nDataset sample:")
-    print(data.head())
-    print(f"\nAction distribution: {data['action'].value_counts().to_dict()}")
-    print(f"Reward statistics: Min={data['reward'].min()}, Max={data['reward'].max()}, Mean={data['reward'].mean():.2f}")
-    
-    # Use the imported FEATURE_NAMES for state representation
-    feature_cols = list(FEATURE_NAMES)  # Make a copy to avoid modifying the original
-    
-    # Check which features are actually available in the dataset
-    available_features = [col for col in feature_cols if col in data.columns]
-    missing_features = [col for col in feature_cols if col not in data.columns]
-    
-    if missing_features:
-        print(f"\nWarning: Some expected features are missing from the dataset: {missing_features}")
-    
-    print(f"\nUsing {len(available_features)} state features: {available_features}")
-    
-    # Normalize state features
-    data_norm = data.copy()
-
-    # Keep scale factors dict for denormalization
     scale_factors = {}
     
-    # Normalize queue depth features
-    queue_depth_cols = [col for col in available_features if col.startswith('queue_depth_')]
-    for col in queue_depth_cols:
-        max_val = data[col].max()
-        scale_factors[col] = int(max_val)
-        if max_val > 0:  # Avoid division by zero
-            data_norm[col] = data[col] / max_val
-            print(f"Normalized {col}: max value = {max_val}")
+    print("Calculating global normalization parameters...")
+    for csv_file in csv_files:
+        print(f"Processing {csv_file} for normalization...")
+        data = pd.read_csv(csv_file)
+        
+        # Get available features - ensure we don't look for switch_id
+        feature_cols = [col for col in FEATURE_NAMES if col in data.columns and col != 'switch_id']
+        
+        # Find max value for total queue depth and fw_port_depth
+        if 'total_queue_depth' in feature_cols:
+            max_val = data['total_queue_depth'].max()
+            if 'total_queue_depth' in scale_factors:
+                scale_factors['total_queue_depth'] = max(scale_factors['total_queue_depth'], int(max_val))
+            else:
+                scale_factors['total_queue_depth'] = int(max_val)
+                
+        # Add normalization for fw_port_depth
+        if 'fw_port_depth' in feature_cols:
+            max_val = data['fw_port_depth'].max()
+            if 'fw_port_depth' in scale_factors:
+                scale_factors['fw_port_depth'] = max(scale_factors['fw_port_depth'], int(max_val))
+            else:
+                scale_factors['fw_port_depth'] = int(max_val)
+        
+        # Find max values for packet size if present
+        if 'packet_size' in feature_cols:
+            max_pkt_size = data['packet_size'].max()
+            if 'packet_size' in scale_factors:
+                scale_factors['packet_size'] = max(scale_factors['packet_size'], int(max_pkt_size))
+            else:
+                scale_factors['packet_size'] = int(max_pkt_size)
     
-    if 'packet_size' in available_features:
-        max_pkt_size = data['packet_size'].max()
-        scale_factors['packet_size'] = int(max_pkt_size)
-        if max_pkt_size > 0:
-            data_norm['packet_size'] = (data['packet_size'] / max_pkt_size).round(2)
-            print(f"Normalized packet_size: max value = {max_pkt_size}")
-
-    # Save scale factors to a file
-    scale_factors_file = f'model/scale_factors.json'
-    with open(scale_factors_file, 'w') as f:
-        json.dump(scale_factors, f)
-    print("\nScale factors for denormalization saved to", scale_factors_file)
-
-    # Extract state, action, reward
-    states = data_norm[available_features].values
-    actions = data_norm['action'].values
-    rewards = data_norm['reward'].values
+    # Ensure all features have a scale factor (default to 1)
+    for feature in FEATURE_NAMES:
+        if feature not in scale_factors:
+            scale_factors[feature] = 1
     
-    # Create next_state by shifting
-    next_states = np.vstack([states[1:], states[-1]])
-    
-    # Create done flag (True for last state, False otherwise)
-    dones = np.zeros(len(states), dtype=bool)
-    dones[-1] = True
-    
-    return states, actions, rewards, next_states, dones, available_features
+    print("Global normalization parameters:", scale_factors)
+    return scale_factors
 
 
-def train_offline_dqn(csv_file, model_dir, epochs=100, batch_size=32):
+def process_dataset(data, scale_factors, available_features):
     """
-    Train a DQN agent using offline data.
+    Segments a dataset by switch, processes features, and returns ready-to-use segments.
+    Ensures transitions only occur within the same switch's data.
     """
-    # Create model directory if it doesn't exist
+    segments = []
+    
+    # Sort by timestamp if available
+    if 'timestamp' in data.columns:
+        data = data.sort_values('timestamp')
+    
+    # Extract features, actions, rewards
+    states = data[available_features].values
+    actions = data['action'].values
+    rewards = data['reward'].values
+    
+    # Create next_states by shifting
+    if len(states) > 1:
+        next_states = np.vstack([states[1:], states[-1]])
+        
+        # Mark only the last state as done
+        dones = np.zeros(len(states), dtype=bool)
+        dones[-1] = True
+        
+        segments.append((states, actions, rewards, next_states, dones))
+        print(f"Added segment with {len(states)} transitions")
+    
+    return segments
+
+def train_multi_scenario_dqn(csv_files, model_dir, epochs=100, batch_size=32):
+    """
+    Train a DQN agent using data from multiple network scenarios.
+    No longer segments by switch_id.
+    """
     os.makedirs(model_dir, exist_ok=True)
     
-    # Load and preprocess the dataset
-    states, actions, rewards, next_states, dones, _ = preprocess_dataset(csv_file)
+    # Calculate global normalization parameters
+    scale_factors = get_global_normalization_parameters(csv_files)
     
-    # Get state and action dimensions
-    state_size = states.shape[1]
-    action_size = len(np.unique(actions))
+    # Save scale factors for later use
+    with open(os.path.join(model_dir, 'scale_factors.json'), 'w') as f:
+        json.dump(scale_factors, f)
     
+    # Get all available features across all datasets
+    all_features = set()
+    for csv_file in csv_files:
+        data = pd.read_csv(csv_file)
+        all_features.update([col for col in FEATURE_NAMES if col in data.columns])
+    
+    # Process all datasets
+    all_segments = []
+    
+    for csv_file in csv_files:
+        print(f"\nProcessing {csv_file}")
+        data = pd.read_csv(csv_file)
+        
+        # Check which features are in this dataset
+        available_features = [col for col in all_features if col in data.columns]
+        print(f"Available features: {available_features}")
+        
+        # For any missing features in this dataset, raise error
+        for feature in FEATURE_NAMES:
+            if feature not in data.columns and feature != 'switch_id':
+                raise ValueError(f"Feature '{feature}' is missing in dataset {csv_file}")
+                
+        # Process dataset (no longer segmenting by switch_id)
+        segments = process_dataset(data, scale_factors, available_features)
+        
+        # Add segments to overall collection
+        all_segments.extend(segments)
+        
+        print(f"Added {len(segments)} segments from {csv_file}")
+    
+    # Determine state and action sizes
+    state_size = len(all_features)
+    
+    # Find all unique actions across datasets
+    all_actions = set()
+    for segment in all_segments:
+        all_actions.update(segment[1])  # actions are at index 1
+    
+    action_size = max(all_actions) + 1
     print(f"\nState size: {state_size}, Action size: {action_size}")
-    print(f"Dataset size: {len(states)} samples")
     
-    # Print some example state-action-reward triples
-    print("\nExample state-action-reward samples:")
-    for i in range(min(5, len(states))):
-        print(f"State {i}: {states[i]}")
-        print(f"Action: {actions[i]}")
-        print(f"Reward: {rewards[i]}")
-        print(f"Next state: {next_states[i]}")
-        print("---")
+    # Combine all segments for training
+    total_samples = sum(len(segment[0]) for segment in all_segments)
+    print(f"Total training samples: {total_samples}")
     
     # Initialize the agent
     agent = DQNAgent(state_size, action_size, batch_size=batch_size)
     
-    # Fill the agent's memory with the dataset
-    for i in range(len(states)):
-        agent.memorize(states[i].reshape(1, -1), actions[i], rewards[i], 
-                      next_states[i].reshape(1, -1), dones[i])
+    # Fill the agent's memory with the segmented datasets
+    for segment in all_segments:
+        states, actions, rewards, next_states, dones = segment
+        for i in range(len(states)):
+            agent.memorize(states[i], actions[i], rewards[i], next_states[i], dones[i])
     
     # Training loop
     losses = []
@@ -206,15 +309,22 @@ def train_offline_dqn(csv_file, model_dir, epochs=100, batch_size=32):
         loss = agent.replay()
         losses.append(loss)
         
-        #if e % 10 == 0:
-        print(f"Epoch {e}/{epochs}, Loss: {loss:.4f}")
+        if e % 10 == 0:
+            print(f"Epoch {e}/{epochs}, Loss: {loss:.4f}")
         
         # Update target model periodically
         if e % 50 == 0:
             agent.update_target_model()
     
-    # Save the trained model 
+    # Save the trained model
     agent.save(os.path.join(model_dir, "dqn_model.h5"))
+    
+    # Also save the feature list and switch count for use during inference
+    # with open(os.path.join(model_dir, 'feature_config.json'), 'w') as f:
+    #     json.dump({
+    #         'features': all_features,
+    #         'switch_count': switch_count
+    #     }, f)
     
     # Plot training loss
     plt.figure(figsize=(10, 5))
@@ -226,78 +336,43 @@ def train_offline_dqn(csv_file, model_dir, epochs=100, batch_size=32):
     
     print(f"\nTraining completed. Model saved to {os.path.join(model_dir, 'dqn_model.h5')}")
     
-    return agent
-
-
-def evaluate_agent(agent, csv_file):
-    """
-    Evaluate the trained agent based on cumulative reward.
-    """
-    # Load and preprocess the dataset
-    states, actions, rewards, next_states, dones, _ = preprocess_dataset(csv_file)
-
-    # Track agent's predictions
-    predicted_actions = []
-    total_reward = 0
-    
-    print("\nEvaluating agent on test set...")
-    for i in range(len(states)):
-        state = states[i].reshape(1, -1)
-        action = agent.act(state)
-        predicted_actions.append(action)
-        total_reward += rewards[i]
-    
-    # Compare predictions with dataset actions
-    actions_match = np.array(predicted_actions) == actions
-    match_percentage = 100 * np.mean(actions_match)
-    
-    print(f"\nAction match percentage: {match_percentage:.2f}%")
-    print(f"Predicted action distribution: {np.unique(predicted_actions, return_counts=True)}")
-    print(f"Actual action distribution: {np.unique(actions, return_counts=True)}")
-    
-    avg_reward = total_reward / len(states)
-    print(f"Agent evaluation: Average reward = {avg_reward:.4f}")
-    
-    return avg_reward
-
-def evaluate_network_performance(agent, csv_file):
-    """
-    Evaluate agent based on network performance metrics like queue depth.
-    """
-    states, _, rewards, next_states, dones, _ = preprocess_dataset(csv_file)
-
-    total_queue_depth_reduction = 0
-    for i in range(len(states)):
-        action = agent.act(states[i].reshape(1, -1))
-        total_queue_depth_reduction += states[i].sum() - next_states[i].sum()
-
-    avg_queue_reduction = total_queue_depth_reduction / len(states)
-    print(f"Average Queue Depth Reduction: {avg_queue_reduction:.4f}")
-
-    return avg_queue_reduction
-
+    return agent, all_features
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Train offline DQN agent')
-    parser.add_argument('--csv', required=True, help='Path to the dataset CSV')
+    parser = argparse.ArgumentParser(description='Train offline DQN agent with multiple scenarios')
     parser.add_argument('--model_dir', default='model', help='Directory to save the model')
     parser.add_argument('--epochs', type=int, default=1000, help='Number of training epochs')
     parser.add_argument('--batch_size', type=int, default=32, help='Batch size for training')
     parser.add_argument('--random_seed', type=int, default=42, help='Random seed for reproducibility')
+    parser.add_argument('--experiment_folder', default=None, help='Path to a specific experiment folder (overrides auto-discovery)')
     args = parser.parse_args()
     
     # Set random seeds for reproducibility
-    import random
     random.seed(args.random_seed)
     np.random.seed(args.random_seed)
     tf.random.set_seed(args.random_seed)
     
-    # Train the agent
-    agent = train_offline_dqn(args.csv, args.model_dir, epochs=args.epochs, batch_size=args.batch_size)
+    # Discover experiment datasets (auto or specific)
+    csv_files = discover_experiment_datasets(args.experiment_folder)
     
-    # Evaluate the agent
-    #evaluate_agent(agent, args.csv)
+    if not csv_files:
+        print("Error: No experiment datasets found!")
+        return
+    
+    print(f"Training on {len(csv_files)} datasets")
+    
+    # Train the agent on multiple datasets
+    agent, all_features = train_multi_scenario_dqn(
+        csv_files, 
+        args.model_dir, 
+        epochs=args.epochs, 
+        batch_size=args.batch_size
+    )
+    
+    # Load scale factors for evaluation
+    with open(os.path.join(args.model_dir, 'scale_factors.json'), 'r') as f:
+        scale_factors = json.load(f)
 
 
 if __name__ == '__main__':
