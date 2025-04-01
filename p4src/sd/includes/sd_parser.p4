@@ -37,7 +37,7 @@ parser SimpleDeflectionParser(packet_in packet,
         packet.extract(hdr.tcp);
         transition select(hdr.tcp.dstPort) {
             BEE_PORT: parse_bee;
-            default: parse_flow;
+            default: accept;
         }
     }
 
