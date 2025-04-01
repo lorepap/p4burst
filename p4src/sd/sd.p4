@@ -1,5 +1,15 @@
 /* P4-16 */
 
+/*
+
+TODO (data collection):
+- remove the flow header
+- add different deflection thresholds
+- deflection strategy (1: random, 2: round robin, 3: least loaded ?)
+
+*/
+
+
 #include <core.p4>
 #include <v1model.p4>
 
@@ -70,19 +80,25 @@ control SimpleDeflectionIngress(inout header_t hdr,
             queue_occupancy_info.write((bit<32>)hdr.bee.port_idx_in_reg, hdr.bee.queue_occ_info);
             queue_depth_info.write((bit<32>)hdr.bee.port_idx_in_reg, hdr.bee.queue_depth);
             
-            log_msg("BeeIngress: port={}, queue_occ={}, queue_depth={}", 
-                   {hdr.bee.port_idx_in_reg, hdr.bee.queue_occ_info, hdr.bee.queue_depth});
+            // log_msg("BeeIngress: port={}, queue_occ={}, queue_depth={}", 
+            //        {hdr.bee.port_idx_in_reg, hdr.bee.queue_occ_info, hdr.bee.queue_depth});
         } else {
             //ingress_ctr.count(ingress_ctr_index);
             forward.apply(hdr, meta, standard_metadata);
             debug_enq_qdepth_table.apply();
             
-            if (hdr.ipv4.isValid() && (hdr.ipv4.protocol == IP_PROTOCOLS_TCP || hdr.ipv4.protocol == IP_PROTOCOLS_UDP)) {
+            if (hdr.ipv4.isValid()) {
+
                 
-                if (hdr.flow.isValid()) {
-                    flow_header_counter.count(0);
-                    log_msg("Ingress: port={}, size={}, flow_id={}, seq={}, timestamp={}", {standard_metadata.ingress_port, hdr.ipv4.totalLen, hdr.flow.flow_id, hdr.flow.seq, standard_metadata.ingress_global_timestamp});
+                if (hdr.tcp.isValid()) {
+                    log_msg("Ingress: port={}, size={}, timestamp={}", {standard_metadata.ingress_port, hdr.ipv4.totalLen, standard_metadata.ingress_global_timestamp});
+                    log_msg("TCP: src_ip={}, dst_ip={}, src_port={}, dst_port={}, seq={}", 
+                        {hdr.ipv4.srcAddr, hdr.ipv4.dstAddr, hdr.tcp.srcPort, hdr.tcp.dstPort, hdr.tcp.seqNo});
                 }
+                
+                // if (hdr.flow.isValid()) {
+                //     flow_header_counter.count(0);
+                // }
                 
                 queue_occupancy_info.read(meta.is_queue_full_0, (bit<32>)0);
                 queue_occupancy_info.read(meta.is_queue_full_1, (bit<32>)1);
@@ -226,8 +242,8 @@ control SimpleDeflectionEgress(inout header_t hdr,
             queue_occupancy_info.read(hdr.bee.queue_occ_info, (bit<32>)hdr.bee.port_idx_in_reg);
             queue_depth_info.read(hdr.bee.queue_depth, (bit<32>)hdr.bee.port_idx_in_reg);
             
-            log_msg("BeeEgress: port={}, queue_occ={}, queue_depth={}", 
-                   {hdr.bee.port_idx_in_reg, hdr.bee.queue_occ_info, hdr.bee.queue_depth});
+            // log_msg("BeeEgress: port={}, queue_occ={}, queue_depth={}", 
+            //        {hdr.bee.port_idx_in_reg, hdr.bee.queue_occ_info, hdr.bee.queue_depth});
             
             recirculate_preserving_field_list(0);
             
@@ -251,7 +267,7 @@ control SimpleDeflectionEgress(inout header_t hdr,
                 arrival_counter.read(count, (bit<32>)standard_metadata.egress_port);
                 count = count + 1;
                 arrival_counter.write((bit<32>)standard_metadata.egress_port, count);
-                log_msg("Arrival: port={}, count={}", {standard_metadata.egress_port, count});
+                // log_msg("Arrival: port={}, count={}", {standard_metadata.egress_port, count});
 
                 // Write both queue occupancy and queue depth to registers
                 queue_occupancy_info.write((bit<32>)meta.port_idx_in_reg, meta.is_fw_port_full);
@@ -289,8 +305,8 @@ control SimpleDeflectionEgress(inout header_t hdr,
                 queue_occupancy_info.read(occ6, (bit<32>)6);
                 queue_occupancy_info.read(occ7, (bit<32>)7);
 
-                log_msg("Queue occupancy: q0={} q1={} q2={} q3={} q4={} q5={} q6={} q7={}",
-                        {occ0, occ1, occ2, occ3, occ4, occ5, occ6, occ7});
+                // log_msg("Queue occupancy: q0={} q1={} q2={} q3={} q4={} q5={} q6={} q7={}",
+                //         {occ0, occ1, occ2, occ3, occ4, occ5, occ6, occ7});
                 
                 // Log the forward port depth in egress to match the queue depths
                 bit<19> fw_port_depth;

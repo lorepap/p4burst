@@ -11,6 +11,7 @@ import os
 from scapy.all import sniff, Ether, IP, UDP, Packet, BitField, bind_layers
 import threading
 import struct
+import subprocess
 
 class BaseServer(ABC):
     def __init__(self, port=12345, ip=None, congestion_control='cubic', exp_id=''):
@@ -24,6 +25,8 @@ class BaseServer(ABC):
 
         if self.exp_id:
             self.flowtracker = FlowMetricsManager(self.exp_id)
+        # Add tcpdump process tracking
+        self.tcpdump_process = None
 
     def handle_request(self, conn):
         try:
@@ -62,6 +65,49 @@ class BaseServer(ABC):
             except Exception as e:
                 logging.error(f"[{self.ip}]: Error accepting connection: {e}")
                 logging.error(traceback.format_exc())
+
+    def start_packet_capture(self, capture_file=None):
+        """Start tcpdump packet capture to a pcap file."""
+        if not capture_file and self.exp_id:
+            # Generate a descriptive filename if not provided
+            server_type = self.__class__.__name__.lower()
+            capture_file = f"tmp/{self.exp_id}/{server_type}_{self.ip}_{self.port}.pcap"
+        
+        if capture_file:
+            try:
+                logging.info(f"[{self.ip}]: Starting packet capture to {capture_file}")
+                # Create directory if it doesn't exist
+                os.makedirs(os.path.dirname(capture_file), exist_ok=True)
+                
+                # Start tcpdump on the port, capturing full packets
+                cmd = [
+                    "tcpdump", 
+                    "-i", "any",                  # Capture on any interface
+                    "-w", capture_file,           # Write to pcap file
+                    f"port {self.port}",          # Filter for specific port
+                    "-s", "0"                     # Capture entire packets
+                ]
+                self.tcpdump_process = subprocess.Popen(cmd)
+                logging.info(f"[{self.ip}]: Packet capture started (PID: {self.tcpdump_process.pid})")
+            except Exception as e:
+                logging.error(f"[{self.ip}]: Failed to start packet capture: {e}")
+        else:
+            logging.warning(f"[{self.ip}]: No capture file specified, packet capture disabled")
+    
+    def stop_packet_capture(self):
+        """Stop the tcpdump packet capture process."""
+        if self.tcpdump_process:
+            try:
+                logging.info(f"[{self.ip}]: Stopping packet capture")
+                self.tcpdump_process.terminate()
+                self.tcpdump_process.wait(timeout=3)
+                logging.info(f"[{self.ip}]: Packet capture stopped")
+            except subprocess.TimeoutExpired:
+                logging.warning(f"[{self.ip}]: Timeout stopping packet capture, forcing kill")
+                self.tcpdump_process.kill()
+            except Exception as e:
+                logging.error(f"[{self.ip}]: Error stopping packet capture: {e}")
+            self.tcpdump_process = None
 
 
 class IperfServer(BaseServer):
@@ -396,3 +442,150 @@ class DataCollectionServer(BaseServer):
         except Exception as e:
             logging.error(f"[{self.ip}]: Error sending burst response to {addr[0]}:{addr[1]}: {e}")
             logging.error(traceback.format_exc())
+
+
+class BackgroundTcpServer(BaseServer):
+    """Server that handles background TCP traffic streams."""
+    def __init__(self, ip=None, port=12345, exp_id='', capture_pcap=True):
+        super().__init__(port, ip, exp_id=exp_id)
+        self.log_file = os.path.join('tmp', exp_id, f"bg_server_{self.ip}_{self.port}.csv")
+        self.capture_pcap = capture_pcap
+        
+        # Initialize the CSV log file
+        with open(self.log_file, 'w', newline='') as csvfile:
+            writer = csv.writer(csvfile)
+            writer.writerow(["timestamp", "src_ip", "dst_ip", "port", "bytes_received"])
+        
+        logging.info(f"[{self.ip}]: Background TCP Server initialized with log file: {self.log_file}")
+    
+    def start(self):
+        """Start the TCP server for background traffic collection."""
+        # Start packet capture if enabled
+        if self.capture_pcap and self.exp_id:
+            pcap_file = f"tmp/{self.exp_id}/bg_server_{self.ip}_{self.port}.pcap"
+            self.start_packet_capture(pcap_file)
+        
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            s.bind(('0.0.0.0', self.port))
+            s.listen(10)  # Allow up to 10 pending connections
+            logging.info(f"[{self.ip}]: Background TCP server listening on port {self.port}")
+            
+            try:
+                while True:
+                    try:
+                        conn, addr = s.accept()
+                        # Handle each connection in a separate thread
+                        client_thread = threading.Thread(
+                            target=self.handle_connection, 
+                            args=(conn, addr), 
+                            daemon=True
+                        )
+                        client_thread.start()
+                    except KeyboardInterrupt:
+                        raise
+                    except Exception as e:
+                        logging.error(f"[{self.ip}]: Error accepting connection: {e}")
+                        logging.error(traceback.format_exc())
+            except KeyboardInterrupt:
+                logging.info(f"[{self.ip}]: Background TCP server shutting down gracefully.")
+                self.stop_packet_capture()
+            except Exception as e:
+                logging.error(f"[{self.ip}]: Error accepting connection: {e}")
+                logging.error(traceback.format_exc())
+                self.stop_packet_capture()
+    
+    def handle_connection(self, conn, addr):
+        """Handle a single TCP connection for background traffic."""
+        src_ip = addr[0]
+        dst_ip = self.ip
+        port = self.port
+        total_bytes = 0
+        
+        try:
+            # Set socket timeout
+            conn.settimeout(5)
+            
+            # Start receiving data
+            arrival_time = time.time()
+            while True:
+                data = conn.recv(4096)
+                if not data:
+                    break
+                total_bytes += len(data)
+            
+            # Log connection details to CSV
+            with open(self.log_file, 'a', newline='') as csvfile:
+                writer = csv.writer(csvfile)
+                writer.writerow([arrival_time, src_ip, dst_ip, port, total_bytes])
+                
+            logging.debug(f"Completed background TCP connection from {src_ip}: {total_bytes} bytes")
+                
+        except Exception as e:
+            logging.error(f"[{self.ip}]: Error handling connection from {src_ip}: {e}")
+        finally:
+            conn.close()
+
+
+class BurstyTcpServer(BaseServer):
+    """Server that handles bursty TCP request/response traffic."""
+    def __init__(self, ip=None, port=12346, exp_id='', burst_reply_size=40000, capture_pcap=True):
+        super().__init__(port, ip, exp_id=exp_id)
+        self.burst_reply_size = burst_reply_size
+        self.capture_pcap = capture_pcap
+        
+        logging.info(f"[{self.ip}]: Bursty TCP Server initialized with reply size: {self.burst_reply_size}")
+    
+    def start(self):
+        """Start the TCP server for bursty request/response traffic."""
+        # Start packet capture if enabled
+        if self.capture_pcap and self.exp_id:
+            pcap_file = f"tmp/{self.exp_id}/bursty_server_{self.ip}_{self.port}.pcap"
+            self.start_packet_capture(pcap_file)
+        
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            s.bind(('0.0.0.0', self.port))
+            s.listen(10)  # Allow up to 10 pending connections
+            logging.info(f"[{self.ip}]: Bursty TCP server listening on port {self.port}")
+            
+            try:
+                while True:
+                    try:
+                        conn, addr = s.accept()
+                        # Handle each connection in a separate thread
+                        client_thread = threading.Thread(
+                            target=self.handle_burst_request, 
+                            args=(conn, addr), 
+                            daemon=True
+                        )
+                        client_thread.start()
+                    except KeyboardInterrupt:
+                        raise
+                    except Exception as e:
+                        logging.error(f"[{self.ip}]: Error accepting connection: {e}")
+                        logging.error(traceback.format_exc())
+            except KeyboardInterrupt:
+                logging.info(f"[{self.ip}]: Bursty TCP server shutting down gracefully.")
+                self.stop_packet_capture()
+            except Exception as e:
+                logging.error(f"[{self.ip}]: Error accepting connection: {e}")
+                logging.error(traceback.format_exc())
+                self.stop_packet_capture()
+    
+    def handle_burst_request(self, conn, addr):
+        """Handle a burst request - send large response."""
+        try:
+            # Receive any request data (but don't need it)
+            conn.recv(1024)
+            
+            # Send burst response
+            response = b'B' * self.burst_reply_size
+            conn.sendall(response)
+            
+            logging.debug(f"Sent burst response of {self.burst_reply_size} bytes to {addr[0]}")
+            
+        except Exception as e:
+            logging.error(f"[{self.ip}]: Error handling burst request from {addr[0]}: {e}")
+        finally:
+            conn.close()

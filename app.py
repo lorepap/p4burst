@@ -3,8 +3,8 @@ import socket
 import time
 import random
 from abc import ABC, abstractmethod
-from client import BaseClient, BurstyClient, BackgroundClient, IperfClient, DataCollectionClient, TestCollectionClient
-from server import BaseServer, BurstyServer, BackgroundServer, IperfServer, DataCollectionServer, TestCollectionServer
+from client import BaseClient, BurstyClient, BackgroundClient, IperfClient, DataCollectionClient, TestCollectionClient, BackgroundTcpClient, BurstyTcpClient
+from server import BaseServer, BurstyServer, BackgroundServer, IperfServer, DataCollectionServer, TestCollectionServer, BackgroundTcpServer, BurstyTcpServer
 import logging
 import os
 import csv
@@ -171,55 +171,76 @@ class IperfApp(App):
             self.client.start()  # Send a single packet and then exit
 
 
-class TestCollectionApp(App):
-    """
-    N clients to 1 server
-    """
-    def __init__(self, args):
-        super().__init__(args)
-        if self.mode == 'server':
-            self.server = TestCollectionServer(ip=args.server_ips[0], port=args.port, exp_id=args.exp_id, log_file=args.server_csv_file)
-        elif self.mode == 'client':
-            self.client = TestCollectionClient(server_ip=args.server_ips[0], server_port=args.port, 
-                            num_packets=args.num_packets, interval=args.interval, num_flows=args.num_flows,
-                            exp_id=args.exp_id, congestion_control=args.congestion_control, packet_size=args.packet_size)
+# class TestCollectionApp(App):
+#     """
+#     N clients to 1 server
+#     """
+#     def __init__(self, args):
+#         super().__init__(args)
+#         if self.mode == 'server':
+#             self.server = TestCollectionServer(ip=args.server_ips[0], port=args.port, exp_id=args.exp_id, log_file=args.server_csv_file)
+#         elif self.mode == 'client':
+#             self.client = TestCollectionClient(server_ip=args.server_ips[0], server_port=args.port, 
+#                             num_packets=args.num_packets, interval=args.interval, num_flows=args.num_flows,
+#                             exp_id=args.exp_id, congestion_control=args.congestion_control, packet_size=args.packet_size)
 
-    def run(self):
-        if self.mode == 'server':
-            self.server.start()
-        elif self.mode == 'client':
-            self.client.start()
+#     def run(self):
+#         if self.mode == 'server':
+#             self.server.start()
+#         elif self.mode == 'client':
+#             self.client.start()
 
 class DataCollectionApp(App):
     """
-    Client-server app that simulates mixed background and bursty traffic.
+    Client-server app that simulates mixed background and bursty traffic using TCP.
     """
     def __init__(self, args):
         super().__init__(args)
         if self.mode == 'server':
-            self.server = DataCollectionServer(
-                ip=args.server_ips[0], 
-                port=args.port, 
-                exp_id=args.exp_id, 
-                log_file=args.server_csv_file,
-                burst_reply_size=args.burst_reply_size
-            )
+            if args.traffic_type == 'background':
+                self.server = BackgroundTcpServer(
+                    ip=args.server_ips[0], 
+                    port=args.port, 
+                    exp_id=args.exp_id, 
+                    #log_file=args.server_csv_file,
+                    capture_pcap=not args.disable_pcap
+                )
+            elif args.traffic_type == 'burst':
+                self.server = BurstyTcpServer(
+                    ip=args.server_ips[0], 
+                    port=args.port, 
+                    exp_id=args.exp_id,
+                    burst_reply_size=args.burst_reply_size,
+                    capture_pcap=not args.disable_pcap
+                )
+            else:
+                raise ValueError(f"Invalid traffic type: {args.traffic_type}. Choose 'background' or 'burst'.")
         elif self.mode == 'client':
-            self.client = DataCollectionClient(
-                server_ips=args.server_ips, 
-                server_port=args.port,
-                num_packets=args.num_packets, 
-                interval=args.interval, 
-                #num_flows=args.num_flows,
-                exp_id=args.exp_id, 
-                congestion_control=args.congestion_control, 
-                packet_size=args.packet_size,
-                burst_interval=args.burst_interval,
-                burst_servers=args.burst_servers,
-                burst_reply_size=args.burst_reply_size,
-                log_file=args.client_csv_file,
-                duration=args.duration
-            )
+            if args.traffic_type == 'background':
+                self.client = BackgroundTcpClient(
+                    server_ips=args.server_ips, 
+                    flow_iat=args.bg_flow_iat, 
+                    flow_size=args.flow_size,
+                    exp_id=args.exp_id, 
+                    congestion_control=args.congestion_control, 
+                    #log_file=args.client_csv_file,
+                    duration=args.duration,
+                    capture_pcap=not args.disable_pcap
+                )
+            elif args.traffic_type == 'burst':
+                self.client = BurstyTcpClient(
+                    server_ips=args.server_ips, 
+                    burst_interval=args.burst_interval,
+                    burst_servers=args.burst_servers,
+                    burst_reply_size=args.burst_reply_size,
+                    exp_id=args.exp_id, 
+                    congestion_control=args.congestion_control, 
+                    #log_file=args.client_csv_file,
+                    duration=args.duration,
+                    capture_pcap=not args.disable_pcap
+                )
+            else:
+                raise ValueError(f"Invalid traffic type: {args.traffic_type}. Choose 'background' or 'burst'.")
 
     def run(self):
         if self.mode == 'server':
@@ -241,7 +262,7 @@ def main():
     parser.add_argument('--congestion_control', type=str, default='cubic', help="Congestion control algorithm (for background app)")
     parser.add_argument('--port', type=int, default=12345, help="Port (for mixed app)")
 
-    # Create a group for each application type's arguments
+    # Burst and background (with traces, for inference and testing)
     bursty_group = parser.add_argument_group('bursty', 'Arguments for bursty application')
     bursty_group.add_argument('--reply_size', required=False, type=int, default=40000)
     bursty_group.add_argument('--incast_scale', required=False, type=int, help="Number of servers to send requests in a single query")
@@ -253,26 +274,19 @@ def main():
     background_group.add_argument('--iat', required=False, nargs='+', type=float, help="List of inter-arrival times")
 
     single_group = parser.add_argument_group('single', 'Arguments for simple packet application')
-    # No additional arguments needed for single group
 
-    # collect_group = parser.add_argument_group('test_collect', 'Arguments for data collection application')
-    # collect_group.add_argument('--num_packets', type=int, default=1000, help="Number of packets per flow")
-    # collect_group.add_argument('--interval', type=float, default=0.001, help="Interval between packets")
-    # collect_group.add_argument('--num_flows', type=int, default=1, help="Number of flows (for collect app)")
-    # collect_group.add_argument('--server_csv_file', type=str, help="Server CSV file (for collect app)")
-    # collect_group.add_argument('--packet_size', type=int, default=1000, help="Packet size (for collect app)")
-
-    mixed_group = parser.add_argument_group('collect', 'Arguments for mixed traffic collection')
-    mixed_group.add_argument('--num_packets', type=int, default=1000, help="Number of packets per background flow")
-    mixed_group.add_argument('--interval', type=float, default=0.001, help="Interval between packets")
-    mixed_group.add_argument('--num_flows', type=int, default=1, help="Number of background flows")
-    mixed_group.add_argument('--server_csv_file', type=str, help="Server CSV file")
-    mixed_group.add_argument('--client_csv_file', type=str, help="Client CSV file")
-    mixed_group.add_argument('--packet_size', type=int, default=1000, help="Packet size")
-    mixed_group.add_argument('--burst_interval', type=float, default=1.0, help="Time between bursts (seconds)")
-    mixed_group.add_argument('--burst_servers', type=int, default=2, help="Number of servers in each burst")
-    mixed_group.add_argument('--burst_reply_size', type=int, default=40000, help="Size of burst response")
-
+    # Bursty and background (collect and write metrics)
+    collect_group = parser.add_argument_group('collect', 'Arguments for traffic collection')
+    collect_group.add_argument('--bg_flow_iat', type=float, default=0.01, help="Interval between background flows")
+    collect_group.add_argument('--num_flows', type=int, default=1, help="Number of background flows")
+    collect_group.add_argument('--server_csv_file', type=str, help="Server CSV file")
+    collect_group.add_argument('--client_csv_file', type=str, help="Client CSV file")
+    collect_group.add_argument('--flow_size', type=int, default=1000, help="Flow size")
+    collect_group.add_argument('--burst_interval', type=float, default=1.0, help="Time between bursts (seconds)")
+    collect_group.add_argument('--burst_servers', type=int, default=2, help="Number of servers in each burst")
+    collect_group.add_argument('--burst_reply_size', type=int, default=40000, help="Size of burst response")
+    collect_group.add_argument('--traffic_type', choices=['background', 'burst'], help='Type of traffic to generate (background or burst)')
+    collect_group.add_argument('--disable_pcap', action='store_true', help="Disable pcap capture")
 
     args = parser.parse_args()
 
@@ -283,8 +297,8 @@ def main():
         app = BackgroundApp(args)
     elif args.type == 'single':
         app = SimplePacketApp(args)
-    elif args.type == 'test_collect':
-        app = TestCollectionApp(args)
+    # elif args.type == 'test_collect':
+    #     app = TestCollectionApp(args)
     elif args.type == 'collect':
         app = DataCollectionApp(args)
     else:
