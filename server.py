@@ -12,6 +12,8 @@ from scapy.all import sniff, Ether, IP, UDP, Packet, BitField, bind_layers
 import threading
 import struct
 import subprocess
+import signal
+import sys
 
 class BaseServer(ABC):
     def __init__(self, port=12345, ip=None, congestion_control='cubic', exp_id=''):
@@ -27,6 +29,18 @@ class BaseServer(ABC):
             self.flowtracker = FlowMetricsManager(self.exp_id)
         # Add tcpdump process tracking
         self.tcpdump_process = None
+        self.running = True
+        
+        # Set up signal handlers
+        signal.signal(signal.SIGINT, self._signal_handler)
+        signal.signal(signal.SIGTERM, self._signal_handler)
+
+    def _signal_handler(self, signum, frame):
+        """Handle shutdown signals gracefully."""
+        logging.info(f"[{self.ip}]: Received shutdown signal {signum}")
+        self.running = False
+        self.stop_packet_capture()
+        sys.exit(0)
 
     def handle_request(self, conn):
         try:
@@ -51,7 +65,7 @@ class BaseServer(ABC):
             s.listen()
             logging.info(f"[{self.ip}]: Server listening on port {self.port}")
             try:
-                while True:
+                while self.running:
                     try:
                         conn, addr = s.accept()
                     except KeyboardInterrupt:
@@ -62,9 +76,13 @@ class BaseServer(ABC):
                         self.handle_request(conn)
             except KeyboardInterrupt:
                 logging.info(f"[{self.ip}]: Server shutting down gracefully.")
+                self.stop_packet_capture()
             except Exception as e:
                 logging.error(f"[{self.ip}]: Error accepting connection: {e}")
                 logging.error(traceback.format_exc())
+                self.stop_packet_capture()
+            finally:
+                self.stop_packet_capture()
 
     def start_packet_capture(self, capture_file=None):
         """Start tcpdump packet capture to a pcap file."""
@@ -76,21 +94,51 @@ class BaseServer(ABC):
         if capture_file:
             try:
                 logging.info(f"[{self.ip}]: Starting packet capture to {capture_file}")
-                # Create directory if it doesn't exist
-                os.makedirs(os.path.dirname(capture_file), exist_ok=True)
+                # Create directory if it doesn't exist and ensure it's writable
+                capture_dir = os.path.dirname(capture_file)
+                os.makedirs(capture_dir, exist_ok=True)
+                # Ensure the directory is writable
+                os.chmod(capture_dir, 0o777)
                 
                 # Start tcpdump on the port, capturing full packets
                 cmd = [
+                    "sudo", 
+                    "-n",  # Non-interactive mode
                     "tcpdump", 
                     "-i", "any",                  # Capture on any interface
                     "-w", capture_file,           # Write to pcap file
                     f"port {self.port}",          # Filter for specific port
-                    "-s", "0"                     # Capture entire packets
+                    "-s", "0",                    # Capture entire packets
+                    "-U",                         # Use buffered output
+                    "-W", "1",                    # Use 1 buffer
+                    "-C", "1000"                  # Rotate files at 1000MB
                 ]
-                self.tcpdump_process = subprocess.Popen(cmd)
+                
+                # Run tcpdump with sudo and redirect stderr to capture any errors
+                self.tcpdump_process = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    preexec_fn=os.setpgrp  # Create new process group
+                )
+                
+                # Check if process started successfully
+                if self.tcpdump_process.poll() is not None:
+                    # Process terminated immediately, get error message
+                    _, stderr = self.tcpdump_process.communicate()
+                    error_msg = stderr.decode()
+                    raise Exception(f"tcpdump failed to start: {error_msg}")
+                
                 logging.info(f"[{self.ip}]: Packet capture started (PID: {self.tcpdump_process.pid})")
             except Exception as e:
                 logging.error(f"[{self.ip}]: Failed to start packet capture: {e}")
+                # Try to clean up if process was created but failed
+                if hasattr(self, 'tcpdump_process') and self.tcpdump_process:
+                    try:
+                        self.tcpdump_process.terminate()
+                    except:
+                        pass
+                    self.tcpdump_process = None
         else:
             logging.warning(f"[{self.ip}]: No capture file specified, packet capture disabled")
     
@@ -99,15 +147,41 @@ class BaseServer(ABC):
         if self.tcpdump_process:
             try:
                 logging.info(f"[{self.ip}]: Stopping packet capture")
+                # First try SIGTERM
                 self.tcpdump_process.terminate()
-                self.tcpdump_process.wait(timeout=3)
+                try:
+                    # Wait for tcpdump to finish writing
+                    self.tcpdump_process.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    # If SIGTERM didn't work, try SIGINT
+                    logging.warning(f"[{self.ip}]: SIGTERM timeout, trying SIGINT")
+                    self.tcpdump_process.send_signal(signal.SIGINT)
+                    try:
+                        self.tcpdump_process.wait(timeout=2)
+                    except subprocess.TimeoutExpired:
+                        # If still not responding, force kill
+                        logging.warning(f"[{self.ip}]: SIGINT timeout, forcing kill")
+                        self.tcpdump_process.kill()
+                        self.tcpdump_process.wait(timeout=1)
+                
                 logging.info(f"[{self.ip}]: Packet capture stopped")
-            except subprocess.TimeoutExpired:
-                logging.warning(f"[{self.ip}]: Timeout stopping packet capture, forcing kill")
-                self.tcpdump_process.kill()
             except Exception as e:
                 logging.error(f"[{self.ip}]: Error stopping packet capture: {e}")
-            self.tcpdump_process = None
+            finally:
+                self.tcpdump_process = None
+
+    def cleanup(self):
+        """Clean up resources before exit."""
+        try:
+            self.stop_packet_capture()
+            if hasattr(self, 'flowtracker'):
+                self.flowtracker.close()
+        except Exception as e:
+            logging.error(f"[{self.ip}]: Error during cleanup: {e}")
+
+    def __del__(self):
+        """Ensure cleanup on object destruction."""
+        self.cleanup()
 
 
 class IperfServer(BaseServer):
@@ -460,21 +534,39 @@ class BackgroundTcpServer(BaseServer):
     
     def start(self):
         """Start the TCP server for background traffic collection."""
-        # Start packet capture if enabled
-        if self.capture_pcap and self.exp_id:
-            pcap_file = f"tmp/{self.exp_id}/bg_server_{self.ip}_{self.port}.pcap"
-            self.start_packet_capture(pcap_file)
-        
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            s.bind(('0.0.0.0', self.port))
-            s.listen(10)  # Allow up to 10 pending connections
-            logging.info(f"[{self.ip}]: Background TCP server listening on port {self.port}")
+        try:
+            # Start packet capture if enabled
+            if self.capture_pcap and self.exp_id:
+                pcap_file = f"tmp/{self.exp_id}/bg_server_{self.ip}_{self.port}.pcap"
+                self.start_packet_capture(pcap_file)
             
-            try:
-                while True:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                # Enable TCP_NODELAY to prevent buffering
+                s.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+                
+                # Set MSS (Maximum Segment Size) to influence packet size
+                s.setsockopt(socket.IPPROTO_TCP, socket.TCP_MAXSEG, 1460)  # Common datacenter MSS
+                
+                # Limit the send buffer size to prevent large bursts
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 16384)  # Moderate buffer size
+                
+                s.bind(('0.0.0.0', self.port))
+                s.listen(10)  # Allow up to 10 pending connections
+                logging.info(f"[{self.ip}]: Background TCP server listening on port {self.port}")
+                
+                while self.running:
                     try:
                         conn, addr = s.accept()
+                        # Enable TCP_NODELAY for the connection
+                        conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+                        
+                        # Set MSS for this connection
+                        conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_MAXSEG, 1460)
+                        
+                        # Set send buffer size for this connection
+                        conn.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 16384)
+                        
                         # Handle each connection in a separate thread
                         client_thread = threading.Thread(
                             target=self.handle_connection, 
@@ -487,13 +579,13 @@ class BackgroundTcpServer(BaseServer):
                     except Exception as e:
                         logging.error(f"[{self.ip}]: Error accepting connection: {e}")
                         logging.error(traceback.format_exc())
-            except KeyboardInterrupt:
-                logging.info(f"[{self.ip}]: Background TCP server shutting down gracefully.")
-                self.stop_packet_capture()
-            except Exception as e:
-                logging.error(f"[{self.ip}]: Error accepting connection: {e}")
-                logging.error(traceback.format_exc())
-                self.stop_packet_capture()
+        except KeyboardInterrupt:
+            logging.info(f"[{self.ip}]: Background TCP server shutting down gracefully.")
+        except Exception as e:
+            logging.error(f"[{self.ip}]: Error in server: {e}")
+            logging.error(traceback.format_exc())
+        finally:
+            self.cleanup()
     
     def handle_connection(self, conn, addr):
         """Handle a single TCP connection for background traffic."""
@@ -509,7 +601,7 @@ class BackgroundTcpServer(BaseServer):
             # Start receiving data
             arrival_time = time.time()
             while True:
-                data = conn.recv(4096)
+                data = conn.recv(4096)  # Receive in chunks
                 if not data:
                     break
                 total_bytes += len(data)
@@ -529,7 +621,7 @@ class BackgroundTcpServer(BaseServer):
 
 class BurstyTcpServer(BaseServer):
     """Server that handles bursty TCP request/response traffic."""
-    def __init__(self, ip=None, port=12346, exp_id='', burst_reply_size=40000, capture_pcap=True):
+    def __init__(self, ip=None, port=12346, exp_id='', burst_reply_size=4000, capture_pcap=True):
         super().__init__(port, ip, exp_id=exp_id)
         self.burst_reply_size = burst_reply_size
         self.capture_pcap = capture_pcap
@@ -538,21 +630,39 @@ class BurstyTcpServer(BaseServer):
     
     def start(self):
         """Start the TCP server for bursty request/response traffic."""
-        # Start packet capture if enabled
-        if self.capture_pcap and self.exp_id:
-            pcap_file = f"tmp/{self.exp_id}/bursty_server_{self.ip}_{self.port}.pcap"
-            self.start_packet_capture(pcap_file)
-        
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            s.bind(('0.0.0.0', self.port))
-            s.listen(10)  # Allow up to 10 pending connections
-            logging.info(f"[{self.ip}]: Bursty TCP server listening on port {self.port}")
+        try:
+            # Start packet capture if enabled
+            if self.capture_pcap and self.exp_id:
+                pcap_file = f"tmp/{self.exp_id}/bursty_server_{self.ip}_{self.port}.pcap"
+                self.start_packet_capture(pcap_file)
             
-            try:
-                while True:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                # Enable TCP_NODELAY to prevent buffering
+                s.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+                
+                # Set MSS (Maximum Segment Size) to influence packet size
+                s.setsockopt(socket.IPPROTO_TCP, socket.TCP_MAXSEG, 1460)  # Common datacenter MSS
+                
+                # Limit the send buffer size to prevent large bursts
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 16384)  # Moderate buffer size
+                
+                s.bind(('0.0.0.0', self.port))
+                s.listen(10)  # Allow up to 10 pending connections
+                logging.info(f"[{self.ip}]: Bursty TCP server listening on port {self.port}")
+                
+                while self.running:
                     try:
                         conn, addr = s.accept()
+                        # Enable TCP_NODELAY for the connection
+                        conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+                        
+                        # Set MSS for this connection
+                        conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_MAXSEG, 1460)
+                        
+                        # Set send buffer size for this connection
+                        conn.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 16384)
+                        
                         # Handle each connection in a separate thread
                         client_thread = threading.Thread(
                             target=self.handle_burst_request, 
@@ -565,21 +675,21 @@ class BurstyTcpServer(BaseServer):
                     except Exception as e:
                         logging.error(f"[{self.ip}]: Error accepting connection: {e}")
                         logging.error(traceback.format_exc())
-            except KeyboardInterrupt:
-                logging.info(f"[{self.ip}]: Bursty TCP server shutting down gracefully.")
-                self.stop_packet_capture()
-            except Exception as e:
-                logging.error(f"[{self.ip}]: Error accepting connection: {e}")
-                logging.error(traceback.format_exc())
-                self.stop_packet_capture()
+        except KeyboardInterrupt:
+            logging.info(f"[{self.ip}]: Bursty TCP server shutting down gracefully.")
+        except Exception as e:
+            logging.error(f"[{self.ip}]: Error in server: {e}")
+            logging.error(traceback.format_exc())
+        finally:
+            self.cleanup()
     
     def handle_burst_request(self, conn, addr):
-        """Handle a burst request - send large response."""
+        """Handle a burst request - send large response and let TCP handle segmentation."""
         try:
             # Receive any request data (but don't need it)
             conn.recv(1024)
-            
-            # Send burst response
+
+            # Send burst response - TCP will automatically segment based on network parameters
             response = b'B' * self.burst_reply_size
             conn.sendall(response)
             

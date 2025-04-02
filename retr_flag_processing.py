@@ -7,14 +7,14 @@ import glob
 
 def analyze_server_pcap(pcap_file, output_csv):
     """
-    Analyze a single server pcap file to detect retransmissions.
+    Analyze a single server pcap file to detect out-of-order packets.
     
     Args:
         pcap_file: Path to the server pcap file
         output_csv: Path to save the CSV output
         
     Returns:
-        Tuple of (total_packets, retransmissions)
+        Tuple of (total_packets, out_of_order_packets)
     """
     print(f"Processing PCAP file: {pcap_file}")
     
@@ -25,15 +25,17 @@ def analyze_server_pcap(pcap_file, output_csv):
             tshark_path='/usr/bin/tshark'
         )
         
-        # Dictionary to track which sequence numbers have been seen for each flow
+        # Dictionary to track flow state
         # Key: (src_ip, src_port, dst_ip, dst_port)
-        # Value: dictionary of sequence numbers to sets of payload lengths
-        flow_seq_nums = {}
+        # Value: dict containing:
+        #   - expected_seq: next expected sequence number
+        #   - max_seq: highest sequence number seen
+        flow_state = {}
         
-        # List to store packet details with retransmission flags
+        # List to store packet details with out-of-order flags
         packet_entries = []
         
-        print("Processing packets to identify retransmissions...")
+        print("Processing packets to identify out-of-order packets...")
         for pkt in capture:
             try:
                 # Skip non-TCP packets
@@ -49,18 +51,10 @@ def analyze_server_pcap(pcap_file, output_csv):
                 
                 # Extract sequence number using raw (absolute) value
                 try:
-                    # First try to get the raw sequence number
                     seq_num = int(tcp.seq_raw)
                 except AttributeError:
-                    # Fall back to regular sequence - might be relative
                     seq_num = int(tcp.seq)
-                    
-                    # If this is TCP flags suggest this is a SYN packet, it's likely the ISN
-                    is_syn = hasattr(tcp, 'flags_syn') and tcp.flags_syn == '1'
-                    if not is_syn and hasattr(tcp, 'analysis_initial_rtt'):
-                        # This appears to be using relative sequence numbers
-                        # Add warning that sequence numbers might not match
-                        print("Warning: Using relative sequence numbers - may not match P4 logs")
+                    print("Warning: Using relative sequence numbers - may not match P4 logs")
                 
                 # Try to get payload length
                 try:
@@ -68,24 +62,31 @@ def analyze_server_pcap(pcap_file, output_csv):
                 except AttributeError:
                     payload_len = 0
                 
-                # Check if this flow has been seen before
-                if flow_key not in flow_seq_nums:
-                    flow_seq_nums[flow_key] = {}
-                    is_retransmission = 0
+                # Initialize flow state if not seen before
+                if flow_key not in flow_state:
+                    flow_state[flow_key] = {
+                        'expected_seq': seq_num + payload_len,
+                        'max_seq': seq_num + payload_len
+                    }
+                    is_out_of_order = 0
                 else:
-                    # More accurate retransmission detection
-                    is_retransmission = 0
-                    if seq_num in flow_seq_nums[flow_key]:
-                        # Check if we've seen this sequence number with a payload before
-                        previous_payloads = flow_seq_nums[flow_key][seq_num]
-                        # If we've seen this exact sequence number with a payload, it's a retransmission
-                        if payload_len > 0 and payload_len in previous_payloads:
-                            is_retransmission = 1
-
-                # Store sequence number with its payload length
-                if seq_num not in flow_seq_nums[flow_key]:
-                    flow_seq_nums[flow_key][seq_num] = set()
-                flow_seq_nums[flow_key][seq_num].add(payload_len)
+                    state = flow_state[flow_key]
+                    
+                    # Check if this is an out-of-order packet
+                    is_out_of_order = 0
+                    
+                    # A packet is out-of-order if:
+                    # 1. Its sequence number is greater than the expected sequence number
+                    # 2. It's not the first packet of the connection
+                    if seq_num > state['expected_seq'] and state['max_seq'] > seq_num:
+                        is_out_of_order = 1
+                    
+                    # Update flow state
+                    state['max_seq'] = max(state['max_seq'], seq_num + payload_len)
+                    
+                    # Update expected sequence number if this packet is in order
+                    if seq_num == state['expected_seq']:
+                        state['expected_seq'] = seq_num + payload_len
                 
                 # Get timestamp in a readable format
                 try:
@@ -93,7 +94,7 @@ def analyze_server_pcap(pcap_file, output_csv):
                 except AttributeError:
                     timestamp = datetime.now()
                 
-                # Add entry with retransmission flag
+                # Add entry with out-of-order flag
                 packet_entries.append({
                     'timestamp': timestamp,
                     'src_ip': ip.src,
@@ -102,7 +103,7 @@ def analyze_server_pcap(pcap_file, output_csv):
                     'dst_port': int(tcp.dstport),
                     'tcp_seq': seq_num,
                     'payload_length': payload_len,
-                    'retr_flag': is_retransmission
+                    'out_of_order_flag': is_out_of_order
                 })
                 
             except AttributeError:
@@ -122,18 +123,18 @@ def analyze_server_pcap(pcap_file, output_csv):
         df.to_csv(output_csv, index=False)
         
         total_packets = len(df)
-        retransmissions = df['retr_flag'].sum()
+        out_of_order_packets = df['out_of_order_flag'].sum()
         
-        return total_packets, retransmissions
+        return total_packets, out_of_order_packets
         
     except Exception as e:
         print(f"Error processing packet capture {pcap_file}: {e}")
         return 0, 0
 
-def add_retransmission_flags(exp_dir):
+def add_out_of_order_flags(exp_dir):
     """
     Find all server pcap files in the experiment directory, analyze them for
-    retransmissions, and create corresponding CSV files.
+    out-of-order packets, and create corresponding CSV files.
     
     Args:
         exp_dir: Experiment directory containing pcap files
@@ -141,7 +142,7 @@ def add_retransmission_flags(exp_dir):
     Returns:
         List of created CSV files
     """
-    print(f"Analyzing retransmissions in experiment: {exp_dir}")
+    print(f"Analyzing out-of-order packets in experiment: {exp_dir}")
     
     # Find all server pcap files
     server_pcap_pattern = os.path.join(exp_dir, 'bg_server_*.pcap')
@@ -154,7 +155,7 @@ def add_retransmission_flags(exp_dir):
     print(f"Found {len(server_pcap_files)} server pcap files")
     
     created_files = []
-    total_stats = {'packets': 0, 'retransmissions': 0}
+    total_stats = {'packets': 0, 'out_of_order': 0}
     
     # Process each server pcap file
     for pcap_file in server_pcap_files:
@@ -163,22 +164,22 @@ def add_retransmission_flags(exp_dir):
         server_info = filename.replace('background_server_', '').replace('.pcap', '')
         
         # Create output CSV name
-        output_csv = os.path.join(exp_dir, f'retransmission_data_{server_info}.csv')
+        output_csv = os.path.join(exp_dir, f'out_of_order_data_{server_info}.csv')
         
         # Process the pcap file
-        packets, retransmissions = analyze_server_pcap(pcap_file, output_csv)
+        packets, out_of_order = analyze_server_pcap(pcap_file, output_csv)
         
         if packets > 0:
-            print(f"Server {server_info}: Processed {packets} packets, found {retransmissions} retransmissions")
+            print(f"Server {server_info}: Processed {packets} packets, found {out_of_order} out-of-order packets")
             created_files.append(output_csv)
             total_stats['packets'] += packets
-            total_stats['retransmissions'] += retransmissions
+            total_stats['out_of_order'] += out_of_order
     
     # Print summary
-    print("\nRetransmission Analysis Summary:")
+    print("\nOut-of-Order Analysis Summary:")
     print(f"Total packets processed: {total_stats['packets']}")
-    print(f"Total retransmissions detected: {total_stats['retransmissions']}")
-    print(f"Created {len(created_files)} retransmission data files")
+    print(f"Total out-of-order packets detected: {total_stats['out_of_order']}")
+    print(f"Created {len(created_files)} out-of-order data files")
     
     return created_files
 
@@ -189,11 +190,11 @@ if __name__ == "__main__":
     
     exp_dir = sys.argv[1]
     
-    output_files = add_retransmission_flags(exp_dir)
+    output_files = add_out_of_order_flags(exp_dir)
     
     if output_files:
-        print(f"Successfully created retransmission data files:")
+        print(f"Successfully created out-of-order data files:")
         for file in output_files:
             print(f" - {file}")
     else:
-        print("No retransmission data files were created")
+        print("No out-of-order data files were created")

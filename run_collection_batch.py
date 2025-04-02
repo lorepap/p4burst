@@ -58,51 +58,85 @@ class ExperimentRunner:
         """Generate parameter combinations using predefined ranges"""
         
         # Define parameter ranges
-        bandwidth_values = [50]  # Mbps
-        delay_values = [0.005]  # ms
-        burst_server_values = [2, 8, 16]  # Number of servers for bursty traffic
-        load_values = [0.25, 0.5, 0.75, 1.0]  # Load percentage (0.25 = 25% load)
+        bandwidth_values = [10, 50, 100]  # Mbps
+        delay_values = [0.001]  # ms - fixed to small value
+        
+        # Define burst degree configurations
+        burst_degree_configs = {
+            'small': {
+                'burst_servers': 8,
+                'bursty_reply_size': 2000,
+                'burst_interval': 0.02  # slower burst interval
+            },
+            'medium': {
+                'burst_servers': 16,
+                'bursty_reply_size': 5000,
+                'burst_interval': 0.01  # medium burst interval
+            },
+            'large': {
+                'burst_servers': 32,
+                'bursty_reply_size': 10000,
+                'burst_interval': 0.005  # faster burst interval
+            }
+        }
+        
+        # Define background load configurations
+        bg_load_configs = {
+            'small': {
+                'flow_size': 1000,
+                'bg_flow_iat': 0.2  # slower background flow inter-arrival time
+            },
+            'medium': {
+                'flow_size': 5000,
+                'bg_flow_iat': 0.1  # medium background flow inter-arrival time
+            },
+            'large': {
+                'flow_size': 10000,
+                'bg_flow_iat': 0.05  # faster background flow inter-arrival time
+            }
+        }
         
         # Generate parameter combinations
         combinations = []
         
-        # Base packet rate for max load
-        base_pps = 1000  # packets per second at full load
+        # Fixed parameters
+        n_hosts = 32
+        n_clients = 16
+        n_servers = n_hosts - n_clients  # Calculate servers as remaining hosts
         
         experiment_id = 0
-        for bw, delay, burst_servers, load in itertools.product(
-            bandwidth_values, delay_values, burst_server_values, load_values
+        for bw, delay, burst_degree, bg_load in itertools.product(
+            bandwidth_values, 
+            delay_values, 
+            burst_degree_configs.keys(),
+            bg_load_configs.keys()
         ):
-            # Calculate inter-packet interval based on load
-            interval = 1 / (base_pps * load)
-            
-            # Number of background flows increases with load
-            #num_flows = max(1, int(load * 5))
+            # Get burst and background configurations
+            burst_config = burst_degree_configs[burst_degree]
+            bg_config = bg_load_configs[bg_load]
             
             # Calculate experiment duration - longer for higher load scenarios
             duration = 5
-            
-            burst_interval = 0.01
             
             # Create parameter set
             params = {
                 'experiment_id': experiment_id,
                 'bw': bw,
                 'delay': delay,
-                'load': load,
-                #'num_flows': num_flows,
-                'interval': interval,
+                'burst_degree': burst_degree,
+                'bg_load': bg_load,
                 'duration': duration,
-                'burst_interval': burst_interval,
-                'num_packets': 500,
-                'n_hosts': 32,  # Fixed parameters
+                'n_hosts': n_hosts,  # Fixed parameters
                 'n_leaf': 8,
                 'n_spine': 4,
-                'packet_size': 1472,
-                'bursty_reply_size': 4000,
-                'n_clients': 16,
-                'n_servers': 16,  # Ensure enough servers for burst traffic
-                'burst_servers': burst_servers,
+                'bursty_reply_size': burst_config['bursty_reply_size'],
+                'n_clients': n_clients,
+                'n_servers': n_servers,  # Calculated from hosts and clients
+                'burst_servers': burst_config['burst_servers'],
+                'burst_clients': 4,  # Fixed number of burst clients
+                'flow_size': bg_config['flow_size'],
+                'bg_flow_iat': bg_config['bg_flow_iat'],
+                'burst_interval': burst_config['burst_interval'],
                 'queue_rate': 100,
                 'queue_depth': 30
             }
@@ -134,7 +168,7 @@ class ExperimentRunner:
         exp_id = params['experiment_id']
         
         # Create descriptive experiment ID
-        desc_exp_id = f"bw_{params['bw']}_delay_{params['delay']}_load_{int(params['load']*100)}_burst_{params['burst_servers']}_burst_reply_{params['bursty_reply_size']}_bursty_interval_{params['burst_interval']}"
+        desc_exp_id = f"bw_{params['bw']}_delay_{params['delay']}_burst_{params['burst_degree']}_bg_{params['bg_load']}"
         logger.info(f"Starting experiment {exp_id} with ID: {desc_exp_id}")
         
         # Create the command with all necessary parameters
@@ -148,13 +182,12 @@ class ExperimentRunner:
             "--bw", str(params['bw']),
             "--delay", str(params['delay']),
             "--n_clients", str(params['n_clients']),
-            "--n_servers", str(params['n_servers']),
-            # "--num_flows", str(params['num_flows']),
-            "--interval", str(params['interval']),
-            "--packet_size", str(params['packet_size']),
+            "--bg_flow_iat", str(params['bg_flow_iat']),
+            "--flow_size", str(params['flow_size']),
             "--bursty_reply_size", str(params['bursty_reply_size']),
             "--burst_interval", str(params['burst_interval']),
             "--burst_servers", str(params['burst_servers']),
+            "--burst_clients", str(params['burst_clients']),
             "--queue_rate", str(params['queue_rate']),
             "--queue_depth", str(params['queue_depth'])
         ]

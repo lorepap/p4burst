@@ -152,6 +152,7 @@ class BurstyClient(BaseClient):
             try:
                 s.settimeout(5)
                 s.setsockopt(socket.IPPROTO_TCP, socket.TCP_CONGESTION, self.congestion_control.encode())
+                s.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 0) # Disable Nagle's algorithm
                 s.connect((server_ip, 12346))
                 # Send the flow ID as part of the data
                 flow_id_prefix = f"{int(flow_id):08d}".encode('utf-8')
@@ -432,86 +433,67 @@ class DataCollectionClient(BaseClient):
                     return
         logging.info(f"Completed background flow {flow_id}")
     
-    def _send_burst_request(self):
-        """Send burst requests to multiple servers and receive responses."""
-        burst_id = random.randint(1000000, 9999999)
-        # Select random subset of servers for this burst
-        target_servers = random.sample(self.server_ips, self.burst_servers)
-        logging.info(f"Sending burst request {burst_id} to {len(target_servers)} servers")
-        
-        # Send request packets to each server and wait for responses
-        with concurrent.futures.ThreadPoolExecutor(max_workers=len(target_servers)) as executor:
-            futures = []
-            for idx, server_ip in enumerate(target_servers):
-                futures.append(executor.submit(
-                    self._send_burst_request_and_wait, 
-                    burst_id, 
-                    idx,
-                    server_ip
-                ))
-        
-        logging.info(f"Completed burst request {burst_id}")
-    
-    def _send_burst_request_and_wait(self, burst_id, seq, server_ip):
-        """Send a burst request packet to a server and wait for response."""
+    def _send_burst_request(self, src_port, server_ip, burst_id, server_idx):
+        """Send a burst request to a server and measure response time."""
         try:
-            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-                # Set timeout for receiving response
-                s.settimeout(3)
-                
-                # Send request packet
-                packet = self._create_packet(burst_id, seq, 'request')
-                s.sendto(packet, (server_ip, self.server_port))
-                
-                # Wait for response
+            start_time = time.time()
+            total_bytes = 0
+            
+            # Create a TCP socket
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                # Bind to the specified source port
                 try:
-                    response, addr = s.recvfrom(self.burst_reply_size)
-                    self._process_burst_response(response, addr)
-                except socket.timeout:
-                    logging.warning(f"Timeout waiting for response from {server_ip} for burst {burst_id}")
-                    
-        except Exception as e:
-            logging.error(f"Error in burst request/response with {server_ip}: {e}")
-            logging.error(traceback.format_exc())
-    
-    def _process_burst_response(self, data, addr):
-        """Process and log a received burst response."""
-        try:
-            # Check packet length
-            if len(data) < 9:  # flow_id(4) + seq(4) + type(1)
-                logging.warning(f"Received malformed response (too short): {len(data)} bytes")
-                return
-            
-            # Extract flow_id, seq, and verify packet type
-            flow_id, seq = struct.unpack("!II", data[0:8])
-            packet_type = ord(data[8:9])  # Convert byte to integer correctly
-
-            packet_size = len(data) + 28
-            
-            if packet_type != 1:  # Should be burst traffic type (1)
-                logging.warning(f"Received non-burst packet type: {packet_type}")
-                return
+                    s.bind((self.ip, src_port))
+                    logging.debug(f"Bound to source port {src_port} for burst {burst_id} to {server_ip}")
+                except socket.error as e:
+                    logging.error(f"Binding to source port {src_port} failed: {e}")
+                    # Try with another source port
+                    new_src_port = src_port + 1000 + random.randint(1, 1000)
+                    logging.warning(f"Retrying with port {new_src_port}")
+                    s.bind((self.ip, new_src_port))
                 
-            arrival_time = time.time()
-            src_ip = addr[0]
-            dst_ip = self.ip
-            dport = self.server_port
-            
-            # For burst traffic, we don't care about ordering
-            # Since burst responses naturally arrive at approximately the same time
-            reorder_flag = 0  # Always 0 for burst traffic
-            
-            # Log response details to CSV
-            if self.log_file:
-                with open(self.log_file, 'a', newline='') as csvfile:
-                    writer = csv.writer(csvfile)
-                    writer.writerow([arrival_time, src_ip, dst_ip, dport, flow_id, seq, packet_size, packet_type, reorder_flag])
+                # Set TCP congestion control and disable Nagle's algorithm
+                s.setsockopt(socket.IPPROTO_TCP, socket.TCP_CONGESTION, self.congestion_control.encode())
+                s.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
                 
-            logging.debug(f"Logged burst response from {src_ip} for flow {flow_id}, seq {seq}")
+                # Set MSS (Maximum Segment Size) to influence packet size
+                s.setsockopt(socket.IPPROTO_TCP, socket.TCP_MAXSEG, 1460)  # Common datacenter MSS
+                
+                # Limit the send buffer size to prevent large bursts
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 16384)  # Moderate buffer size
+                
+                # Connect to server (use higher port for burst traffic)
+                s.connect((server_ip, 12346))
+                
+                # Send request - let TCP handle segmentation
+                s.sendall(b'REQUEST')
+                
+                # Receive burst response in chunks
+                while True:
+                    data = s.recv(4096)  # Receive in chunks
+                    if not data:
+                        break
+                    total_bytes += len(data)
+            
+            end_time = time.time()
+            response_time = end_time - start_time
+            
+            logging.debug(f"Completed burst request {burst_id} to {server_ip}: {total_bytes} bytes in {response_time:.3f}s")
+            
+            return {
+                'server_ip': server_ip,
+                'response_time': response_time,
+                'bytes_received': total_bytes
+            }
             
         except Exception as e:
-            logging.error(f"Error processing burst response from {addr[0]}:{addr[1]}: {e}")
+            logging.error(f"Error in burst request to {server_ip}: {e}")
             logging.error(traceback.format_exc())
+            return {
+                'server_ip': server_ip,
+                'response_time': None,
+                'bytes_received': 0
+            }
     
     def _background_flow_worker(self):
         """Worker thread to continuously send background flows."""
@@ -533,7 +515,7 @@ class DataCollectionClient(BaseClient):
     def _burst_worker(self):
         """Worker thread to periodically send burst requests."""
         while self.background_flow_running:  # Use the same flag to control both threads
-            self._send_burst_request()
+            self._send_burst_request(0, random.choice(self.server_ips), random.randint(1000000, 9999999), 0)
             time.sleep(self.burst_interval)
     
     def start(self):
@@ -621,25 +603,31 @@ class BackgroundTcpClient(BaseClient):
         flow_id = self._generate_flow_id(self.ip, target_server, src_port, dst_port)
         
         try:
-            
+            start_time = time.time()
             # Create a TCP socket
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 # Bind the socket to the specific source port
                 s.bind((self.ip, src_port))
                 
-                # Set TCP congestion control
+                # Set TCP congestion control and disable Nagle's algorithm
                 s.setsockopt(socket.IPPROTO_TCP, socket.TCP_CONGESTION, self.congestion_control.encode())
+                s.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+                
+                # Set MSS (Maximum Segment Size) to influence packet size
+                s.setsockopt(socket.IPPROTO_TCP, socket.TCP_MAXSEG, 1460)  # Common datacenter MSS
+                
+                # Limit the send buffer size to prevent large bursts
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 16384)  # Moderate buffer size
                 
                 # Connect to server
                 s.connect((target_server, dst_port))
                 
-                # Send the entire flow at once, letting TCP handle segmentation
-                data = b'X' * self.flow_size
-                start_time = time.time()
-                s.sendall(data)
-                end_time = time.time()
-                flow_completion_time = end_time - start_time
+                # Send data in one go - let TCP handle segmentation
+                s.sendall(b'X' * self.flow_size)
             
+            # We compute the FCT considering the TCP handshake as packets RTT will be computed using TCP timestamps
+            end_time = time.time()
+            flow_completion_time = end_time - start_time
             # Add flow details to log queue
             if hasattr(self, 'log_queue'):
                 self.log_queue.put([
@@ -663,8 +651,6 @@ class BackgroundTcpClient(BaseClient):
             logging.error(f"Error in background flow {flow_id}: {e}")
             logging.error(traceback.format_exc())
             return None
-    
-    # The rest of the methods remain unchanged
     
     def _log_worker(self):
         """Background thread for asynchronous logging with buffering."""
@@ -807,58 +793,9 @@ class BurstyTcpClient(BaseClient):
         logging.info(f"[{self.ip}] Using congestion control algorithm: {self.congestion_control}")
         
         # Initialize the source port counter
-        self.base_src_port = 70000
+        self.base_src_port = 50000
         self.source_port = self.base_src_port  # Initialize to base value
 
-    def _log_worker(self):
-        """Background thread for asynchronous logging with buffering."""
-        log_buffer = []
-        last_flush_time = time.time()
-        
-        while self.log_thread_running:
-            try:
-                # Try to get an item from the queue with timeout to allow periodic flushing
-                try:
-                    log_entry = self.log_queue.get(timeout=0.1)
-                    log_buffer.append(log_entry)
-                    self.log_queue.task_done()
-                except queue.Empty:
-                    # No new entries, check if we need to flush based on time
-                    pass
-                
-                # Check if we should flush based on buffer size or time interval
-                current_time = time.time()
-                time_since_flush = current_time - last_flush_time
-                
-                if (len(log_buffer) >= self.log_buffer_size or 
-                    time_since_flush >= self.log_flush_interval) and log_buffer:
-                    
-                    # Flush buffer to disk
-                    with open(self.log_file, 'a', newline='', buffering=8192) as csvfile:
-                        writer = csv.writer(csvfile)
-                        writer.writerows(log_buffer)
-                    
-                    # Clear buffer and reset timer
-                    buffer_size = len(log_buffer)
-                    log_buffer = []
-                    last_flush_time = current_time
-                    
-                    logging.debug(f"Flushed {buffer_size} burst log entries to disk")
-            
-            except Exception as e:
-                logging.error(f"Error in log worker: {e}")
-                logging.error(traceback.format_exc())
-        
-        # Final flush when thread is shutting down
-        if log_buffer:
-            try:
-                with open(self.log_file, 'a', newline='', buffering=8192) as csvfile:
-                    writer = csv.writer(csvfile)
-                    writer.writerows(log_buffer)
-                logging.debug(f"Final flush: Wrote {len(log_buffer)} burst log entries to disk")
-            except Exception as e:
-                logging.error(f"Error in final log flush: {e}")
-    
     def _send_burst_request(self, src_port, server_ip, burst_id, server_idx):
         """Send a burst request to a server and measure response time."""
         try:
@@ -867,7 +804,6 @@ class BurstyTcpClient(BaseClient):
             
             # Create a TCP socket
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                
                 # Bind to the specified source port
                 try:
                     s.bind((self.ip, src_port))
@@ -879,18 +815,25 @@ class BurstyTcpClient(BaseClient):
                     logging.warning(f"Retrying with port {new_src_port}")
                     s.bind((self.ip, new_src_port))
                 
-                # Set TCP congestion control
+                # Set TCP congestion control and disable Nagle's algorithm
                 s.setsockopt(socket.IPPROTO_TCP, socket.TCP_CONGESTION, self.congestion_control.encode())
+                s.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+                
+                # Set MSS (Maximum Segment Size) to influence packet size
+                s.setsockopt(socket.IPPROTO_TCP, socket.TCP_MAXSEG, 1460)  # Common datacenter MSS
+                
+                # Limit the send buffer size to prevent large bursts
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 16384)  # Moderate buffer size
                 
                 # Connect to server (use higher port for burst traffic)
                 s.connect((server_ip, 12346))
                 
-                # Send small request
+                # Send request - let TCP handle segmentation
                 s.sendall(b'REQUEST')
                 
-                # Receive burst response
+                # Receive burst response in chunks
                 while True:
-                    data = s.recv(4096)
+                    data = s.recv(4096)  # Receive in chunks
                     if not data:
                         break
                     total_bytes += len(data)
@@ -915,12 +858,12 @@ class BurstyTcpClient(BaseClient):
                 'bytes_received': 0
             }
     
-    def _send_burst(self, src_port, burst_id):
+    def _send_burst(self, base_src_port, burst_id):
         """Send burst requests to multiple servers concurrently and track QCT."""
         
         # Select random servers for this burst
         target_servers = random.sample(self.server_ips, self.burst_servers)
-        logging.info(f"Sending burst {burst_id} to {len(target_servers)} servers from source port {src_port}")
+        logging.info(f"Sending burst {burst_id} to {len(target_servers)} servers starting from source port {base_src_port}")
         
         # Record burst start time
         burst_start_time = time.time()
@@ -928,10 +871,11 @@ class BurstyTcpClient(BaseClient):
         # Send requests concurrently
         futures = []
         for idx, server_ip in enumerate(target_servers):
-            # Use the same source port for all servers in this burst/query
+            # Use different source port for each server in this burst
+            src_port = base_src_port + idx
             futures.append(self.executor.submit(
                 self._send_burst_request, 
-                src_port,  # Same source port for all servers in this burst
+                src_port,  # Different source port for each server
                 server_ip, 
                 burst_id, 
                 idx
@@ -989,11 +933,12 @@ class BurstyTcpClient(BaseClient):
             # Generate burst_id
             burst_id = f"burst_{self.ip}_{burst_count}"
             
-            # Increment source port for this burst - one port per burst
-            next_src_port = self.source_port + burst_count
+            # Calculate base source port for this burst
+            # Increment by burst_servers to ensure enough ports for next burst
+            base_src_port = self.base_src_port + (burst_count * self.burst_servers)
             
-            # Send burst using the current source port
-            qct = self._send_burst(next_src_port, burst_id)
+            # Send burst using the current base source port
+            qct = self._send_burst(base_src_port, burst_id)
             burst_count += 1
             
             # Sleep to maintain consistent burst intervals
@@ -1011,6 +956,55 @@ class BurstyTcpClient(BaseClient):
         elapsed_time = time.time() - self.start_time
         logging.info(f"Burst worker completed {burst_count} bursts in {elapsed_time:.2f}s")
         logging.info(f"Average QCT: {elapsed_time/max(1, burst_count):.3f}s")
+    
+    def _log_worker(self):
+        """Background thread for asynchronous logging with buffering."""
+        log_buffer = []
+        last_flush_time = time.time()
+        
+        while self.log_thread_running:
+            try:
+                # Try to get an item from the queue with timeout to allow periodic flushing
+                try:
+                    log_entry = self.log_queue.get(timeout=0.1)
+                    log_buffer.append(log_entry)
+                    self.log_queue.task_done()
+                except queue.Empty:
+                    # No new entries, check if we need to flush based on time
+                    pass
+                
+                # Check if we should flush based on buffer size or time interval
+                current_time = time.time()
+                time_since_flush = current_time - last_flush_time
+                
+                if (len(log_buffer) >= self.log_buffer_size or 
+                    time_since_flush >= self.log_flush_interval) and log_buffer:
+                    
+                    # Flush buffer to disk
+                    with open(self.log_file, 'a', newline='', buffering=8192) as csvfile:
+                        writer = csv.writer(csvfile)
+                        writer.writerows(log_buffer)
+                    
+                    # Clear buffer and reset timer
+                    buffer_size = len(log_buffer)
+                    log_buffer = []
+                    last_flush_time = current_time
+                    
+                    logging.debug(f"Flushed {buffer_size} log entries to disk")
+            
+            except Exception as e:
+                logging.error(f"Error in log worker: {e}")
+                logging.error(traceback.format_exc())
+        
+        # Final flush when thread is shutting down
+        if log_buffer:
+            try:
+                with open(self.log_file, 'a', newline='', buffering=8192) as csvfile:
+                    writer = csv.writer(csvfile)
+                    writer.writerows(log_buffer)
+                logging.debug(f"Final flush: Wrote {len(log_buffer)} log entries to disk")
+            except Exception as e:
+                logging.error(f"Error in final log flush: {e}")
     
     def start(self):
         """Start sending bursty TCP traffic."""
