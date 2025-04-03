@@ -344,7 +344,7 @@ class CollectionRunner:
             logger.info("Sending BEE packets for SimpleDeflection control plane")
             for switch in self.topology.get_leaf_switches():
                 logger.info(f"Sending BEE packets to switch {switch}")
-                self.control_plane.send_bee_packets(switch='s1')
+                self.control_plane.send_bee_packets(switch)
             
             # Run queue logger for debugging
             for i, switch in enumerate(self.topology.get_leaf_switches()):
