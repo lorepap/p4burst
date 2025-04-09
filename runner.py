@@ -1,18 +1,21 @@
 #!/usr/bin/env python3
 
 import argparse
+import math
 import os
 import time
 import random
 import traceback
 import sqlite3
 import pandas as pd
+from bee_packets_generator import BeePackets, DistPreemptiveDeflectionBeePackets, QuantilePreemptiveDeflectionBeePackets, SimpleDeflectionBeePackets
 import numpy as np
 from datetime import datetime
 
 from metrics import FlowMetricsManager
 from topology import LeafSpineTopology, DumbbellTopology
-from control_plane import ECMPControlPlane, L3ForwardingControlPlane, SimpleDeflectionControlPlane, TestControlPlane
+from control_plane import DistPreemptiveDeflectionControlPlane, ECMPControlPlane, L3ForwardingControlPlane, QuantilePreemptiveDeflectionControlPlane, SimpleDeflectionControlPlane, TestControlPlane
+import config
 
 class ExperimentRunner:
     def __init__(self, args):
@@ -25,6 +28,78 @@ class ExperimentRunner:
         flowtracker = FlowMetricsManager(self.exp_id) # create a new database for tracking simulation metrics
         self.p4_program=self.set_p4_program(args.control_plane)
 
+    @staticmethod
+    def update_p4_constants_from_config(p4_file):
+        config_vars = {name: value for name, value in vars(config).items() }
+
+        with open(p4_file, 'r') as f:
+            lines = f.readlines()
+
+        for i, line in enumerate(lines):
+            if line.strip().startswith('const'):
+                # Extract const name
+                const_name = line.split('=')[0].split()[-1]
+                if const_name in config_vars:
+                    base = line.split('=')[0]
+                    lines[i] = f"{base}= {config_vars[const_name]};    // Value overriden from config.py\n"
+        
+        with open(p4_file, 'w') as f:
+            f.writelines(lines)
+    
+    @staticmethod
+    def update_p4_queue_size(p4_file):
+        with open(p4_file, 'r') as f:
+            lines = f.readlines()
+
+        for i, line in enumerate(lines):
+            if line.strip().startswith('const'):
+                # Extract const name
+                const_name = line.split('=')[0].split()[-1]
+                if const_name == 'QUEUE_SIZE':
+                    base = line.split('=')[0]
+                    lines[i] = f"{base}= {config.QUEUE_SIZE - 1};    // Value overriden from config.py\n"
+                if const_name == 'COUNT_ALL_SHIFT':
+                    base = line.split('=')[0]
+                    deflection_margin = config.LOGARITMIC_DEFLECTING_MARGIN if config.LOGARITMIC_DEFLECTING_MARGIN > 0 else 1
+                    shift = math.floor(math.log2(config.QUEUE_SIZE - 1)) - deflection_margin
+                    if shift < 0:
+                        shift = 0
+                    lines[i] = f"{base} = {shift};    // Value overriden\n"
+
+                if const_name == 'PRIO_SHIFT':
+                    base = line.split('=')[0]
+                    deflection_margin = config.LOGARITMIC_DEFLECTING_MARGIN if config.LOGARITMIC_DEFLECTING_MARGIN > 0 else 1
+                    C = config.QUEUE_SIZE - 1
+                    alpha = config.ALPHA
+                    max_m_index = config.M_PRIO_NUM_ENTRIES - 1
+                    m_rank_index = config.M_PRIO_RANK_ENTRIES -1
+                    base = line.split('=')[0]
+                    _, _, mid_rank = DistPreemptiveDeflectionControlPlane.compute_interval_and_midpoint(m_rank_index)
+                    _, _, mid_m = DistPreemptiveDeflectionControlPlane.compute_interval_and_midpoint(max_m_index)
+                    rel_prio = DistPreemptiveDeflectionControlPlane.compute_rel_prio(mid_rank, mid_m, C, alpha)
+                    shift = math.floor(math.log2(C / rel_prio)) - deflection_margin
+                    if shift < 0:
+                        shift = 0
+                    lines[i] = f"{base} = {shift};    // Value overriden\n"
+                '''
+                if const_name == 'EQUATION_MULT_SHIFT':
+                    C = config.QUEUE_SIZE - 1
+                    alpha = config.ALPHA
+                    max_m_index = config.M_PRIO_NUM_ENTRIES - 1
+                    m_rank_index = config.M_PRIO_RANK_ENTRIES -1
+                    base = line.split('=')[0]
+                    _, _, mid_rank = DistPreemptiveDeflectionControlPlane.compute_interval_and_midpoint(m_rank_index)
+                    _, _, mid_m = DistPreemptiveDeflectionControlPlane.compute_interval_and_midpoint(max_m_index)
+                    rel_prio = DistPreemptiveDeflectionControlPlane.compute_rel_prio(mid_rank, mid_m, C, alpha)
+                    equation_mult_shift = math.floor(math.log2(rel_prio / C)) + 4
+                    lines[i] = f"{base} = {equation_mult_shift};    // Value overriden\n"
+                '''
+
+        
+        with open(p4_file, 'w') as f:
+            f.writelines(lines)
+
+
     # TODO refactor
     def set_p4_program(self, control_plane):
         if control_plane == 'ecmp':
@@ -32,7 +107,23 @@ class ExperimentRunner:
         elif control_plane == 'l3':
             return 'l3_forwarding.p4'
         elif control_plane == 'simple_deflection':
-            return 'sd.p4'
+            #if self.args.app == 'deflection_test':
+                #config.QUEUE_SIZE = 2
+                #config.QUEUE_RATE = 1
+            self.update_p4_queue_size('p4src/Simple_Deflection/includes/sd_consts.p4')
+            return 'Simple_Deflection/sd.p4'
+        elif control_plane == 'simple_deflection_fl':
+            #if self.args.app == 'deflection_test':
+                #config.QUEUE_SIZE = 2
+                #config.QUEUE_RATE = 1
+            self.update_p4_queue_size('p4src/Simple_Deflection_FL/includes/sd_consts.p4')
+            return 'Simple_Deflection/sd.p4'
+        elif control_plane == 'quantile_preemptive_deflection':
+            self.update_p4_queue_size('p4src/Quantile_PD/includes/quantilepd_consts.p4')
+            return 'Quantile_PD/quantilepd.p4'
+        elif control_plane == 'dist_preemptive_deflection':
+            self.update_p4_queue_size('p4src/Dist_PD/includes/distpd_consts.p4')
+            return 'Dist_PD/distpd.p4'
         else:
             raise ValueError(f"Unsupported control plane: {control_plane}")
 
@@ -55,9 +146,16 @@ class ExperimentRunner:
             self.control_plane = ECMPControlPlane(self.topology, self.args.leaf, self.args.spine)
         elif self.args.control_plane == 'l3':
             self.control_plane = L3ForwardingControlPlane(self.topology)
-        elif self.args.control_plane == 'simple_deflection':
+        elif self.args.control_plane == 'simple_deflection' or self.args.control_plane == 'simple_deflection_fl':
             # self.control_plane = SimpleDeflectionControlPlane(self.topology)
-            self.control_plane = TestControlPlane(self.topology) # TODO replace with simpledeflection
+            self.control_plane = SimpleDeflectionControlPlane(self.topology)
+            self.bee_packets_generator = SimpleDeflectionBeePackets(self.topology)
+        elif self.args.control_plane == 'quantile_preemptive_deflection':
+            self.control_plane = QuantilePreemptiveDeflectionControlPlane(self.topology)
+            self.bee_packets_generator = QuantilePreemptiveDeflectionBeePackets(self.topology)
+        elif self.args.control_plane == 'dist_preemptive_deflection':
+            self.control_plane = DistPreemptiveDeflectionControlPlane(self.topology)
+            self.bee_packets_generator = DistPreemptiveDeflectionBeePackets(self.topology)
         else:
             raise ValueError(f"Unsupported control plane: {self.args.control_plane}")
 
@@ -81,31 +179,35 @@ class ExperimentRunner:
         servers = self.select_servers(n=self.args.incast_degree)
         
         print(f"Selected servers: {[server.name for server in servers]}")
+        os.makedirs("log/bursty_servers", exist_ok=True)
 
         # for server in servers:
         for server in self.topology.net.net.hosts:
             # flow_data = self.load_bursty_data(server.name, 'web_bursty', 1.0, 0.11) # TODO: use the config file for params
             if server.IP() != client.IP():
                 print(f"Starting server on {server.name} ({server.IP()})...")
-                server.cmd(f'python3 -m app --mode server --host_ip {server.IP()} --type bursty --reply_size {self.args.reply_size} --exp_id {self.exp_id} &')
+                server.cmd(f'python3 -m app --mode server --host_ip {server.IP()} --type bursty --reply_size {self.args.reply_size} --exp_id {self.exp_id} > log/bursty_servers/{server.name}.log 2>&1 &')
                 server_ips.append(server.IP())
         
         time.sleep(2)  # Give the servers some time to start up
 
+        os.makedirs("log/bursty_clients", exist_ok=True)
         print(f"Starting client on {client.name} ({client.IP()})...")
-        client.cmd(f'python3 -m app --mode client --type bursty --server_ips {" ".join(server_ips)} --exp_id {self.exp_id}&')
+        client.cmd(f'python3 -m app --mode client --type bursty --server_ips {" ".join(server_ips)} --exp_id {self.exp_id} --incast_scale {self.args.incast_degree} > log/bursty_clients/{client.name}.log 2>&1 &')
 
     def run_background_app(self):
         servers = self.topology.net.net.hosts
         print(f"Servers: {[server.name for server in servers]}")
         
+        os.makedirs("log/background_servers", exist_ok=True)
         # Starting servers
         for server in servers:
             print(f"Starting server on {server.name} ({server.IP()})...")
-            server.cmd(f'python3 -m app --mode server --type background --host_ip {server.IP()} --exp_id {self.exp_id} &')
+            server.cmd(f'python3 -m app --mode server --type background --host_ip {server.IP()} --exp_id {self.exp_id} > log/background_servers/{server.name}.log 2>&1 &')
         
         time.sleep(1)
         
+        os.makedirs("log/background_clients", exist_ok=True)
         # Starting clients
         for server in  servers:
             flow_data = self.load_background_flow_data(server.name, 'cache', 1.0, 11.85) # TODO: use the config file for params
@@ -126,7 +228,7 @@ class ExperimentRunner:
                 --flow_sizes {" ".join(map(str, flow_sizes))} \
                 --iat {" ".join(map(str, inter_arrival_times))} \
                 --type background \
-                --exp_id {self.exp_id} &') # I'm not convinced how server_ips are passed to the client
+                --exp_id {self.exp_id} > log/background_clients/{server.name}.log 2>&1 &') # I'm not convinced how server_ips are passed to the client
 
     def run_simple_app(self):
         """
@@ -135,18 +237,19 @@ class ExperimentRunner:
         # Get hosts
         h1 = self.topology.net.net.get('h1')
         h3 = self.topology.net.net.get('h3')
-    
+
         # Set congestion control
         h1.cmd('sysctl -w net.ipv4.tcp_congestion_control=cubic')
     
         # h1.cmd('ifconfig h1-eth0 txqueuelen 1000')
-    
+        os.makedirs("log/simple_servers", exist_ok=True)
         # Start server on h3
         print(f"Starting server on h3 ({h3.IP()})...")
-        h3.cmd(f'python3 -m app --mode server --host_ip {h3.IP()} --type single &')
+        h3.cmd(f'python3 -m app --mode server --host_ip {h3.IP()} --type single --exp_id {self.exp_id} > log/simple_servers/h3.log 2>&1 &')
         time.sleep(2)
+        os.makedirs("log/simple_clients", exist_ok=True)
         print(f"Starting client on h1 ({h1.IP()})...")
-        h1.cmd(f'python3 -m app --mode client --type single --server_ips {h3.IP()} &')
+        h1.cmd(f'python3 -m app --mode client --type single --server_ips {h3.IP()} --exp_id {self.exp_id} > log/simple_clients/h1.log 2>&1 &')
 
     def run_iperf_app(self):
         # Two clients send iperf flows to two servers
@@ -163,19 +266,38 @@ class ExperimentRunner:
                     cmd = f'tcpdump -i {intf} -w {pcap_dir}/{intf}.pcap &'
                     host.cmd(cmd)
 
+        os.makedirs("log/iperf_servers", exist_ok=True)
         # Start servers
         print(f"Starting server on h3 ({h3.IP()})...")
-        h3.cmd('iperf3 -s &')
+        h3.cmd('iperf3 -s > log/iperf_servers/h3.log 2>&1 &')
         print(f"Starting server on h4 ({h4.IP()})...")
-        h4.cmd('iperf3 -s -p 5202 &')
+        h4.cmd('iperf3 -s -p 5202 > log/iperf_servers/h4.log 2>&1 &')
         time.sleep(2)
 
+        os.makedirs("log/iperf_clients", exist_ok=True)
         # Start clients
         print(f"Starting client on h1 ({h1.IP()})...")
-        h1.cmd(f'iperf3 -c {h3.IP()} -t {self.args.duration} -p 5201 &')
+        h1.cmd(f'iperf3 -c {h3.IP()} -t {self.args.duration} -p 5201 > log/iperf_clients/h1.log 2>&1 &')
         print(f"Starting client on h2 ({h2.IP()})...")
-        h2.cmd(f'iperf3 -c {h3.IP()} -t {self.args.duration} -p 5202 &')
-  
+        h2.cmd(f'iperf3 -c {h3.IP()} -t {self.args.duration} -p 5202 > log/iperf_clients/h2.log 2>&1 &')
+
+    def run_deflection_test(self):
+
+        client, server = self.select_servers(2)
+
+        while self.topology.are_hosts_same_switch(client, server):
+            client, server = self.select_servers(2)
+
+        os.makedirs("log/deflection_servers", exist_ok=True)
+        print(f"Starting server on {server.name} ({server.IP()})...")
+        server.cmd(f'python3 -m app --mode server --type deflection_test --host_ip {server.IP()} --exp_id {self.exp_id} > log/deflection_servers/{server.name}.log 2>&1 &')
+
+        time.sleep(2)
+
+        os.makedirs("log/deflection_clients", exist_ok=True)
+        print(f"Starting client on {client.name} ({client.IP()})...")
+        client.cmd(f'python3 -m app --mode client --type deflection_test --server_ips {server.IP()} --exp_id {self.exp_id} > log/deflection_clients/{client.name}.log 2>&1 &')
+    
     def select_servers(self, n):
         return random.sample(self.topology.net.net.hosts, n)
 
@@ -251,12 +373,18 @@ class ExperimentRunner:
                 'bursty': self.run_bursty_app,
                 'background': self.run_background_app,
                 'simple': self.run_simple_app,
-                'iperf': self.run_iperf_app
+                'iperf': self.run_iperf_app,
+                'deflection_test': self.run_deflection_test
             }
         
         try:
             self.setup_experiment()
             self.start_network() # will run cli if specified
+            
+            if hasattr(self, 'bee_packets_generator'):
+                self.bee_packets_generator.send_bee_packets()
+                time.sleep(2)
+                
             if self.args.host_pcap:
                 self.enable_pcap_hosts()
             if self.args.app:
@@ -290,7 +418,7 @@ class ExperimentRunner:
 def get_args():
     parser = argparse.ArgumentParser(description='Run network experiment')
     parser.add_argument('--topology', '-t', type=str, required=True, choices=['leafspine', 'dumbbell'], help='Topology type')
-    parser.add_argument('--control_plane', '-c', type=str, required=False, choices=['ecmp', 'l3', 'simple_deflection'], help='Control plane protocol', default='ecmp')
+    parser.add_argument('--control_plane', '-c', type=str, required=False, choices=['ecmp', 'l3', 'simple_deflection', 'simple_deflection_fl', "dist_preemptive_deflection", "quantile_preemptive_deflection"], help='Control plane protocol', default='ecmp')
     parser.add_argument('--hosts', '-n', type=int, required=True, help='Number of hosts')
     parser.add_argument('--leaf', '-l', type=int, help='Number of leaf switches (for leaf-spine topology)', default=2)
     parser.add_argument('--spine', '-s', type=int, help='Number of spine switches (for leaf-spine topology)', default=2)
@@ -299,7 +427,7 @@ def get_args():
     parser.add_argument('--reply_size', type=int, default=40000, help='Size of the burst response in bytes')
     parser.add_argument('--incast_degree', type=int, default=5, help='Number of bursty servers')
     parser.add_argument('--duration', type=int, default=10, help='Duration of the experiment in seconds')
-    parser.add_argument('--app', type=str, required=False, choices=['bursty', 'background', 'simple', 'iperf'], help='Type of application')
+    parser.add_argument('--app', type=str, required=False, choices=['bursty', 'background', 'simple', 'iperf', 'deflection_test'], help='Type of application')
     parser.add_argument('--host_pcap', action='store_true', help='Enable pcap on hosts')
     parser.add_argument('--switch_pcap', action='store_true', help='Enable pcap on switches')
     parser.add_argument('--cli', action='store_true', help='Enable Mininet CLI')
