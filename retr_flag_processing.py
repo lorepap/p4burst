@@ -53,14 +53,13 @@ def analyze_server_pcap(pcap_file, output_csv):
                 try:
                     seq_num = int(tcp.seq_raw)
                 except AttributeError:
-                    seq_num = int(tcp.seq)
-                    print("Warning: Using relative sequence numbers - may not match P4 logs")
+                    raise ValueError("No sequence number found in packet")
                 
                 # Try to get payload length
                 try:
                     payload_len = int(tcp.len)
                 except AttributeError:
-                    payload_len = 0
+                    raise ValueError("No payload length found in packet")
                 
                 # Initialize flow state if not seen before
                 if flow_key not in flow_state:
@@ -76,9 +75,9 @@ def analyze_server_pcap(pcap_file, output_csv):
                     is_out_of_order = 0
                     
                     # A packet is out-of-order if:
-                    # 1. Its sequence number is greater than the expected sequence number
+                    # 1. Its sequence number is less than the expected sequence number (if greater, it's in order, perhaps the expected packet has been dropped)
                     # 2. It's not the first packet of the connection
-                    if seq_num > state['expected_seq'] and state['max_seq'] > seq_num:
+                    if seq_num < state['expected_seq'] and state['max_seq'] > seq_num:
                         is_out_of_order = 1
                     
                     # Update flow state
