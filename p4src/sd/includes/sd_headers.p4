@@ -76,31 +76,18 @@ struct metadata_t {
 
     bit <5> random_number;
 
-    bit<32> queue_length;
-    bit<32> queue_length2;
+    bit<19> queue_length;
+    bit<19> deflect_queue_length;
+    //bit<32> queue_length2;
     bit<16> fw_port_idx; 
+    bit<3> deflect_port_id;
 
     port_metadata_t port_properties;
 
     bit<32> output_port_idx;
 
-    bit<1> is_queue_full_0;
-    bit<1> is_queue_full_1;
-    bit<1> is_queue_full_2;
-    bit<1> is_queue_full_3;
-    bit<1> is_queue_full_4;
-    bit<1> is_queue_full_5;
-    bit<1> is_queue_full_6;
-    bit<1> is_queue_full_7;
-
-    bit<1> neighbor_switch_indicator_0;
-    bit<1> neighbor_switch_indicator_1;
-    bit<1> neighbor_switch_indicator_2;
-    bit<1> neighbor_switch_indicator_3;
-    bit<1> neighbor_switch_indicator_4;
-    bit<1> neighbor_switch_indicator_5;
-    bit<1> neighbor_switch_indicator_6;
-    bit<1> neighbor_switch_indicator_7;
+    bit<9> deflect_port;
+    bit<1> neighbor_switch_indicator;
 
     bit<16> port_idx_in_reg;
     bit<1> is_fw_port_full;
