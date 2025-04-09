@@ -559,9 +559,9 @@ class BackgroundTcpClient(BaseClient):
         self.duration = duration if duration is not None else float('inf')
         self.log_file = f"tmp/{exp_id}/bg_client_{self.ip}_12345.csv" if exp_id else None
         self.background_flow_running = False
-        self.capture_pcap = capture_pcap
         self.source_port = 20000  # Starting source port for flows
         self.interval = flow_iat
+        self.capture_pcap = capture_pcap
         
         # Logging parameters
         self.log_buffer_size = log_buffer_size
@@ -618,6 +618,9 @@ class BackgroundTcpClient(BaseClient):
                 
                 # Limit the send buffer size to prevent large bursts
                 s.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 16384)  # Moderate buffer size
+                
+                # Disable delayed ACKs
+                s.setsockopt(socket.IPPROTO_TCP, socket.TCP_QUICKACK, 1)
                 
                 # Connect to server
                 s.connect((target_server, dst_port))

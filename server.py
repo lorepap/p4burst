@@ -551,6 +551,9 @@ class BackgroundTcpServer(BaseServer):
                 # Limit the send buffer size to prevent large bursts
                 s.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 16384)  # Moderate buffer size
                 
+                # Disable delayed ACKs
+                s.setsockopt(socket.IPPROTO_TCP, socket.TCP_QUICKACK, 1)
+                
                 s.bind(('0.0.0.0', self.port))
                 s.listen(10)  # Allow up to 10 pending connections
                 logging.info(f"[{self.ip}]: Background TCP server listening on port {self.port}")
@@ -566,6 +569,9 @@ class BackgroundTcpServer(BaseServer):
                         
                         # Set send buffer size for this connection
                         conn.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 16384)
+                        
+                        # Disable delayed ACKs for this connection
+                        conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_QUICKACK, 1)
                         
                         # Handle each connection in a separate thread
                         client_thread = threading.Thread(
@@ -647,6 +653,9 @@ class BurstyTcpServer(BaseServer):
                 # Limit the send buffer size to prevent large bursts
                 s.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 16384)  # Moderate buffer size
                 
+                # Disable delayed ACKs
+                s.setsockopt(socket.IPPROTO_TCP, socket.TCP_QUICKACK, 1)
+                
                 s.bind(('0.0.0.0', self.port))
                 s.listen(10)  # Allow up to 10 pending connections
                 logging.info(f"[{self.ip}]: Bursty TCP server listening on port {self.port}")
@@ -662,6 +671,9 @@ class BurstyTcpServer(BaseServer):
                         
                         # Set send buffer size for this connection
                         conn.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 16384)
+                        
+                        # Disable delayed ACKs for this connection
+                        conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_QUICKACK, 1)
                         
                         # Handle each connection in a separate thread
                         client_thread = threading.Thread(

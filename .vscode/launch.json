@@ -55,12 +55,11 @@
             "program": "dt.py",
             "console": "integratedTerminal",
             "args": [
-                "--csv",
-                "/home/ubuntu/p4burst/tmp/0000-deflection/final_rl_dataset.csv",
                 "--samples",
-                "10",
+                "10000",
                 "--model",
-                "model/dqn_model.h5"
+                "model/dqn_model.h5",
+                "--max_depth", "5"
             ]
         },
         {
@@ -70,8 +69,6 @@
             "program": "rl_agent.py",
             "console": "integratedTerminal",
             "args": [
-                "--csv",
-                "/home/ubuntu/p4burst/tmp/0000-deflection/final_rl_dataset.csv",
                 "--epochs",
                 "10"
             ]
