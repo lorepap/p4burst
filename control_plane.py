@@ -311,9 +311,9 @@ class SimpleDeflectionControlPlane(BaseControlPlane):
                     f"register_write SimpleDeflectionIngress.neighbor_switch_indicator {logical_port} 1" 
                     for logical_port in range(8) if logical_port not in spine_logical_ports
                 ]
-                    
+                
                 deflection_table_commands = [
-                    f"table_add SimpleDeflectionIngress.set_deflect_egress_port_table set_deflect_egress_port_action {logical_port} => {physical_port}" 
+                    f"table_add SimpleDeflectionIngress.set_physical_deflect_port_from_id_table set_physical_deflect_port_from_id {logical_port} => {physical_port}" 
                     for physical_port, logical_port in port_mappings[leaf].items()
                 ]
                     

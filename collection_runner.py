@@ -19,6 +19,7 @@ import logging
 from datetime import datetime
 import os
 import utils.rl_data_utils as datalib
+import utils.config_override as config_override
 
 # Set up root logger first thing
 def setup_logging(exp_id):
@@ -80,6 +81,7 @@ class CollectionRunner:
         self.bw = args.bw
         self.delay = args.delay
         self.p4_program = 'sd/sd.p4'  # Fixed P4 program for simple deflection
+        self.p4_consts_file = 'sd/includes/sd_consts.p4'  # Fixed P4 headers for simple deflection
         self.queue_rate = args.queue_rate
         self.queue_depth = args.queue_depth
         
@@ -94,6 +96,7 @@ class CollectionRunner:
         self.burst_interval = args.burst_interval
         self.burst_servers = args.burst_servers
         self.burst_clients = args.burst_clients
+        self.threshold = args.deflection_queue_threshold
         
         # Initialize flow metrics if tracking enabled
         # if not args.disable_metrics:
@@ -118,6 +121,9 @@ class CollectionRunner:
         # Create control plane - fixed to SimpleDeflection
         self.control_plane = SimpleDeflectionControlPlane(self.topology, queue_rate=self.queue_rate, 
                                                           queue_depth=self.queue_depth)
+        
+        config_override.update_p4_queue_size(
+            f"p4src/{self.p4_consts_file}", self.queue_depth, self.threshold)
         
         logger.info("Experiment setup complete")
 
@@ -388,6 +394,15 @@ class CollectionRunner:
         finally:
             self.stop_network()
 
+def restricted_float(x):
+    try:
+        x = float(x)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{x!r} is not a valid floating-point number")
+    if x < 0.0 or x > 1.0:
+        raise argparse.ArgumentTypeError(f"{x!r} is not in the range [0, 1]")
+    return x
+
 def parse_args():
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(description='Run SimpleDeflection packet collection experiment')
@@ -445,7 +460,8 @@ def parse_args():
                         help='Enable packet capture on switches')
     parser.add_argument('--disable_metrics', action='store_true', 
                         help='Disable metrics collection')
-    
+    parser.add_argument('--deflection_queue_threshold', type=restricted_float, default=1, help='Float in [0, 1] defining the queue threshold for deflection (1 = full queue).')
+
     return parser.parse_args()
 
 
