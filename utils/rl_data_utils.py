@@ -14,6 +14,8 @@ from topology import LeafSpineTopology
 import traceback
 import pyshark
 import statistics
+import io
+import subprocess
 
 # Feature names for the RL dataset
 FEATURE_NAMES = (
@@ -421,7 +423,7 @@ def merge_switch_logs_with_retr_data(switch_datasets, retr_data_files, output_di
                     continue
             
             # Initialize RTT column with a default value (will be updated later)
-            switch_df['rtt'] = 0.1  # Default RTT value
+            switch_df['rtt'] = None
             
             # Save merged dataset
             output_file = os.path.join(output_dir, f"s{i+1}_with_oo.csv")
@@ -442,7 +444,6 @@ def merge_switch_logs_with_retr_data(switch_datasets, retr_data_files, output_di
 def extract_rtt_using_tshark(pcap_file, output_csv=None):
     """
     Extract RTT measurements from a client PCAP file using tshark's built-in RTT analysis.
-    Focus on per-packet data for merging with switch logs.
     
     Args:
         pcap_file: Path to the client PCAP file
@@ -451,11 +452,7 @@ def extract_rtt_using_tshark(pcap_file, output_csv=None):
     Returns:
         Dictionary mapping flow IDs to list of RTT measurements
     """
-    # Determine if this is a bursty client or background client based on filename
-    is_bursty = os.path.basename(pcap_file).startswith('bursty_client_')
-    client_type = "bursty" if is_bursty else "background"
-    
-    print(f"Processing {client_type} client PCAP file: {pcap_file}")
+    import pandas as pd
     
     # If output_csv not specified, create one based on pcap filename
     if output_csv is None:
@@ -474,19 +471,21 @@ def extract_rtt_using_tshark(pcap_file, output_csv=None):
     except:
         print(f"Warning: Could not extract client IP from {filename}")
     
-    # Run tshark command to extract RTT information
+    # Run tshark command to extract all packets
     tshark_cmd = [
         'tshark', '-r', pcap_file,
         '-T', 'fields',
         '-e', 'frame.number',
+        '-e', 'frame.time_epoch',
         '-e', 'ip.src',
         '-e', 'ip.dst',
         '-e', 'tcp.srcport',
         '-e', 'tcp.dstport',
         '-e', 'tcp.seq',
         '-e', 'tcp.ack',
+        '-e', 'ip.len',
+        '-e', 'tcp.len',
         '-e', 'tcp.analysis.ack_rtt',
-        '-e', 'tcp.time_relative',
         '-o', 'tcp.relative_sequence_numbers: false',
         '-E', 'header=y',
         '-E', 'separator=,'
@@ -494,625 +493,810 @@ def extract_rtt_using_tshark(pcap_file, output_csv=None):
     
     try:
         import subprocess
+        import io
+        
+        # Run tshark and get output
         result = subprocess.run(tshark_cmd, capture_output=True, text=True, check=True)
         
         if result.returncode != 0:
             print(f"Error running tshark: {result.stderr}")
             return {}
         
-        # Parse the CSV output
-        import io
-        import csv
+        # Convert tshark output to DataFrame
+        df = pd.read_csv(io.StringIO(result.stdout))
         
-        # Dictionary to store RTT values by flow
+        # Rename columns to standardized names
+        df.columns = ['frame_number', 'timestamp', 'src_ip', 'dst_ip', 'src_port', 
+                      'dst_port', 'tcp_seq', 'tcp_ack', 'packet_size', 'payload_size', 'rtt_analysis'] 
+        
+        # Convert payload_size to int (with 0 as default for empty values)
+        df['payload_size'] = df['payload_size'].fillna(0).astype(int)
+        
+        # Convert RTT to float where possible, otherwise NaN
+        df['rtt_analysis'] = pd.to_numeric(df['rtt_analysis'], errors='coerce')
+        
+        # Add a flag to identify packets from client vs server
+        df['is_from_client'] = df['src_ip'] == client_ip
+        
+        # Compute minimum RTT of the dataset
+        min_rtt = df['rtt_analysis'].min()
+        if pd.isna(min_rtt) or min_rtt <= 0:
+            min_rtt = 0.001  # Default to 1ms if no valid RTT found
+            print(f"No valid RTT found, using default min_rtt = {min_rtt}")
+        else:
+            print(f"Minimum RTT: {min_rtt}")
+        
+        # Create a column for final RTT values
+        df['rtt'] = None
+        
+        # Step 1: For client packets with valid RTT, keep it
+        mask_client_with_rtt = df['is_from_client'] & df['rtt_analysis'].notna()
+        df.loc[mask_client_with_rtt, 'rtt'] = df.loc[mask_client_with_rtt, 'rtt_analysis']
+        
+        # Step 2: For server ACKs with valid RTT, assign that RTT to the matching client packet
+        # First, we assign min_rtt to these ACKs
+        mask_server_ack_with_rtt = (~df['is_from_client']) & df['rtt_analysis'].notna()
+        df.loc[mask_server_ack_with_rtt, 'rtt'] = min_rtt
+        
+        # Then, find the corresponding client packets and assign them the RTT from the ACK
+        for idx in df[mask_server_ack_with_rtt].index:
+            ack_row = df.loc[idx]
+            acked_seq = ack_row['tcp_ack']
+            rtt_value = ack_row['rtt_analysis']
+            
+            # Find client packets with matching sequence number and payload > 0
+            matching_packets = df[(df['is_from_client']) & 
+                                  (df['tcp_seq'] == acked_seq) & 
+                                  (df['payload_size'] > 0)]
+            
+            if not matching_packets.empty:
+                # Assign the RTT to all matching packets
+                for match_idx in matching_packets.index:
+                    df.loc[match_idx, 'rtt'] = rtt_value
+        
+        # Step 3: For any remaining packets without RTT, assign min_rtt
+        df['rtt'] = df['rtt'].fillna(min_rtt)
+        
+        # Build flow_rtts dictionary for return value
         flow_rtts = {}
+        for _, row in df.iterrows():
+            flow_id = f"{row['src_ip']}:{row['src_port']}-{row['dst_ip']}:{row['dst_port']}"
+            if flow_id not in flow_rtts:
+                flow_rtts[flow_id] = []
+            flow_rtts[flow_id].append(row['rtt'])
         
-        # Create a CSV reader from the output
-        csv_reader = csv.reader(io.StringIO(result.stdout))
+        # Save the results to CSV
+        output_df = df[['frame_number', 'src_ip', 'dst_ip', 'src_port', 'dst_port', 
+                         'tcp_seq', 'packet_size', 'rtt']]
+        output_df.to_csv(output_csv, index=False)
         
-        # Get header row
-        headers = next(csv_reader)
-        
-        # Prepare to write filtered data
-        with open(output_csv, 'w', newline='') as csvfile:
-            fieldnames = [
-                'frame_number', 'src_ip', 'dst_ip', 'src_port', 'dst_port',
-                'seq_num', 'ack_num', 'rtt', 'time_relative'
-            ]
-            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-            writer.writeheader()
-            
-            # Process each row
-            packet_count = 0
-            rtt_count = 0
-            client_to_server_rtt = 0
-            server_to_client_rtt = 0
-            
-            for row in csv_reader:
-                if len(row) < 8:  # Ensure we have enough columns
-                    continue  # Skip incomplete rows
-                
-                # Extract fields
-                if len(row) >= 9:
-                    frame_number = row[0]
-                    src_ip = row[1]
-                    dst_ip = row[2]
-                    src_port = row[3]
-                    dst_port = row[4]
-                    seq_num = row[5]
-                    ack_num = row[6]
-                    rtt = row[7]
-                    time_relative = row[8] if len(row) > 8 else ""
-                else:
-                    # Skip rows that don't have enough columns
-                    continue
-                
-                # Skip rows without RTT
-                if not rtt or rtt == "":
-                    continue
-                
-                # RTT filtering logic
-                if is_bursty:
-                    # For bursty clients, include packets in both directions
-                    if client_ip:
-                        is_client_to_server = (src_ip == client_ip)
-                        is_server_to_client = (dst_ip == client_ip)
-                        
-                        if not (is_client_to_server or is_server_to_client):
-                            continue
-                        
-                        if is_client_to_server:
-                            client_to_server_rtt += 1
-                        if is_server_to_client:
-                            server_to_client_rtt += 1
-                else:
-                    # For background clients, only include packets from client to server
-                    if client_ip and src_ip != client_ip:
-                        continue
-                
-                # Convert RTT from seconds to milliseconds
-                try:
-                    rtt = float(rtt)
-                except ValueError:
-                    continue  # Skip if RTT is not a valid number
-                
-                # Generate flow ID
-                flow_id = f"{src_ip}:{src_port}-{dst_ip}:{dst_port}"
-                
-                # Add to flow RTT dictionary
-                if flow_id not in flow_rtts:
-                    flow_rtts[flow_id] = []
-                flow_rtts[flow_id].append(rtt)
-                
-                # Write this packet to the output CSV
-                writer.writerow({
-                    'frame_number': frame_number,
-                    'src_ip': src_ip,
-                    'dst_ip': dst_ip,
-                    'src_port': src_port,
-                    'dst_port': dst_port,
-                    'seq_num': seq_num,
-                    'ack_num': ack_num,
-                    'rtt': rtt,
-                    'time_relative': time_relative
-                })
-                
-                packet_count += 1
-                rtt_count += 1
-            
-        print(f"Processed {packet_count} packets with {rtt_count} valid RTT measurements")
+        print(f"Processed {len(df)} packets")
+        print(f"Client packets with RTT: {mask_client_with_rtt.sum()}")
+        print(f"Server ACKs with RTT: {mask_server_ack_with_rtt.sum()}")
         print(f"RTT data written to {output_csv}")
         
         return flow_rtts
         
     except Exception as e:
-        print(f"Error running tshark or processing output: {e}")
+        print(f"Error processing PCAP file: {e}")
         traceback.print_exc()
         return {}
 
-def process_client_pcaps_for_rtt(exp_dir):
-    """
-    Process all client PCAP files in the experiment directory to extract RTT measurements using tshark.
-    
-    Args:
-        exp_dir: Path to the experiment directory
-        
-    Returns:
-        Dictionary mapping client IPs to their RTT measurements
-    """
-    print(f"Processing client PCAP files for RTT in {exp_dir}")
-    
-    # Dictionary to store RTT measurements by client
-    client_rtts = {}
-    
-    # Find all client PCAP files
-    pcap_files = []
-    for file in os.listdir(exp_dir):
-        if file.startswith('bg_client_') and file.endswith('.pcap'):
-            pcap_files.append(os.path.join(exp_dir, file))
-    
-    if not pcap_files:
-        print("No client PCAP files found")
-        return client_rtts
-    
-    print(f"Found {len(pcap_files)} client PCAP files")
-    
-    # Process each PCAP file
-    for pcap_file in pcap_files:
-        try:
-            # Extract client IP from filename
-            filename = os.path.basename(pcap_file)
-            parts = filename.split('_')
-            client_ip = None
-            if len(parts) >= 3:
-                client_ip = parts[2]
-                if client_ip.endswith('.pcap'):
-                    client_ip = client_ip[:-5]
-            
-            if not client_ip:
-                print(f"Warning: Could not extract client IP from filename {filename}")
-                continue
-                
-            print(f"Processing PCAP file for client {client_ip}")
-            
-            # Extract RTT measurements using tshark
-            output_csv = os.path.join(exp_dir, f"rtt_{client_ip}.csv")
-            flow_rtts = extract_rtt_using_tshark(pcap_file, output_csv)
-            
-            if flow_rtts:
-                client_rtts[client_ip] = flow_rtts
-            
-        except Exception as e:
-            print(f"Error processing client PCAP file {pcap_file}: {e}")
-            traceback.print_exc()
-    
-    return client_rtts
-
-def compute_flow_rtts(exp_dir):
-    """
-    Process client PCAP files, compute RTT for each flow using tshark, and generate a CSV summary.
-    
-    Args:
-        exp_dir: Path to the experiment directory
-        
-    Returns:
-        Path to the generated CSV file with RTT measurements
-    """
-    print(f"Computing RTT for flows in {exp_dir} using tshark")
-    
-    output_csv = os.path.join(exp_dir, "flow_rtts.csv")
-    
-    # Process all client PCAP files
-    client_rtts = process_client_pcaps_for_rtt(exp_dir)
-    
-    if not client_rtts:
-        print("No RTT measurements found")
-        return None
-    
-    # Prepare data for CSV output
-    csv_rows = []
-    for client_ip, flow_rtts in client_rtts.items():
-        for flow_id, rtts in flow_rtts.items():
-            if rtts:
-                src_ip, dst_ip, src_port, dst_port = None, None, None, None
-                
-                # Parse flow ID into components
-                try:
-                    src_dst = flow_id.split('-')
-                    if len(src_dst) == 2:
-                        src = src_dst[0].split(':')
-                        dst = src_dst[1].split(':')
-                        if len(src) == 2 and len(dst) == 2:
-                            src_ip = src[0]
-                            src_port = src[1]
-                            dst_ip = dst[0]
-                            dst_port = dst[1]
-                except Exception as e:
-                    print(f"Warning: Could not parse flow ID {flow_id}: {e}")
-                
-                min_rtt = min(rtts)
-                max_rtt = max(rtts)
-                avg_rtt = sum(rtts) / len(rtts)
-                median_rtt = sorted(rtts)[len(rtts) // 2]
-                
-                row = {
-                    'client_ip': client_ip,
-                    'src_ip': src_ip,
-                    'src_port': src_port,
-                    'dst_ip': dst_ip,
-                    'dst_port': dst_port,
-                    'min_rtt_ms': round(min_rtt, 4),
-                    'avg_rtt_ms': round(avg_rtt, 4),
-                    'median_rtt_ms': round(median_rtt, 4),
-                    'max_rtt_ms': round(max_rtt, 4),
-                    'num_samples': len(rtts)
-                }
-                csv_rows.append(row)
-    
-    # Write to CSV
-    if csv_rows:
-        import csv
-        with open(output_csv, 'w', newline='') as f:
-            fieldnames = ['client_ip', 'src_ip', 'src_port', 'dst_ip', 'dst_port', 
-                         'min_rtt_ms', 'avg_rtt_ms', 'median_rtt_ms', 'max_rtt_ms', 'num_samples']
-            writer = csv.DictWriter(f, fieldnames=fieldnames)
-            writer.writeheader()
-            writer.writerows(csv_rows)
-        
-        print(f"Flow RTT summary written to {output_csv}")
-        return output_csv
-    else:
-        print("No RTT measurements to write")
-        return None
-
 def add_rtt_to_switch_logs(switch_datasets, exp_dir, output_dir):
     """
-    Add RTT measurements to switch log datasets using per-packet RTT data.
-    Filters packets according to requirements:
-    - Include background traffic from clients to servers
-    - Include request packets (0 length) from client to server
-    - Include response packets (>0 length) from servers to client 
-    - Exclude ACKs from servers
-    - Exclude burst requests from clients to servers
-    - Use minimum observed RTT as placeholder for entries with no RTT measurement
+    Add RTT measurements to switch logs from both background and bursty RTT files in a single pass.
     
     Args:
-        switch_datasets: List of paths to switch log CSV files
-        exp_dir: Path to the experiment directory containing RTT files
-        output_dir: Directory to save merged output files
-        
-    Returns:
-        List of paths to the merged dataset files
-    """
-    print(f"Adding RTT measurements to switch logs")
+        switch_datasets: List of CSV files with switch logs
+        exp_dir: Experiment directory containing RTT files
+        output_dir: Directory to write output files
     
+    Returns:
+        List of new dataset files with RTT information added
+    """
+    import pandas as pd
+    import os
+    import traceback
+    import numpy as np
+    
+    print(f"Adding RTT measurements to switch logs...")
+    
+    # If no switch datasets provided, return empty list
     if not switch_datasets:
-        print("Error: No switch datasets provided")
+        print("No switch datasets provided.")
         return []
     
-    # Find all RTT CSV files
-    rtt_files = []
-    for file in os.listdir(exp_dir):
-        if (file.startswith('rtt_bg_') or file.startswith('rtt_bursty_')) and file.endswith('.csv'):
-            rtt_files.append(os.path.join(exp_dir, file))
+    # Create output directory if it doesn't exist
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
     
-    if not rtt_files:
-        print("Warning: No RTT files found")
-        return switch_datasets
+    # Find background and bursty RTT files
+    bg_rtt_files = []
+    bursty_rtt_files = []
     
-    print(f"Found {len(rtt_files)} RTT files")
+    # Find all RTT CSV files in the experiment directory
+    for root, _, files in os.walk(exp_dir):
+        for file in files:
+            if file.startswith('rtt_bg_') and file.endswith('.csv'):
+                bg_rtt_files.append(os.path.join(root, file))
+            elif file.startswith('rtt_bursty_') and file.endswith('.csv'):
+                bursty_rtt_files.append(os.path.join(root, file))
     
-    # Load all RTT data into a lookup dictionary for quick matching
-    # Key: (src_ip, dst_ip, src_port, dst_port, seq_num, is_response)
-    # Value: RTT in milliseconds
-    rtt_lookup = {}
-    rtt_values = []  # To track all RTT values for finding the minimum
-    large_rtt_values = []  # To track RTT values for large packets
+    print(f"Found {len(bg_rtt_files)} background RTT files and {len(bursty_rtt_files)} bursty RTT files")
     
-    # Track client IPs for identification
-    client_ips = set()
-    bg_client_count = 0
-    bursty_client_count = 0
-    
-    for rtt_file in rtt_files:
-        try:
-            df = pd.read_csv(rtt_file)
-            
-            # Extract client IP from filename
-            filename = os.path.basename(rtt_file)
-            client_ip = None
-            is_bursty = False
-            
-            if filename.startswith('rtt_bg_'):
-                client_ip = filename[7:].split('.csv')[0]
-                bg_client_count += 1
-            elif filename.startswith('rtt_bursty_'):
-                client_ip = filename[11:].split('.csv')[0]
-                is_bursty = True
-                bursty_client_count += 1
-            
-            if client_ip:
-                client_ips.add(client_ip)
-            
-            # Convert columns to strings to ensure correct matching
-            for col in ['src_port', 'dst_port', 'seq_num']:
-                if col in df.columns:
-                    df[col] = df[col].astype(str)
-            
-            # Make sure we have packet_size column (renamed from payload_len in some files)
-            packet_size_col = None
-            if 'packet_size' in df.columns:
-                packet_size_col = 'packet_size'
-            elif 'payload_len' in df.columns:
-                packet_size_col = 'payload_len'
-            else:
-                df['packet_size'] = 0
-                packet_size_col = 'packet_size'
-                print(f"Warning: No packet size column found in {rtt_file}, using default 0")
-            
-            # Collect RTT entries with their packet sizes
-            for _, row in df.iterrows():
-                # Get packet size
-                packet_size = int(row[packet_size_col])
-                
-                # Determine if this is a response packet
-                is_response = False
-                if client_ip:
-                    # For background clients, responses are from server to client
-                    if not is_bursty:
-                        is_response = (row['src_ip'] != client_ip)
-                    # For bursty clients, responses are large packets from server
-                    else:
-                        is_response = (row['src_ip'] != client_ip and packet_size > 100)
-                
-                # Create key that includes whether this is a response packet
-                key = (
-                    row['src_ip'],
-                    row['dst_ip'],
-                    row['src_port'],
-                    row['dst_port'],
-                    row['seq_num'],
-                    is_response
-                )
-                rtt_value = float(row['rtt'])
-                
-                # Add to lookup dictionary
-                rtt_lookup[key] = rtt_value
-                rtt_values.append(rtt_value)
-                
-                # Also track RTT values for large packets separately
-                if packet_size > 100:
-                    large_rtt_values.append(rtt_value)
-            
-        except Exception as e:
-            print(f"Error reading RTT file {rtt_file}: {e}")
-            traceback.print_exc()
-    
-    print(f"Built RTT lookup table with {len(rtt_lookup)} unique entries")
-    
-    # Calculate minimum RTT value to use as placeholder for small packets
-    min_rtt = min(rtt_values) if rtt_values else 0.1  # Default to 0.1ms if no values
-    
-    # Calculate typical RTT value for large packets (median of large packet RTTs)
-    # This will be used when we have a large packet but no direct RTT match
-    if large_rtt_values:
-        large_packet_rtt = statistics.median(large_rtt_values)
-    else:
-        # If no large packet RTTs found, use 10x the minimum RTT as a reasonable default
-        large_packet_rtt = min_rtt * 10.0 if min_rtt > 0 else 1.0
-    
-    print(f"Identified {len(client_ips)} client IPs: {bg_client_count} background, {bursty_client_count} bursty")
+    # Dictionary to store output files
+    output_files = []
     
     # Process each switch dataset
-    merged_datasets = []
-    for i, switch_csv in enumerate(switch_datasets):
+    for dataset_file in switch_datasets:
         try:
-            # Read switch dataset
-            switch_df = pd.read_csv(switch_csv)
+            # Create output filename
+            basename = os.path.basename(dataset_file)
+            output_file = os.path.join(output_dir, basename.replace('_oo.csv', '_with_rtt.csv'))
             
+            # Read switch dataset
+            switch_df = pd.read_csv(dataset_file)
+            
+            # Skip empty files
             if switch_df.empty:
-                print(f"Warning: Switch dataset {switch_csv} is empty")
+                print(f"Skipping empty switch dataset: {dataset_file}")
                 continue
             
-            # Convert switch columns to strings to ensure correct matching
-            for col in ['src_port', 'dst_port', 'tcp_seq']:
-                if col in switch_df.columns:
-                    switch_df[col] = switch_df[col].astype(str)
+            # Process background RTT files if available
+            if bg_rtt_files:
+                switch_df = process_background_rtt(switch_df, bg_rtt_files, basename)
             
-            # Initialize RTT column with min_rtt
-            switch_df['rtt'] = min_rtt
+            # Process bursty RTT files if available
+            if bursty_rtt_files:
+                switch_df = process_bursty_rtt(switch_df, bursty_rtt_files, basename)
             
-            # Match entries with RTT measurements
-            found_count = 0
-            total_count = len(switch_df)
-            large_packets = 0
-            
-            for idx, row in switch_df.iterrows():
-                # Get packet size
-                packet_size = int(row['packet_size']) if 'packet_size' in switch_df.columns else 0
-                
-                # Determine if this is a response packet
-                is_response = False
-                if client_ip:
-                    # For background clients, responses are from server to client
-                    if not is_bursty:
-                        is_response = (row['src_ip'] != client_ip)
-                    # For bursty clients, responses are large packets from server
-                    else:
-                        is_response = (row['src_ip'] != client_ip and packet_size > 100)
-                
-                # Create key that includes whether this is a response packet
-                key = (
-                    row['src_ip'],
-                    row['dst_ip'],
-                    row['src_port'],
-                    row['dst_port'],
-                    row['tcp_seq'],
-                    is_response
-                )
-                
-                # Check if we have a direct match
-                if key in rtt_lookup:
-                    # Found a match - use it
-                    switch_df.at[idx, 'rtt'] = rtt_lookup[key]
-                    found_count += 1
-                else:
-                    # No match found, use appropriate default based on packet size
-                    if packet_size > 100:
-                        # For large packets, use the large packet RTT
-                        switch_df.at[idx, 'rtt'] = large_packet_rtt
-                        large_packets += 1
-                    else:
-                        # For small packets, use the minimum RTT
-                        switch_df.at[idx, 'rtt'] = min_rtt
-            
-            # Save merged dataset
-            output_file = os.path.join(output_dir, f"s{i+1}_with_rtt.csv")
+            # Save to output file
             switch_df.to_csv(output_file, index=False)
+            print(f"Saved combined RTT data to {output_file}")
             
-            match_rate = (found_count / total_count) * 100 if total_count > 0 else 0
-            print(f"Switch {i+1}: Matched {match_rate:.1f}% of packets with RTT measurements")
-            print(f"  - {found_count} direct matches")
-            print(f"  - {large_packets} large packets with default RTT")
-            print(f"  - {total_count - found_count - large_packets} small packets with min RTT")
-            
-            merged_datasets.append(output_file)
+            output_files.append(output_file)
             
         except Exception as e:
-            print(f"Error processing switch dataset {switch_csv}: {e}")
+            print(f"Error processing dataset {dataset_file}: {e}")
             traceback.print_exc()
     
-    print(f"Successfully merged RTT data with {len(merged_datasets)} switch datasets")
-    return merged_datasets
+    if not output_files:
+        print("No output files created, returning original datasets")
+        return switch_datasets
+    
+    return output_files
+
+def process_background_rtt(switch_df, bg_rtt_files, basename):
+    """
+    Process background RTT files and add RTT measurements to switch dataframe.
+    
+    Args:
+        switch_df: DataFrame with switch logs
+        bg_rtt_files: List of background RTT measurement files
+        basename: Base name of the switch dataset file (for logging)
+    
+    Returns:
+        Updated DataFrame with background RTT information added
+    """
+    import pandas as pd
+    import traceback
+    
+    print(f"Processing background RTT for {basename}...")
+    
+    # Load all RTT dataframes
+    rtt_dfs = []
+    for rtt_file in bg_rtt_files:
+        try:
+            df = pd.read_csv(rtt_file)
+            # Skip empty files
+            if df.empty:
+                print(f"Skipping empty RTT file: {rtt_file}")
+                continue
+                
+            # Add to list of dataframes
+            rtt_dfs.append(df)
+        except Exception as e:
+            print(f"Error reading RTT file {rtt_file}: {e}")
+    
+    # Combine all RTT dataframes
+    if not rtt_dfs:
+        print("No valid background RTT data found")
+        return switch_df
+        
+    rtt_df = pd.concat(rtt_dfs, ignore_index=True)
+    print(f"Loaded {len(rtt_df)} total background RTT measurements")
+    
+    # Create unique keys for each packet in the RTT data
+    rtt_df['flow_key'] = rtt_df['src_ip'] + ':' + rtt_df['dst_ip'] + ':' + \
+                         rtt_df['src_port'].astype(str) + ':' + rtt_df['dst_port'].astype(str)
+    rtt_df['seq_key'] = rtt_df['tcp_seq'].astype(str) + ':' + rtt_df['packet_size'].astype(str)
+    rtt_df['full_key'] = rtt_df['flow_key'] + ':' + rtt_df['seq_key']
+    
+    # Create a dictionary for fast lookup of RTT values
+    rtt_dict = {}
+    for _, row in rtt_df.iterrows():
+        rtt_dict[row['full_key']] = row['rtt']
+    
+    # Standard column names for switch logs
+    columns = {
+        'packet_size': 'packet_size',
+        'src_ip': 'src_ip',
+        'dst_ip': 'dst_ip',
+        'src_port': 'src_port',
+        'dst_port': 'dst_port',
+        'tcp_seq': 'tcp_seq'
+    }
+    
+    # Try to map standard column names to actual names in the dataframe
+    for std_col, actual_col in columns.items():
+        if actual_col not in switch_df.columns:
+            # Try to find the column using common patterns
+            if std_col == 'packet_size' and any(col in switch_df.columns for col in ['length', 'size', 'len']):
+                for alt in ['length', 'size', 'len']:
+                    if alt in switch_df.columns:
+                        columns[std_col] = alt
+                        break
+            elif std_col == 'src_ip' and 'source_ip' in switch_df.columns:
+                columns[std_col] = 'source_ip'
+            elif std_col == 'dst_ip' and 'destination_ip' in switch_df.columns:
+                columns[std_col] = 'destination_ip'
+            elif std_col == 'src_port' and 'sport' in switch_df.columns:
+                columns[std_col] = 'sport'
+            elif std_col == 'dst_port' and 'dport' in switch_df.columns:
+                columns[std_col] = 'dport'
+            elif std_col == 'tcp_seq' and any(col in switch_df.columns for col in ['seq', 'sequence']):
+                for alt in ['seq', 'sequence']:
+                    if alt in switch_df.columns:
+                        columns[std_col] = alt
+                        break
+            else:
+                # Use positional fallbacks
+                if std_col == 'packet_size':
+                    columns[std_col] = switch_df.columns[5]
+                elif std_col == 'src_ip':
+                    columns[std_col] = switch_df.columns[6]
+                elif std_col == 'dst_ip':
+                    columns[std_col] = switch_df.columns[7]
+                elif std_col == 'src_port':
+                    columns[std_col] = switch_df.columns[8]
+                elif std_col == 'dst_port':
+                    columns[std_col] = switch_df.columns[9]
+                elif std_col == 'tcp_seq':
+                    columns[std_col] = switch_df.columns[10]
+    
+    # Create flow and sequence keys to match with RTT data
+    switch_df['flow_key'] = switch_df[columns['src_ip']].astype(str) + ':' + \
+                           switch_df[columns['dst_ip']].astype(str) + ':' + \
+                           switch_df[columns['src_port']].astype(str) + ':' + \
+                           switch_df[columns['dst_port']].astype(str)
+    
+    # Convert packet_size to int with 0 for empty values
+    switch_df[columns['packet_size']] = pd.to_numeric(
+        switch_df[columns['packet_size']], errors='coerce').fillna(0).astype(int)
+    
+    # Convert tcp_seq to string
+    switch_df[columns['tcp_seq']] = switch_df[columns['tcp_seq']].astype(str)
+    
+    # Create sequence key
+    switch_df['seq_key'] = switch_df[columns['tcp_seq']] + ':' + \
+                          switch_df[columns['packet_size']].astype(str)
+    
+    # Create full key
+    switch_df['full_key'] = switch_df['flow_key'] + ':' + switch_df['seq_key']
+    
+    # Add rtt column if it doesn't exist
+    if 'rtt' not in switch_df.columns:
+        switch_df['rtt'] = None
+    
+    # Add rtt_source column to track where RTT came from
+    if 'rtt_source' not in switch_df.columns:
+        switch_df['rtt_source'] = None
+    
+    # Count matches
+    matches = 0
+    small_packet_matches = 0
+    seq_only_matches = 0
+    
+    # Find RTT for each packet in the switch log
+    for idx, row in switch_df.iterrows():
+        # Skip if already has an RTT value
+        if not pd.isna(switch_df.at[idx, 'rtt']):
+            continue
+            
+        # Try exact match first
+        if row['full_key'] in rtt_dict:
+            switch_df.at[idx, 'rtt'] = rtt_dict[row['full_key']]
+            switch_df.at[idx, 'rtt_source'] = 'bg_exact'
+            matches += 1
+        else:
+            # If packet is small, try to find any match with same sequence but different size
+            if row[columns['packet_size']] < 1448:
+                flow_prefix = row['flow_key'] + ':' + row[columns['tcp_seq']] + ':'
+                for key, value in rtt_dict.items():
+                    if key.startswith(flow_prefix) and key != row['full_key']:
+                        # Check if the other key also has a small packet size
+                        packet_size = int(key.split(':')[-1])
+                        if packet_size < 1448:
+                            switch_df.at[idx, 'rtt'] = value
+                            switch_df.at[idx, 'rtt_source'] = 'bg_small_pkt'
+                            small_packet_matches += 1
+                            break
+            
+            # If still no match, try just the sequence number
+            if pd.isna(switch_df.at[idx, 'rtt']):
+                flow_prefix = row['flow_key'] + ':' + row[columns['tcp_seq']] + ':'
+                for key, value in rtt_dict.items():
+                    if key.startswith(flow_prefix):
+                        switch_df.at[idx, 'rtt'] = value
+                        switch_df.at[idx, 'rtt_source'] = 'bg_seq_only'
+                        seq_only_matches += 1
+                        break
+    
+    print(f"Background RTT matches for {basename}:")
+    print(f"  - Exact matches: {matches}")
+    print(f"  - Small packet matches: {small_packet_matches}")
+    print(f"  - Sequence-only matches: {seq_only_matches}")
+    print(f"  - Total matched: {matches + small_packet_matches + seq_only_matches}")
+    print(f"  - Remaining without RTT: {switch_df['rtt'].isna().sum()}")
+    
+    return switch_df
+
+def process_bursty_rtt(switch_df, bursty_rtt_files, basename):
+    """
+    Process bursty RTT files and add RTT measurements to switch dataframe.
+    Uses a combination of flow, timestamp ordering, and packet size to match packets,
+    as bursty server responses often have identical sequence numbers.
+    
+    Args:
+        switch_df: DataFrame with switch logs
+        bursty_rtt_files: List of bursty RTT measurement files
+        basename: Base name of the switch dataset file (for logging)
+    
+    Returns:
+        Updated DataFrame with bursty RTT information added
+    """
+    import pandas as pd
+    import traceback
+    import numpy as np
+    
+    print(f"Processing bursty RTT for {basename}...")
+    
+    # Load all RTT dataframes
+    rtt_dfs = []
+    for rtt_file in bursty_rtt_files:
+        try:
+            df = pd.read_csv(rtt_file)
+            # Skip empty files
+            if df.empty:
+                print(f"Skipping empty RTT file: {rtt_file}")
+                continue
+                
+            # Add to list of dataframes
+            rtt_dfs.append(df)
+        except Exception as e:
+            print(f"Error reading RTT file {rtt_file}: {e}")
+    
+    # Combine all RTT dataframes
+    if not rtt_dfs:
+        print("No valid bursty RTT data found")
+        return switch_df
+        
+    rtt_df = pd.concat(rtt_dfs, ignore_index=True)
+    print(f"Loaded {len(rtt_df)} total bursty RTT measurements")
+    
+    # Find the RTT column name - could be 'rtt' or 'final_rtt'
+    rtt_column = None
+    for col_name in ['rtt', 'final_rtt']:
+        if col_name in rtt_df.columns:
+            rtt_column = col_name
+            break
+            
+    if not rtt_column:
+        print("Error: No RTT column found in bursty RTT data")
+        return switch_df
+    
+    # Extract client IPs from the RTT files
+    client_ips = set()
+    for file in bursty_rtt_files:
+        filename = os.path.basename(file)
+        parts = filename.split('_')
+        if len(parts) >= 3:
+            client_ip = parts[2]
+            if '.' in client_ip:  # Simple validation that it looks like an IP
+                if client_ip.endswith('.csv'):
+                    client_ip = client_ip[:-4]
+                client_ips.add(client_ip)
+    
+    if not client_ips:
+        print("Warning: Could not extract any client IPs from RTT filenames")
+    
+    # Identify server response packets (from server to client with payload)
+    # First determine if payload column is present and what it's called
+    payload_column = None
+    for col_name in ['payload_size', 'tcp_len']:
+        if col_name in rtt_df.columns:
+            payload_column = col_name
+            break
+    
+    if payload_column:
+        # Mark packets going to client with payload as server responses
+        rtt_df['is_server_response'] = False
+        for client_ip in client_ips:
+            mask = (rtt_df['dst_ip'] == client_ip) & (rtt_df[payload_column] > 0)
+            rtt_df.loc[mask, 'is_server_response'] = True
+            
+        if rtt_df['is_server_response'].sum() == 0:
+            # Try the reverse if no matches (maybe client/server roles got swapped)
+            for client_ip in client_ips:
+                mask = (rtt_df['src_ip'] == client_ip) & (rtt_df[payload_column] > 0)
+                rtt_df.loc[mask, 'is_server_response'] = True
+            
+            if rtt_df['is_server_response'].sum() == 0:
+                # If still no matches, just mark all packets with payload as server responses
+                print("Warning: Could not identify server responses by client IPs, using payload presence")
+                rtt_df['is_server_response'] = rtt_df[payload_column] > 0
+    else:
+        # If we can't determine payload, use IP information if available
+        if 'is_from_server' in rtt_df.columns:
+            rtt_df['is_server_response'] = rtt_df['is_from_server']
+        else:
+            # Mark all packets as potential server responses as fallback
+            print("Warning: Cannot identify server responses reliably - treating all packets as potential matches")
+            rtt_df['is_server_response'] = True
+    
+    print(f"Identified {rtt_df['is_server_response'].sum()} server response packets in RTT data")
+    
+    # Group RTT data by flow
+    rtt_df['flow_key'] = rtt_df['src_ip'] + ':' + rtt_df['dst_ip'] + ':' + \
+                        rtt_df['src_port'].astype(str) + ':' + rtt_df['dst_port'].astype(str)
+    
+    # Standard column names for switch logs
+    columns = {
+        'packet_size': 'packet_size',
+        'src_ip': 'src_ip',
+        'dst_ip': 'dst_ip',
+        'src_port': 'src_port',
+        'dst_port': 'dst_port',
+        'tcp_seq': 'tcp_seq'
+    }
+    
+    # Map column names to actual names in the dataframe
+    for std_col, actual_col in columns.items():
+        if actual_col not in switch_df.columns:
+            # Try to find the column using common patterns
+            if std_col == 'packet_size' and any(col in switch_df.columns for col in ['length', 'size', 'len']):
+                for alt in ['length', 'size', 'len']:
+                    if alt in switch_df.columns:
+                        columns[std_col] = alt
+                        break
+            elif std_col == 'src_ip' and 'source_ip' in switch_df.columns:
+                columns[std_col] = 'source_ip'
+            elif std_col == 'dst_ip' and 'destination_ip' in switch_df.columns:
+                columns[std_col] = 'destination_ip'
+            elif std_col == 'src_port' and 'sport' in switch_df.columns:
+                columns[std_col] = 'sport'
+            elif std_col == 'dst_port' and 'dport' in switch_df.columns:
+                columns[std_col] = 'dport'
+            elif std_col == 'tcp_seq' and any(col in switch_df.columns for col in ['seq', 'sequence']):
+                for alt in ['seq', 'sequence']:
+                    if alt in switch_df.columns:
+                        columns[std_col] = alt
+                        break
+    
+    # Check if required columns are available
+    missing_cols = [col for col in ['src_ip', 'dst_ip', 'src_port', 'dst_port', 'tcp_seq'] 
+                   if columns.get(col) is None]
+    if missing_cols:
+        print(f"Warning: Missing required columns in {basename}: {missing_cols}")
+        print("Using fallback column detection...")
+        
+        # Fallback - try to infer columns by position
+        col_mapping = {
+            'src_ip': 'src_ip', 
+            'dst_ip': 'dst_ip',
+            'src_port': 'src_port', 
+            'dst_port': 'dst_port',
+            'tcp_seq': 'tcp_seq'
+        }
+        
+        # Check if columns exist by name
+        for col in missing_cols:
+            if col_mapping[col] in switch_df.columns:
+                columns[col] = col_mapping[col]
+        
+        # If still missing, try positional fallbacks
+        still_missing = [col for col in missing_cols if columns.get(col) is None]
+        if still_missing:
+            print(f"Still missing required columns: {still_missing}")
+            if len(switch_df.columns) >= 11:  # If enough columns exist
+                if 'src_ip' in still_missing:
+                    columns['src_ip'] = switch_df.columns[6]
+                if 'dst_ip' in still_missing:
+                    columns['dst_ip'] = switch_df.columns[7]
+                if 'src_port' in still_missing:
+                    columns['src_port'] = switch_df.columns[8]
+                if 'dst_port' in still_missing:
+                    columns['dst_port'] = switch_df.columns[9]
+                if 'tcp_seq' in still_missing:
+                    columns['tcp_seq'] = switch_df.columns[10]
+            else:
+                print(f"Not enough columns in dataset (only {len(switch_df.columns)}) - skipping")
+                return switch_df
+    
+    # Create flow key in switch dataset if not already done
+    if 'flow_key' not in switch_df.columns:
+        switch_df['flow_key'] = switch_df[columns['src_ip']].astype(str) + ':' + \
+                               switch_df[columns['dst_ip']].astype(str) + ':' + \
+                               switch_df[columns['src_port']].astype(str) + ':' + \
+                               switch_df[columns['dst_port']].astype(str)
+    
+    # Add rtt column if it doesn't exist
+    if 'rtt' not in switch_df.columns:
+        switch_df['rtt'] = None
+    
+    # Add rtt_source column to track where RTT came from
+    if 'rtt_source' not in switch_df.columns:
+        switch_df['rtt_source'] = None
+    
+    # Match counts
+    match_count = 0
+    flow_avg_matches = 0
+    
+    # Process each flow in the switch dataset
+    for flow in switch_df['flow_key'].unique():
+        # Get RTT data for this flow
+        flow_rtt = rtt_df[rtt_df['flow_key'] == flow]
+        
+        if flow_rtt.empty:
+            continue
+        
+        # Get switch data for this flow
+        flow_switch = switch_df[switch_df['flow_key'] == flow]
+        
+        # For each sequence number in this flow
+        for seq in flow_switch[columns['tcp_seq']].unique():
+            # Get switch packets with this sequence
+            seq_switch = flow_switch[flow_switch[columns['tcp_seq']] == seq]
+            
+            # Skip packets that already have RTT values from background processing
+            # unless there are server responses we can match better
+            seq_switch_needing_rtt = seq_switch[seq_switch['rtt'].isna() | 
+                                               (seq_switch['rtt_source'].isin(['bg_small_pkt', 'bg_seq_only']))]
+            
+            if seq_switch_needing_rtt.empty:
+                continue
+            
+            if len(seq_switch_needing_rtt) <= 1:
+                # If only one packet with this sequence, try direct match
+                seq_rtt = flow_rtt[flow_rtt['tcp_seq'] == seq]
+                
+                if not seq_rtt.empty:
+                    # Just use the first RTT value if multiple exist
+                    rtt_value = seq_rtt.iloc[0][rtt_column]
+                    if not pd.isna(rtt_value):
+                        for idx in seq_switch_needing_rtt.index:
+                            switch_df.at[idx, 'rtt'] = rtt_value
+                            switch_df.at[idx, 'rtt_source'] = 'bursty_exact'
+                            match_count += 1
+            else:
+                # Multiple packets with same sequence - use positional matching
+                seq_rtt = flow_rtt[flow_rtt['tcp_seq'] == seq]
+                
+                if seq_rtt.empty:
+                    continue
+                
+                # Focus on server responses if possible
+                server_resp = seq_rtt[seq_rtt['is_server_response']]
+                if not server_resp.empty:
+                    seq_rtt = server_resp
+                
+                # If we have packet sizes in both datasets, try matching by size
+                if columns.get('packet_size') and 'packet_size' in seq_rtt.columns:
+                    for idx, switch_row in seq_switch_needing_rtt.iterrows():
+                        switch_size = switch_row[columns['packet_size']]
+                        
+                        # Find closest match by packet size
+                        closest = None
+                        min_diff = float('inf')
+                        
+                        for _, rtt_row in seq_rtt.iterrows():
+                            rtt_size = rtt_row['packet_size']
+                            diff = abs(switch_size - rtt_size)
+                            
+                            if diff < min_diff:
+                                min_diff = diff
+                                closest = rtt_row
+                        
+                        # If we found a reasonable match (size difference < 100 bytes)
+                        if closest is not None and min_diff < 100:
+                            rtt_value = closest[rtt_column]
+                            if not pd.isna(rtt_value):
+                                switch_df.at[idx, 'rtt'] = rtt_value
+                                switch_df.at[idx, 'rtt_source'] = 'bursty_size'
+                                match_count += 1
+                
+                # If we still have unmatched packets, use positional ordering
+                unmatched = seq_switch_needing_rtt[switch_df.loc[seq_switch_needing_rtt.index, 'rtt'].isna()]
+                
+                if not unmatched.empty and len(seq_rtt) > 0:
+                    # Sort RTT packets (by frame number if available, otherwise by index)
+                    if 'frame_number' in seq_rtt.columns:
+                        seq_rtt_sorted = seq_rtt.sort_values('frame_number')
+                    else:
+                        seq_rtt_sorted = seq_rtt.sort_index()
+                    
+                    # Sort switch packets by index
+                    unmatched_sorted = unmatched.sort_index()
+                    
+                    # Assign RTTs based on relative position
+                    for i, (idx, _) in enumerate(unmatched_sorted.iterrows()):
+                        if i < len(seq_rtt_sorted):
+                            rtt_value = seq_rtt_sorted.iloc[i][rtt_column]
+                            if not pd.isna(rtt_value):
+                                switch_df.at[idx, 'rtt'] = rtt_value
+                                switch_df.at[idx, 'rtt_source'] = 'bursty_position'
+                                match_count += 1
+    
+    # For any remaining unmatched packets, use averages from their flow
+    unmatched = switch_df[switch_df['rtt'].isna()]
+    
+    if not unmatched.empty:
+        # Compute average RTT per flow
+        flow_rtts = {}
+        for flow in rtt_df['flow_key'].unique():
+            flow_data = rtt_df[rtt_df['flow_key'] == flow]
+            rtts = flow_data[rtt_column].dropna()
+            if not rtts.empty:
+                flow_rtts[flow] = rtts.median()
+        
+        # Apply flow averages to unmatched packets
+        flow_avg_matches = 0
+        for idx, row in unmatched.iterrows():
+            if row['flow_key'] in flow_rtts:
+                switch_df.at[idx, 'rtt'] = flow_rtts[row['flow_key']]
+                switch_df.at[idx, 'rtt_source'] = 'bursty_flow_avg'
+                flow_avg_matches += 1
+        
+        print(f"Assigned flow average RTT to {flow_avg_matches} packets")
+    
+    # We do NOT fill with min_rtt here, as requested
+    
+    print(f"Bursty RTT matches for {basename}:")
+    print(f"  - Direct matches: {match_count}")
+    print(f"  - Flow average matches: {flow_avg_matches}")
+    print(f"  - Remaining without RTT: {switch_df['rtt'].isna().sum()}")
+    
+    return switch_df
 
 def create_final_datasets(retr_datasets, rtt_datasets, output_dir):
     """
-    Merge datasets with out-of-order flags and RTT measurements to create final datasets.
+    Create final datasets by merging all data from retransmission and RTT datasets.
     
     Args:
-        retr_datasets: List of paths to datasets with out-of-order flags
-        rtt_datasets: List of paths to datasets with RTT measurements
-        output_dir: Directory to save final output files
-        
+        retr_datasets: List of CSV files with retransmission information
+        rtt_datasets: List of CSV files with RTT information
+        output_dir: Directory to write final datasets
+    
     Returns:
-        List of paths to the final dataset files
+        List of final dataset files
     """
-    print(f"Creating final datasets with out-of-order flags and RTT measurements")
+    import pandas as pd
+    import os
+    import re
     
-    if not retr_datasets:
-        print("Error: No datasets with out-of-order flags provided")
-        return []
-        
-    if not rtt_datasets:
-        print("Warning: No RTT datasets provided, using out-of-order datasets as final")
-        return retr_datasets
-    
-    # Match datasets by switch number
+    # Dictionary to store final dataset files
     final_datasets = []
-    for retr_path in retr_datasets:
+    
+    # Create output directory if it doesn't exist
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+    
+    # Create mapping between switch IDs and retransmission datasets
+    retr_map = {}
+    for retr_file in retr_datasets:
+        # Extract switch ID from filename
+        match = re.search(r's(\d+)_', os.path.basename(retr_file))
+        if match:
+            switch_id = 's' + match.group(1)
+            retr_map[switch_id] = retr_file
+    
+    # Create mapping between switch IDs and RTT datasets
+    rtt_map = {}
+    for rtt_file in rtt_datasets:
+        # Extract switch ID from filename
+        match = re.search(r's(\d+)_', os.path.basename(rtt_file))
+        if match:
+            switch_id = 's' + match.group(1)
+            rtt_map[switch_id] = rtt_file
+    
+    # Merge datasets for each switch
+    for switch_id in list(set(list(retr_map.keys()) + list(rtt_map.keys()))):
+        # Create output filename
+        output_file = os.path.join(output_dir, f"{switch_id}_final_dataset.csv")
+        
         try:
-            # Extract switch number from filename (s{i}_with_oo.csv)
-            retr_filename = os.path.basename(retr_path)
-            switch_num = retr_filename.split('_')[0]
-            
-            # Find corresponding RTT dataset
-            rtt_path = None
-            for path in rtt_datasets:
-                if os.path.basename(path).startswith(switch_num):
-                    rtt_path = path
-                    break
-            
-            if rtt_path is None:
-                print(f"Warning: No RTT dataset found for {retr_filename}, using out-of-order dataset as final")
-                final_path = os.path.join(output_dir, f"{switch_num}_final_dataset.csv")
-                import shutil
-                shutil.copy(retr_path, final_path)
-                final_datasets.append(final_path)
-                continue
+            # If we have both retransmission and RTT data for this switch
+            if switch_id in retr_map and switch_id in rtt_map:
+                # Read retransmission data
+                retr_df = pd.read_csv(retr_map[switch_id])
                 
-            # Read both datasets
-            retr_df = pd.read_csv(retr_path)
-            rtt_df = pd.read_csv(rtt_path)
-            
-            # Ensure 'rtt' column exists in rtt_df
-            if 'rtt' not in rtt_df.columns:
-                raise ValueError(f"Warning: 'rtt' column not found in {rtt_path}")
-            
-            # Check if both datasets use the same index
-            if len(retr_df) != len(rtt_df):
-                print(f"Warning: Dataset sizes don't match for {switch_num} ({len(retr_df)} vs {len(rtt_df)})")
-                print("This should be normal. Client and server datasets lengths should not be equal.")
-                # Try to merge based on common columns if sizes don't match
-                merge_cols = ['src_ip', 'dst_ip', 'src_port', 'dst_port', 'tcp_seq']
-                if all(col in retr_df.columns for col in merge_cols) and all(col in rtt_df.columns for col in merge_cols):
-                    print(f"Attempting to merge on TCP connection parameters")
+                # Read RTT data
+                rtt_df = pd.read_csv(rtt_map[switch_id])
+                
+                # Merge datasets
+                merged_df = pd.merge(retr_df, rtt_df, how='outer')
+                
+                # Fill missing values for retransmission column with 0 (no retransmission)
+                if 'retransmission' in merged_df.columns:
+                    merged_df['retransmission'] = merged_df['retransmission'].fillna(0)
+                
+                # Fill missing RTT values with minimum RTT
+                if 'rtt' in merged_df.columns and merged_df['rtt'].isna().any():
+                    min_rtt = merged_df['rtt'].dropna().min()
+                    if pd.isna(min_rtt) or min_rtt <= 0:
+                        min_rtt = 0.001  # Default to 1ms if no valid RTT found
                     
-                    # Convert columns to strings for consistent matching
-                    for col in ['src_port', 'dst_port', 'tcp_seq']:
-                        if col in retr_df.columns:
-                            retr_df[col] = retr_df[col].astype(str)
-                        if col in rtt_df.columns:
-                            rtt_df[col] = rtt_df[col].astype(str)
-                    
-                    # Perform left merge to keep all rows from retr_df
-                    merged_df = pd.merge(
-                        retr_df, 
-                        rtt_df[['src_ip', 'dst_ip', 'src_port', 'dst_port', 'tcp_seq', 'rtt']], 
-                        on=merge_cols, 
-                        how='left'
-                    )
-                    
-                    # Fill NaN values in rtt with 0 (or better default)
-                    if 'rtt' in merged_df.columns:
-                        # Get minimum non-zero RTT if available
-                        min_rtt = merged_df['rtt'].replace(0, float('nan')).min()
-                        if pd.isna(min_rtt) or min_rtt == 0:
-                            raise ValueError(f"Warning: No valid minimum RTT found in {rtt_path}")
-                        
-                        # Fill NaN values with minimum RTT
-                        merged_df['rtt'] = merged_df['rtt'].fillna(min_rtt)
-                        # Also replace zeros with min_rtt
-                        merged_df.loc[merged_df['rtt'] == 0, 'rtt'] = min_rtt
-                    else:
-                        print(f"Error: 'rtt' column not present after merge")
-                else:
-                    print(f"Error: Cannot merge datasets for {switch_num}, using out-of-order dataset as final")
-                    final_path = os.path.join(output_dir, f"{switch_num}_final_dataset.csv")
-                    retr_df.to_csv(final_path, index=False)
-                    final_datasets.append(final_path)
-                    continue
-            else:
-                # Add RTT column to out-of-order dataset
-                merged_df = retr_df.copy()
-                if 'rtt' in rtt_df.columns:
-                    merged_df['rtt'] = rtt_df['rtt']
-                else:
-                    raise ValueError(f"Warning: 'rtt' column not found in {rtt_path}")
+                    missing_count = merged_df['rtt'].isna().sum()
+                    merged_df['rtt'] = merged_df['rtt'].fillna(min_rtt)
+                    print(f"Filled {missing_count} missing RTT values with {min_rtt} in final dataset {switch_id}")
+                
+            # If we only have retransmission data
+            elif switch_id in retr_map:
+                merged_df = pd.read_csv(retr_map[switch_id])
+                
+                # Add empty RTT column
+                if 'rtt' not in merged_df.columns:
+                    merged_df['rtt'] = 0.001  # Default to 1ms
+                    print(f"No RTT data for {switch_id}, using default 1ms RTT")
             
-            # Compute rewards for each row
-            print(f"Computing rewards for switch {switch_num}")
-            merged_df['reward'] = merged_df.apply(compute_reward, axis=1)
+            # If we only have RTT data
+            elif switch_id in rtt_map:
+                merged_df = pd.read_csv(rtt_map[switch_id])
+                
+                # Add empty retransmission column
+                if 'retransmission' not in merged_df.columns:
+                    merged_df['retransmission'] = 0
+                    print(f"No retransmission data for {switch_id}, assuming no retransmissions")
+                
+                # Fill missing RTT values with minimum RTT
+                if 'rtt' in merged_df.columns and merged_df['rtt'].isna().any():
+                    min_rtt = merged_df['rtt'].dropna().min()
+                    if pd.isna(min_rtt) or min_rtt <= 0:
+                        min_rtt = 0.001  # Default to 1ms if no valid RTT found
+                    
+                    missing_count = merged_df['rtt'].isna().sum()
+                    merged_df['rtt'] = merged_df['rtt'].fillna(min_rtt)
+                    print(f"Filled {missing_count} missing RTT values with {min_rtt} in final dataset {switch_id}")
             
             # Save final dataset
-            final_path = os.path.join(output_dir, f"{switch_num}_final_dataset.csv")
-            merged_df.to_csv(final_path, index=False)
-            print(f"Created final dataset for switch {switch_num} with {len(merged_df)} rows")
-            print(f"RTT stats: min={merged_df['rtt'].min():.4f}ms, avg={merged_df['rtt'].mean():.4f}ms")
-            print(f"Reward stats: min={merged_df['reward'].min():.4f}, avg={merged_df['reward'].mean():.4f}")
-            final_datasets.append(final_path)
+            merged_df.to_csv(output_file, index=False)
+            final_datasets.append(output_file)
+            
+            print(f"Created final dataset for {switch_id} with {len(merged_df)} rows")
             
         except Exception as e:
-            print(f"Error processing datasets for {retr_path}: {e}")
-            traceback.print_exc()
+            print(f"Error creating final dataset for {switch_id}: {e}")
     
-    print(f"Successfully created {len(final_datasets)} final datasets")
     return final_datasets
 
 def extract_response_rtt_from_pcap(pcap_file, output_csv=None):
     """
-    Extract RTT measurements from bursty client PCAP files using a three-tier approach:
-    1. For client packets (SYN, query requests): Use tshark's built-in RTT analysis
-    2. For server query responses with payload: Calculate RTT as time between request and response
-    3. For server ACKs and other packets: Use minimum RTT found across all packets
+    Extract RTT measurements for server responses in bursty TCP traffic.
+    Maps RTTs from client ACKs to the server responses they acknowledge.
     
     Args:
-        pcap_file: Path to the bursty client PCAP file
-        output_csv: Optional path to write the RTT data
+        pcap_file: Path to the client PCAP file
+        output_csv: Optional path to write response RTT data
         
     Returns:
         Dictionary mapping flow IDs to list of RTT measurements
     """
-    # Import needed modules within the function scope
-    import csv
-    import io
+    import pandas as pd
     import subprocess
+    import os
+    import traceback
     
-    is_bursty = os.path.basename(pcap_file).startswith('bursty_client_')
-    if not is_bursty:
-        print(f"Warning: {pcap_file} does not appear to be a bursty client PCAP file")
-        return {}
-    
-    print(f"Processing bursty client PCAP file: {pcap_file}")
+    print(f"Extracting response RTT from {pcap_file}")
     
     # If output_csv not specified, create one based on pcap filename
     if output_csv is None:
@@ -1131,7 +1315,7 @@ def extract_response_rtt_from_pcap(pcap_file, output_csv=None):
     except:
         print(f"Warning: Could not extract client IP from {filename}")
     
-    # Run tshark to extract packet information including timestamps, sequence numbers and built-in RTT analysis
+    # Run tshark command to extract all packets, including TCP flags
     tshark_cmd = [
         'tshark', '-r', pcap_file,
         '-T', 'fields',
@@ -1142,8 +1326,14 @@ def extract_response_rtt_from_pcap(pcap_file, output_csv=None):
         '-e', 'tcp.srcport',
         '-e', 'tcp.dstport',
         '-e', 'tcp.seq',
+        '-e', 'tcp.ack',
+        '-e', 'ip.len',
         '-e', 'tcp.len',
         '-e', 'tcp.flags',
+        '-e', 'tcp.flags.syn',
+        '-e', 'tcp.flags.ack',
+        '-e', 'tcp.flags.push',
+        '-e', 'tcp.flags.fin',
         '-e', 'tcp.analysis.ack_rtt',
         '-o', 'tcp.relative_sequence_numbers: false',
         '-E', 'header=y',
@@ -1151,197 +1341,180 @@ def extract_response_rtt_from_pcap(pcap_file, output_csv=None):
     ]
     
     try:
+        # Run tshark and get output
         result = subprocess.run(tshark_cmd, capture_output=True, text=True, check=True)
         
         if result.returncode != 0:
             print(f"Error running tshark: {result.stderr}")
             return {}
         
-        # Dictionary to track server-client flow information
-        # Key: (client_port, server_ip)
-        # Value: list of (timestamp, sequence_number, frame_number) tuples for client requests, sorted by timestamp
-        client_requests = {}
+        import io
+        # Convert tshark output to DataFrame
+        df = pd.read_csv(io.StringIO(result.stdout))
         
-        # Dictionary to store RTT values by flow
-        flow_rtts = {}
+        # Rename columns to standardized names
+        df.columns = ['frame_number', 'timestamp', 'src_ip', 'dst_ip', 'src_port', 
+                      'dst_port', 'tcp_seq', 'tcp_ack', 'packet_size', 'tcp_len', 
+                      'tcp_flags', 'syn_flag', 'ack_flag', 'push_flag', 'fin_flag',
+                      'rtt']
         
-        # List to collect all output rows
-        output_rows = []
+        # Convert numeric columns
+        numeric_cols = ['frame_number', 'tcp_seq', 'tcp_ack', 'packet_size', 'tcp_len', 
+                        'syn_flag', 'ack_flag', 'push_flag', 'fin_flag']
+        for col in numeric_cols:
+            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
         
-        # First pass: collect all tshark RTT values and track minimum
-        valid_rtts = []
+        # Convert RTT to float
+        df['rtt'] = pd.to_numeric(df['rtt'], errors='coerce')
         
-        # Sort all packets by timestamp first
-        all_packets = []
+        # Add direction flags based on IP addresses
+        df['is_from_client'] = df['src_ip'] == client_ip
+        df['is_from_server'] = ~df['is_from_client']
         
-        # Parse tshark output for first pass - collect all packets
-        csv_reader = csv.reader(io.StringIO(result.stdout))
-        headers = next(csv_reader)
+        # Calculate payload size (tcp.len is the payload size)
+        df['payload_size'] = df['tcp_len']
         
-        for row in csv_reader:
-            if len(row) < 10:  # Ensure we have enough fields
-                continue
-                
-            frame_num = row[0]
-            timestamp = float(row[1])
-            src_ip = row[2]
-            dst_ip = row[3]
-            src_port = row[4]
-            dst_port = row[5]
-            seq_num = row[6]  # Raw sequence number
-            payload_len = int(row[7]) if row[7] else 0
-            flags = row[8]
-            tshark_rtt = row[9]
-                
-            # Extract tshark RTT if available
-            if tshark_rtt and tshark_rtt.strip():
-                try:
-                    rtt = float(tshark_rtt)
-                    if rtt > 0:  # Only add positive RTTs
-                        valid_rtts.append(rtt)
-                except ValueError:
-                    pass
-                    
-            # Add packet to chronological list
-            all_packets.append({
-                'frame_num': frame_num,
-                'timestamp': timestamp,
-                'src_ip': src_ip,
-                'dst_ip': dst_ip,
-                'src_port': src_port,
-                'dst_port': dst_port,
-                'seq_num': seq_num,
-                'payload_len': payload_len,
-                'flags': flags,
-                'tshark_rtt': tshark_rtt
-            })
+        # Add packet type classification
+        df['is_syn'] = df['syn_flag'] == 1
+        df['is_ack'] = df['ack_flag'] == 1
+        df['is_syn_ack'] = (df['syn_flag'] == 1) & (df['ack_flag'] == 1)
+        df['is_fin'] = df['fin_flag'] == 1
+        df['is_push'] = df['push_flag'] == 1
+        df['is_data'] = df['payload_size'] > 0
         
-        # Calculate minimum RTT (default to 0.1ms if none found)
-        min_rtt = min(valid_rtts) if valid_rtts else 0.1
-        print(f"Found {len(valid_rtts)} valid tshark RTT measurements")
+        # Print diagnostic information
+        print(f"Total packets: {len(df)}")
+        print(f"Client packets: {df['is_from_client'].sum()}")
+        print(f"Server packets: {df['is_from_server'].sum()}")
+        print(f"Server packets with payload > 0: {df[df['is_from_server'] & (df['payload_size'] > 0)].shape[0]}")
+        print(f"Client ACKs: {df[df['is_from_client'] & df['is_ack']].shape[0]}")
+        print(f"Packets with RTT values: {df['rtt'].notna().sum()}")
         
-        # Sort packets by timestamp
-        all_packets.sort(key=lambda x: x['timestamp'])
+        # Initialize final RTT column - this will hold our computed RTTs
+        df['final_rtt'] = None
         
-        # First pass: build client request dictionary for each flow
-        for packet in all_packets:
-            # Check if this is a client request (from client to server)
-            if packet['src_ip'] == client_ip and packet['dst_port'] == '12346':
-                flow_key = (packet['src_port'], packet['dst_ip'])
-                if flow_key not in client_requests:
-                    client_requests[flow_key] = []
-                
-                # Add request to the flow's list, along with its timestamp and frame number
-                client_requests[flow_key].append({
-                    'timestamp': packet['timestamp'],
-                    'seq_num': packet['seq_num'],
-                    'frame_num': packet['frame_num'],
-                    'used': False  # Flag to mark if this request has been matched to a response
-                })
+        # First, preserve any original RTT values that exist
+        df.loc[df['rtt'].notna(), 'final_rtt'] = df.loc[df['rtt'].notna(), 'rtt']
         
-        # Second pass: process all packets and calculate RTTs
-        for packet in all_packets:
-            frame_num = packet['frame_num']
-            timestamp = packet['timestamp']
-            src_ip = packet['src_ip']
-            dst_ip = packet['dst_ip']
-            src_port = packet['src_port']
-            dst_port = packet['dst_port']
-            seq_num = packet['seq_num']
-            payload_len = packet['payload_len']
-            flags = packet['flags']
-            tshark_rtt = packet['tshark_rtt']
+        # Step 1: Build a mapping from client ACKs with RTT to the server packets they acknowledge
+        # First, create a dictionary mapping ACK number to client ACK details
+        ack_to_rtt = {}
+        client_acks_with_rtt = df[(df['is_from_client']) & (df['is_ack']) & (df['rtt'].notna())]
+        for _, row in client_acks_with_rtt.iterrows():
+            ack_num = int(row['tcp_ack'])
+            rtt_value = float(row['rtt'])
+            ack_to_rtt[ack_num] = rtt_value
+        
+        print(f"Found {len(ack_to_rtt)} client ACKs with RTT values")
+        
+        # Step 2: Process server data packets and assign RTT values from matching client ACKs
+        # We'll create a mapping from sequence range to frame number and final RTT value
+        seq_to_frame_rtt = {}
+        server_data_packets = df[(df['is_from_server']) & (df['payload_size'] > 0)]
+        matched_server_packets = 0
+        
+        for idx, row in server_data_packets.iterrows():
+            seq_num = int(row['tcp_seq'])
+            payload_size = int(row['payload_size'])
+            frame_num = int(row['frame_number'])
             
-            # Generate flow ID for this packet
-            flow_id = f"{src_ip}:{src_port}-{dst_ip}:{dst_port}"
+            # Calculate the end sequence number (next seq) that would be ACKed
+            next_seq = seq_num + payload_size
             
-            # Case 1: Client packets with tshark RTT
-            if src_ip == client_ip and tshark_rtt and tshark_rtt.strip():
-                try:
-                    rtt = float(tshark_rtt)
-                except ValueError:
-                    # If tshark RTT is invalid, use minimum RTT
-                    rtt = min_rtt
-            
-            # Case 2: Server query responses - find and match with the closest previous request
-            elif dst_ip == client_ip and src_port == '12346' and payload_len > 100:
-                # This is a server response to client
-                flow_key = (dst_port, src_ip)  # Look up client port and server IP
+            # Check if this sequence number is acknowledged by a client ACK with RTT
+            if next_seq in ack_to_rtt:
+                df.loc[idx, 'final_rtt'] = ack_to_rtt[next_seq]
+                matched_server_packets += 1
                 
-                # Try to find a matching request - look for the most recent un-matched request
-                if flow_key in client_requests and client_requests[flow_key]:
-                    # Get all requests for this flow
-                    requests = client_requests[flow_key]
-                    
-                    # Find the most recent request that happened before this response
-                    valid_requests = [req for req in requests 
-                                     if (not req['used']) and req['timestamp'] < timestamp]
-                    
-                    if valid_requests:
-                        # Sort by timestamp (most recent first) and get the first one
-                        valid_requests.sort(key=lambda x: x['timestamp'], reverse=True)
-                        matched_request = valid_requests[0]
-                        
-                        # Calculate RTT from request to response
-                        rtt = (timestamp - matched_request['timestamp'])
-                        
-                        # Mark this request as used so we don't match it again
-                        matched_request['used'] = True
-                    else:
-                        # No matching request found, use minimum RTT
-                        rtt = min_rtt
+                # Print debug info for a few matches
+                if matched_server_packets <= 5:
+                    print(f"Frame {frame_num}: Server packet with seq {seq_num} (payload={payload_size}) matched with client ACK for seq {next_seq}, RTT={ack_to_rtt[next_seq]}")
+        
+        print(f"Matched {matched_server_packets} server data packets with client ACKs")
+        
+        # Step 3: For any remaining server data packets without RTT, try to infer from nearby packets
+        # First, create a sorted list of packets with assigned RTTs
+        packets_with_rtt = df[df['final_rtt'].notna()].sort_values('frame_number')
+        
+        # Assign RTTs to any unmatched server data packets
+        unmatched_server_packets = df[(df['is_from_server']) & (df['payload_size'] > 0) & (df['final_rtt'].isna())]
+        inferred_server_packets = 0
+        
+        if not unmatched_server_packets.empty and not packets_with_rtt.empty:
+            for idx, row in unmatched_server_packets.iterrows():
+                frame_num = row['frame_number']
+                
+                # Find the closest packet with RTT (either before or after)
+                packets_before = packets_with_rtt[packets_with_rtt['frame_number'] < frame_num]
+                packets_after = packets_with_rtt[packets_with_rtt['frame_number'] > frame_num]
+                
+                if not packets_before.empty:
+                    closest_before = packets_before.iloc[-1]
+                    before_distance = frame_num - closest_before['frame_number']
                 else:
-                    # No requests for this flow, use minimum RTT
-                    rtt = min_rtt
-            
-            # Case 3: Server ACKs and other packets - use minimum RTT
-            else:
-                rtt = min_rtt
-            
-            # Store this RTT value for the flow
+                    before_distance = float('inf')
+                    
+                if not packets_after.empty:
+                    closest_after = packets_after.iloc[0]
+                    after_distance = closest_after['frame_number'] - frame_num
+                else:
+                    after_distance = float('inf')
+                
+                # Assign RTT from the closest packet
+                if before_distance <= after_distance and before_distance != float('inf'):
+                    df.loc[idx, 'final_rtt'] = closest_before['final_rtt']
+                    inferred_server_packets += 1
+                elif after_distance != float('inf'):
+                    df.loc[idx, 'final_rtt'] = closest_after['final_rtt']
+                    inferred_server_packets += 1
+        
+        print(f"Inferred RTT for {inferred_server_packets} additional server data packets")
+        
+        # Step 4: Fill remaining packets with minimum RTT
+        # Calculate the minimum RTT value from all available RTT measurements
+        min_rtt = df['final_rtt'].dropna().min()
+        
+        # If no valid RTT found, use a default value
+        if pd.isna(min_rtt) or min_rtt <= 0:
+            min_rtt = 0.001  # Default to 1ms if no valid RTT found
+            print(f"No valid RTT found, using default min_rtt = {min_rtt}")
+        else:
+            print(f"Using minimum RTT = {min_rtt} for filling missing values")
+        
+        # Count packets with missing RTT values
+        missing_rtt_count = df['final_rtt'].isna().sum()
+        
+        # Fill missing RTT values with minimum RTT
+        df['final_rtt'] = df['final_rtt'].fillna(min_rtt)
+
+        
+        # Final statistics
+        packets_with_final_rtt = df['final_rtt'].notna().sum()
+        print(f"Final statistics:")
+        print(f"  - Total packets with RTT: {packets_with_final_rtt}")
+        
+        # Save to output CSV (with renamed rtt column)
+        output_df = df[['frame_number', 'timestamp', 'src_ip', 'dst_ip', 'src_port', 'dst_port', 
+                        'tcp_seq', 'tcp_ack', 'packet_size', 'tcp_flags', 'final_rtt']]
+        output_df = output_df.rename(columns={'final_rtt': 'rtt'})
+        output_df.to_csv(output_csv, index=False)
+        print(f"RTT data written to {output_csv}")
+        
+        # Build flow_rtts dictionary for return value
+        flow_rtts = {}
+        for _, row in df.iterrows():
+            if pd.isna(row['final_rtt']):
+                continue  # Skip packets without RTT (should be none at this point)
+                
+            flow_id = f"{row['src_ip']}:{row['src_port']}-{row['dst_ip']}:{row['dst_port']}"
             if flow_id not in flow_rtts:
                 flow_rtts[flow_id] = []
-            flow_rtts[flow_id].append(rtt)
-            
-            # Add to output rows
-            output_rows.append({
-                'src_ip': src_ip,
-                'dst_ip': dst_ip,
-                'src_port': src_port,
-                'dst_port': dst_port,
-                'seq_num': seq_num,  # Use raw sequence number
-                'rtt': rtt,
-                'packet_size': payload_len
-            })
-        
-        # Write output to CSV
-        with open(output_csv, 'w', newline='') as csvfile:
-            fieldnames = [
-                'src_ip', 'dst_ip', 'src_port', 'dst_port',
-                'seq_num', 'rtt', 'packet_size'
-            ]
-            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-            writer.writeheader()
-            writer.writerows(output_rows)
-        
-        # Count different types for statistics
-        client_packets = sum(1 for row in output_rows if row['src_ip'] == client_ip)
-        server_packets = sum(1 for row in output_rows if row['dst_ip'] == client_ip)
-        server_responses = sum(1 for row in output_rows 
-                              if row['dst_ip'] == client_ip 
-                              and row['src_port'] == '12346' 
-                              and int(row['packet_size']) > 100)
-        
-        print(f"Processed {len(output_rows)} packets:")
-        print(f"  - {client_packets} client packets")
-        print(f"  - {server_packets} server packets")
-        print(f"  - {server_responses} server response packets")
-        print(f"RTT data written to {output_csv}")
+            flow_rtts[flow_id].append(row['final_rtt'])
         
         return flow_rtts
         
     except Exception as e:
-        print(f"Error extracting RTTs from PCAP: {e}")
+        print(f"Error processing PCAP file: {e}")
         traceback.print_exc()
         return {}
 
@@ -1532,7 +1705,7 @@ def process_and_merge_all_data(topology, exp_dir):
     final_datasets = create_final_datasets(oo_datasets, rtt_datasets, exp_dir)
     
     # Step 7: Clean up intermediate files
-    cleanup_intermediate_files(exp_dir)
+    #cleanup_intermediate_files(exp_dir)
     
     # Print summary of created files
     print("\nSummary of created files:")
@@ -1543,14 +1716,14 @@ def process_and_merge_all_data(topology, exp_dir):
 if __name__ == "__main__":
 
     
-    exp_dir = os.path.join('tmp', '20250401_153049')
+    exp_dir = os.path.join('tmp', '20250404_220042')
 
     # Process client PCAP files to extract RTT measurements
     # client_rtts = process_client_pcaps_for_rtt(exp_dir)
     
     # Collect switch logs and process them
     topology = LeafSpineTopology(
-        num_hosts = 6,
+        num_hosts = 4,
         num_leaf = 2,
         num_spine = 2,
         bw = 10,
