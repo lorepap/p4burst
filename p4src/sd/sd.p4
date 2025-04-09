@@ -80,8 +80,8 @@ control SimpleDeflectionIngress(inout header_t hdr,
             queue_occupancy_info.write((bit<32>)hdr.bee.port_idx_in_reg, hdr.bee.queue_occ_info);
             queue_depth_info.write((bit<32>)hdr.bee.port_idx_in_reg, hdr.bee.queue_depth);
             
-            // log_msg("BeeIngress: port={}, queue_occ={}, queue_depth={}", 
-            //        {hdr.bee.port_idx_in_reg, hdr.bee.queue_occ_info, hdr.bee.queue_depth});
+            log_msg("BeeIngress: port={}, queue_occ={}, queue_depth={}", 
+                {hdr.bee.port_idx_in_reg, hdr.bee.queue_occ_info, hdr.bee.queue_depth});
         } else {
             //ingress_ctr.count(ingress_ctr_index);
             forward.apply(hdr, meta, standard_metadata);
