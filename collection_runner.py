@@ -54,12 +54,34 @@ import argparse
 import subprocess
 
 from topology import LeafSpineTopology, DumbbellTopology
-from control_plane import SimpleDeflectionControlPlane
+from control_plane import RLDeflectionControlPlane, SimpleDeflectionControlPlane
 # from metrics import FlowMetricsManager
 # from utils.rl_data_utils import collect_switch_logs, combine_datasets
 
 # Add a sanity check log to verify logging is working
 logger.info("Collection Runner starting - logging is active")
+
+p4_program_paths = {
+    'simple_deflection': 'Simple_Deflection/sd.p4',
+    'ecmp': 'ecmp.p4',
+    'dist_preemptive_deflection': 'Dist_PD/distpd.p4',
+    'quantile_preemptive_deflection': 'Quantile_PD/quantilepd.p4',
+    'rl_deflection': 'evaluation/evaluation.p4'
+}
+
+p4_const_paths = {
+    'simple_deflection': 'SimpleDeflection/includes/sd_const.p4',
+    'ecmp': 'ecmp_const.p4',
+    'dist_preemptive_deflection': 'Dist_PD/includes/distpd_const.p4',
+    'quantile_preemptive_deflection': 'Quantile_PD/includes/quantilepd_const.p4',
+    'rl_deflection': 'evaluation/includes/evaluation_const.p4'
+}
+
+p4_control_plane = {
+    'simple_deflection': SimpleDeflectionControlPlane,
+    'rl_deflection': RLDeflectionControlPlane,
+}
+
 
 class CollectionRunner:
     """
@@ -79,7 +101,7 @@ class CollectionRunner:
         self.n_spine = args.n_spine
         self.bw = args.bw
         self.delay = args.delay
-        self.p4_program = 'sd/sd.p4'  # Fixed P4 program for simple deflection
+        self.policy = args.policy
         self.queue_rate = args.queue_rate
         self.queue_depth = args.queue_depth
         
@@ -112,11 +134,11 @@ class CollectionRunner:
             self.n_spine, 
             self.bw, 
             self.delay,
-            self.p4_program
+            p4_program_paths[self.policy]
         )
         
         # Create control plane - fixed to SimpleDeflection
-        self.control_plane = SimpleDeflectionControlPlane(self.topology, queue_rate=self.queue_rate, 
+        self.control_plane = p4_control_plane[self.policy](self.topology, queue_rate=self.queue_rate, 
                                                           queue_depth=self.queue_depth)
         
         logger.info("Experiment setup complete")
@@ -357,9 +379,9 @@ class CollectionRunner:
             if (self.args.cli):
                 logger.info("Starting Mininet CLI for debugging")
                 self.topology.net.start_net_cli()
-            
+            else:
             # Run collection experiment - get receiver logs but don't generate dataset yet
-            self.run_collection()
+                self.run_collection()
             
             # Wait for all processes to finish
             logger.info("Waiting for all processes to complete...")
@@ -445,6 +467,8 @@ def parse_args():
                         help='Enable packet capture on switches')
     parser.add_argument('--disable_metrics', action='store_true', 
                         help='Disable metrics collection')
+    parser.add_argument('--policy', type=str, choices=['simple_deflection', 'ecmp', 'dist_preemptive_deflection', 'quantile_preemptive_deflection', 'rl_deflection'], 
+                    default='simple_deflection', help='P4 program to use (default: simple_deflection)')
     
     return parser.parse_args()
 
