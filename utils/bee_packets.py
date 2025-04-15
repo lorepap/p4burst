@@ -8,10 +8,10 @@ class BeeHeader(Packet):
         BitField("queue_depth", 0, 19) 
     ]
     
-def send_bee_packets(switch: str):
+def send_bee_packets(switch: str, n_ports: int = 32):
     switch_name = switch
     iface = switch_name + '-eth1'
-    for port in range(8):
+    for port in range(n_ports):
         pkt = (Ether() /  # Use broadcast MAC
                 IP(src="0.0.0.0", dst="0.0.0.0") /
                 UDP(dport=9999) /

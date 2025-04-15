@@ -14,7 +14,7 @@ import json
 import glob
 
 # Import necessary functions from rl_agent
-from rl_agent import DQNAgent, FEATURE_NAMES, discover_experiment_datasets, process_dataset_by_switch
+from rl_agent import DQNAgent, FEATURE_NAMES, discover_experiment_datasets
 from tqdm import tqdm
 
 
@@ -57,13 +57,13 @@ def generate_dataset_from_dqn(dqn_model, states, num_samples=None, batch_size=10
     return sampled_states, np.array(dqn_actions), indices if num_samples < len(states) else None
 
 
-def preprocess_dataset(csv_path=None):
+def preprocess_dataset(exp_folder=None):
     """
     Preprocess datasets from all experiments for DT knowledge distillation.
     Uses RAW FEATURE VALUES without normalization for better interpretability.
     """
     # Discover all experiment datasets
-    dataset_paths = discover_experiment_datasets()
+    dataset_paths = discover_experiment_datasets(exp_folder)
     if not dataset_paths:
         raise ValueError("No experiment datasets found!")
     
@@ -71,17 +71,10 @@ def preprocess_dataset(csv_path=None):
     
     # Get all available features across all datasets
     all_features = set()
-    all_switch_ids = set()
     
     for path in dataset_paths:
         data = pd.read_csv(path)
         all_features.update([col for col in FEATURE_NAMES if col in data.columns])
-        if 'switch_id' in data.columns:
-            all_switch_ids.update(data['switch_id'].unique())
-    
-    # Calculate switch count
-    switch_count = max(all_switch_ids) + 1 if all_switch_ids else 8
-    print(f"Detected {switch_count} unique switches across all datasets")
     
     # Prepare combined dataset
     all_states = []
@@ -96,23 +89,14 @@ def preprocess_dataset(csv_path=None):
         
         # For any missing features, add zero columns
         for feature in FEATURE_NAMES:
-            if feature not in data.columns and feature != 'switch_id':
-                data[feature] = 0
+            if feature not in data.columns:
+                raise ValueError(f"Feature '{feature}' is missing in dataset {path}")
         
         # Use data without normalization - we're working with raw feature values
         data_processed = data.copy()
         
-        # One-hot encode the switch_id
-        for switch_id in data_processed['switch_id'].unique():
-            switch_mask = data_processed['switch_id'] == switch_id
-            for i in range(switch_count):
-                data_processed.loc[switch_mask, f'switch_id_{i}'] = 1 if switch_id == i else 0
-        
-        # Create feature list with one-hot encoded switch IDs
-        feature_cols = [col for col in available_features if col != 'switch_id'] + [f'switch_id_{i}' for i in range(switch_count)]
-        
         # Extract states and actions
-        all_states.append(data_processed[feature_cols].values)
+        all_states.append(data_processed[available_features].values)
         all_actions.append(data_processed['action'].values)
     
     # Combine all data
@@ -120,10 +104,10 @@ def preprocess_dataset(csv_path=None):
     combined_actions = np.concatenate(all_actions)
 
     print(f"Combined dataset: {len(combined_states)} total samples")
-    print(f"Using {len(feature_cols)} features in consistent order")
-    print(f"Feature order: {feature_cols}")
+    print(f"Using {len(available_features)} features in consistent order")
+    print(f"Feature order: {available_features}")
     
-    return combined_states, combined_actions, None, None, None, feature_cols
+    return combined_states, combined_actions, available_features
 
 
 def main(args):
@@ -132,10 +116,10 @@ def main(args):
     
     # Get dataset with raw feature values (no normalization)
     print("Loading and preprocessing dataset with raw feature values...")
-    states, actions, rewards, next_states, dones, feature_cols = preprocess_dataset(args.csv)
+    states, actions, feature_cols = preprocess_dataset(args.exp_folder)
     orig_actions = actions 
     
-    # Get state and action dimensions for DQN (now simpler without switch_id features)
+    # Get state and action dimensions for DQN
     state_size = states.shape[1]
     action_size = len(np.unique(orig_actions))
     
@@ -150,10 +134,8 @@ def main(args):
     # Create a normalized copy of the states specifically for DQN prediction
     states_for_dqn = states.copy()
     for i, col in enumerate(feature_cols):
-        if col == 'total_queue_depth' and scale_factors.get(col, 0) > 0:
+        if col in scale_factors and scale_factors.get(col, 0) > 0:
             states_for_dqn[:, i] = states[:, i] / scale_factors[col]
-        elif col == 'packet_size' and scale_factors.get('packet_size', 0) > 0:
-            states_for_dqn[:, i] = states[:, i] / scale_factors['packet_size']
     
     # Initialize DQN agent
     print("Loading DQN model...")
@@ -170,50 +152,6 @@ def main(args):
         dqn_states = states[indices]  # Use raw feature values
     else:
         dqn_states = states  # Use all raw feature values
-    
-    # convert one-hot encoded switch_id features to a single feature
-    # conversion happens after the DQN prediction, so it only affects the DT training
-    
-    # Identify all switch_id columns
-    switch_id_cols = [col for col in feature_cols if col.startswith('switch_id_')]
-    
-    if switch_id_cols:
-        print(f"Found {len(switch_id_cols)} one-hot encoded switch ID features")
-        
-        # Create a new states array with one fewer column per switch
-        new_states = np.zeros((dqn_states.shape[0], dqn_states.shape[1] - len(switch_id_cols) + 1))
-        
-        # Find the indices of switch_id columns in the feature list
-        switch_indices = [feature_cols.index(col) for col in switch_id_cols]
-        
-        # Create a single switch_id column by finding the index of the 1 in the one-hot encoding
-        switch_id_values = np.zeros(dqn_states.shape[0], dtype=np.int32)
-        for i in range(dqn_states.shape[0]):
-            # Extract the one-hot encoded part
-            one_hot_part = dqn_states[i, switch_indices]
-            # Find the index of the 1 (which is the switch_id)
-            if np.any(one_hot_part > 0.5):  # Use 0.5 as threshold to detect '1'
-                switch_id_values[i] = np.argmax(one_hot_part)
-        
-        # Create a new feature list without one-hot encoded switch_id features
-        new_feature_cols = [col for col in feature_cols if not col.startswith('switch_id_')]
-        # Add the consolidated switch_id feature
-        new_feature_cols.append('switch_id')
-        
-        # Copy non-switch features to the new array
-        non_switch_indices = [i for i in range(len(feature_cols)) if i not in switch_indices]
-        for i, idx in enumerate(non_switch_indices):
-            new_states[:, i] = dqn_states[:, idx]
-        
-        # Add the single switch_id column at the end
-        new_states[:, -1] = switch_id_values
-        
-        # Update our variables - now using the consolidated feature format
-        dqn_states = new_states
-        feature_cols = new_feature_cols
-        
-        print(f"Converted one-hot encoded switch_id features to a single 'switch_id' feature for DT training")
-        print(f"New state size (with consolidated switch ID): {dqn_states.shape[1]}")
     
     # After denormalizing but before training the decision tree
     print("Converting features to appropriate types...")
@@ -243,35 +181,11 @@ def main(args):
     X_train, X_test, y_train, y_test = train_test_split(
         dqn_states, dqn_actions, test_size=0.2, random_state=42)
     
-    # Train decision tree with the consolidated switch_id feature
+    # Train decision tree
     print("Training decision tree...")
-
-    # Identify which feature is the switch_id (should be the last one)
-    switch_id_index = feature_cols.index('switch_id') if 'switch_id' in feature_cols else -1
-
-    if switch_id_index >= 0:
-        print(f"Treating feature at index {switch_id_index} ('switch_id') as categorical")
-        
-        # Make sure switch_id values are integers
-        X_train[:, switch_id_index] = X_train[:, switch_id_index].astype(np.int32)
-        X_test[:, switch_id_index] = X_test[:, switch_id_index].astype(np.int32)
-        
-        decision_tree = DecisionTreeClassifier(
-            max_depth=args.max_depth,
-            criterion='gini',
-            min_samples_split=10
-        )
-        decision_tree.fit(X_train, y_train)
-        
-        # For prediction, use the same dataset format
-        y_pred = decision_tree.predict(X_test)
-        
-        print("Note: The decision tree will treat switch_id as categorical if it finds good splits")
-    else:
-        # Regular approach
-        decision_tree = DecisionTreeClassifier(max_depth=args.max_depth)
-        decision_tree.fit(X_train, y_train)
-        y_pred = decision_tree.predict(X_test)
+    decision_tree = DecisionTreeClassifier(max_depth=args.max_depth)
+    decision_tree.fit(X_train, y_train)
+    y_pred = decision_tree.predict(X_test)
     
     # Evaluate decision tree
     accuracy = accuracy_score(y_test, y_pred)
@@ -315,7 +229,6 @@ def main(args):
     features_info = {
         "model_features": decision_tree.n_features_in_,
         "feature_names_count": len(feature_cols),
-        "consolidated_switch_id": "switch_id" in feature_cols,
         "samples_used": sample_count,
         "tree_depth": tree_depth,
         "accuracy": float(accuracy)
@@ -358,7 +271,6 @@ def main(args):
     # Export the tree as a text representation with sample count and depth in filename
     with open(os.path.join(args.output_dir, f"{base_filename}_rules.txt"), "w") as f:
         # Make sure feature_names length matches the number of features in the model
-        # Use dqn_states.shape[1] instead of states.shape[1] because dqn_states has the consolidated switch_id
         if len(feature_cols) != dqn_states.shape[1]:
             print(f"WARNING: Feature columns count ({len(feature_cols)}) doesn't match DT feature dimensions ({dqn_states.shape[1]})")
             # Use generic feature names if mismatch, but with the CORRECT feature count
@@ -384,7 +296,7 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Create Decision Tree from DQN')
     # Make --csv optional (None value indicates automatic dataset selection)
-    parser.add_argument('--csv', default=None, help='Path to the dataset CSV (optional, will auto-discover if not provided)')
+    parser.add_argument('--exp_folder', default=None, help='Path to the experiment folder (optional, will auto-discover if not provided)')
     parser.add_argument('--model', default='model/dqn_model.h5', help='Path to the trained DQN model weights')
     parser.add_argument('--output_dir', default='dt_model', help='Directory to save the decision tree')
     parser.add_argument('--max_depth', type=int, default=None, help='Maximum depth of the decision tree')

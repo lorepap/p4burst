@@ -17,41 +17,46 @@ import glob
 def import_feature_names():
     """Import FEATURE_NAMES from create_rl_dataset.py"""
     spec = importlib.util.spec_from_file_location(
-        "create_rl_dataset", "/home/ubuntu/p4burst/create_rl_dataset.py")
+        "rl_data_utils", "/home/ubuntu/p4burst/utils/rl_data_utils.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module.FEATURE_NAMES
 
-# If FEATURE_NAMES doesn't include fw_port_depth, we need to add it
-# And ensure switch_id is removed
 FEATURE_NAMES = import_feature_names()
-if 'fw_port_depth' not in FEATURE_NAMES:
-    FEATURE_NAMES.append('fw_port_depth')
-if 'switch_id' in FEATURE_NAMES:
-    FEATURE_NAMES.remove('switch_id')
 
-def discover_experiment_datasets(specific_folder=None):
+def discover_experiment_datasets(specific_folder):
     """
     Discover experiment datasets in the workspace.
-    If specific_folder is provided, look for final_dataset.csv in that folder only.
-    Otherwise, automatically discover all experiment datasets.
+    If specific_folder is provided, look for s*_final_dataset.csv files in that folder.
+    Otherwise, automatically discover all experiment datasets across all switches.
     
     Args:
         specific_folder (str, optional): Path to a specific experiment folder.
         
     Returns:
-        list: Paths to all final_dataset.csv files found.
+        list: Paths to all switch dataset CSV files found.
     """
     dataset_paths = []
     
     # If a specific folder is provided, use that instead of auto-discovery
     if specific_folder:
-        dataset_path = os.path.join(specific_folder, "final_dataset.csv")
-        if os.path.exists(dataset_path):
-            dataset_paths.append(dataset_path)
-            print(f"Using provided dataset: {dataset_path}")
+        # Look for switch datasets (s1_final_dataset.csv, s2_final_dataset.csv, etc.)
+        switch_datasets = glob.glob(os.path.join(specific_folder, "s*_final_dataset.csv"))
+        
+        if switch_datasets:
+            dataset_paths.extend(switch_datasets)
+            print(f"Found {len(switch_datasets)} switch datasets in {specific_folder}:")
+            for ds in switch_datasets:
+                print(f"  - {os.path.basename(ds)}")
         else:
-            print(f"Warning: No final_dataset.csv found in {specific_folder}")
+            # Fallback to looking for a single final_dataset.csv if no switch datasets found
+            dataset_path = os.path.join(specific_folder, "final_dataset.csv")
+            if os.path.exists(dataset_path):
+                dataset_paths.append(dataset_path)
+                print(f"Using provided dataset: {dataset_path}")
+            else:
+                print(f"Warning: No datasets found in {specific_folder}")
+        
         return dataset_paths
         
     # Automatic discovery (existing functionality)
@@ -68,14 +73,22 @@ def discover_experiment_datasets(specific_folder=None):
     print(f"Found {len(experiment_dirs)} experiment directories")
     print(f"Filtered out {len(all_dirs) - len(experiment_dirs)} non-experiment directories")
     
-    # Find final_dataset.csv in each experiment directory
+    # Find switch datasets in each experiment directory
     for exp_dir in experiment_dirs:
-        dataset_path = os.path.join(exp_dir, "final_dataset.csv")
-        if os.path.exists(dataset_path):
-            dataset_paths.append(dataset_path)
-            print(f"Found dataset: {dataset_path}")
+        # Look for switch datasets (s1_final_dataset.csv, s2_final_dataset.csv, etc.)
+        switch_datasets = glob.glob(os.path.join(exp_dir, "s*_final_dataset.csv"))
+        
+        if switch_datasets:
+            dataset_paths.extend(switch_datasets)
+            print(f"Found {len(switch_datasets)} switch datasets in {os.path.basename(exp_dir)}")
         else:
-            print(f"Warning: No final_dataset.csv found in {exp_dir}")
+            # Fallback to looking for a single final_dataset.csv if no switch datasets found
+            dataset_path = os.path.join(exp_dir, "final_dataset.csv")
+            if os.path.exists(dataset_path):
+                dataset_paths.append(dataset_path)
+                print(f"Found dataset: {dataset_path}")
+            else:
+                print(f"Warning: No datasets found in {exp_dir}")
     
     return dataset_paths
 
@@ -217,10 +230,16 @@ def process_dataset(data, scale_factors, available_features):
     if 'timestamp' in data.columns:
         data = data.sort_values('timestamp')
     
+    # Normalize features using scale factors
+    normalized_data = data.copy()
+    for feature in available_features:
+        if feature in scale_factors and scale_factors[feature] > 0:
+            normalized_data[feature] = normalized_data[feature] / scale_factors[feature]
+    
     # Extract features, actions, rewards
-    states = data[available_features].values
-    actions = data['action'].values
-    rewards = data['reward'].values
+    states = normalized_data[available_features].values
+    actions = normalized_data['action'].values
+    rewards = normalized_data['reward'].values
     
     # Create next_states by shifting
     if len(states) > 1:
@@ -250,10 +269,13 @@ def train_multi_scenario_dqn(csv_files, model_dir, epochs=100, batch_size=32):
         json.dump(scale_factors, f)
     
     # Get all available features across all datasets
-    all_features = set()
-    for csv_file in csv_files:
-        data = pd.read_csv(csv_file)
-        all_features.update([col for col in FEATURE_NAMES if col in data.columns])
+    # Use a list instead of a set to maintain order and avoid set operations
+    all_features = []
+    for feature in FEATURE_NAMES:
+        if feature not in all_features:
+            all_features.append(feature)
+    
+    print(f"Features from FEATURE_NAMES: {all_features}")
     
     # Process all datasets
     all_segments = []
@@ -267,8 +289,8 @@ def train_multi_scenario_dqn(csv_files, model_dir, epochs=100, batch_size=32):
         print(f"Available features: {available_features}")
         
         # For any missing features in this dataset, raise error
-        for feature in FEATURE_NAMES:
-            if feature not in data.columns and feature != 'switch_id':
+        for feature in all_features:
+            if feature not in data.columns:
                 raise ValueError(f"Feature '{feature}' is missing in dataset {csv_file}")
                 
         # Process dataset (no longer segmenting by switch_id)
@@ -318,13 +340,6 @@ def train_multi_scenario_dqn(csv_files, model_dir, epochs=100, batch_size=32):
     
     # Save the trained model
     agent.save(os.path.join(model_dir, "dqn_model.h5"))
-    
-    # Also save the feature list and switch count for use during inference
-    # with open(os.path.join(model_dir, 'feature_config.json'), 'w') as f:
-    #     json.dump({
-    #         'features': all_features,
-    #         'switch_count': switch_count
-    #     }, f)
     
     # Plot training loss
     plt.figure(figsize=(10, 5))

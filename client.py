@@ -150,7 +150,7 @@ class BurstyClient(BaseClient):
         """Send a request to the server and wait for the response."""
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             try:
-                s.settimeout(5)
+                s.settimeout(10)
                 s.setsockopt(socket.IPPROTO_TCP, socket.TCP_CONGESTION, self.congestion_control.encode())
                 s.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 0) # Disable Nagle's algorithm
                 s.connect((server_ip, 12346))
@@ -487,7 +487,7 @@ class DataCollectionClient(BaseClient):
             }
             
         except Exception as e:
-            logging.error(f"Error in burst request to {server_ip}: {e}")
+            logging.error(f"[{self.ip}] Error in burst request to {server_ip}:{self.server_port}: {e}")
             logging.error(traceback.format_exc())
             return {
                 'server_ip': server_ip,
@@ -651,7 +651,7 @@ class BackgroundTcpClient(BaseClient):
             return flow_completion_time
             
         except Exception as e:
-            logging.error(f"Error in background flow {flow_id}: {e}")
+            logging.error(f"[{self.ip}] Error in background flow {flow_id}: {e}")
             logging.error(traceback.format_exc())
             return None
     
@@ -761,13 +761,12 @@ class BackgroundTcpClient(BaseClient):
 
 class BurstyTcpClient(BaseClient):
     """Client for sending bursty TCP traffic with efficient QCT logging."""
-    def __init__(self, server_ips, burst_interval=1.0, burst_servers=2, burst_reply_size=40000,
+    def __init__(self, server_ips, burst_interval=1.0, burst_reply_size=40000,
                  congestion_control='cubic', exp_id='', duration=None, 
                  capture_pcap=True, log_buffer_size=1000, log_flush_interval=1.0):
         super().__init__(congestion_control, exp_id)
-        self.server_ips = server_ips  # List of server IPs
+        self.burst_server_ips = server_ips  # List of server IPs
         self.burst_interval = burst_interval  # Time between bursts
-        self.burst_servers = min(burst_servers, len(server_ips))  # Number of servers in each burst
         self.burst_reply_size = burst_reply_size  # Size of expected response
         self.duration = duration if duration is not None else float('inf')
         self.log_file = f"tmp/{exp_id}/bursty_client_{self.ip}_12345.csv" if exp_id else None
@@ -785,7 +784,7 @@ class BurstyTcpClient(BaseClient):
                 writer = csv.writer(csvfile)
                 writer.writerow([
                     "burst_id", "timestamp", "qct", "num_servers", "total_bytes_received",
-                    "src_ip", "congestion_control", "slowest_server", "slowest_server_time"
+                    "src_ip"
                 ])
             self.log_thread_running = True
             self.log_thread = threading.Thread(target=self._log_worker, daemon=True)
@@ -853,7 +852,7 @@ class BurstyTcpClient(BaseClient):
             }
             
         except Exception as e:
-            logging.error(f"Error in burst request to {server_ip}: {e}")
+            logging.error(f"[{self.ip}:{src_port}] Error in burst request to {server_ip}: {e}")
             logging.error(traceback.format_exc())
             return {
                 'server_ip': server_ip,
@@ -865,8 +864,9 @@ class BurstyTcpClient(BaseClient):
         """Send burst requests to multiple servers concurrently and track QCT."""
         
         # Select random servers for this burst
-        target_servers = random.sample(self.server_ips, self.burst_servers)
+        target_servers = self.burst_server_ips
         logging.info(f"Sending burst {burst_id} to {len(target_servers)} servers starting from source port {base_src_port}")
+        logging.info(f"Target servers: {target_servers}")
         
         # Record burst start time
         burst_start_time = time.time()
@@ -892,22 +892,15 @@ class BurstyTcpClient(BaseClient):
                 if result['response_time'] is not None:
                     responses.append(result)
             except Exception as e:
-                logging.error(f"Exception in burst request: {e}")
+                logging.error(f"[{self.ip}:{src_port}] Exception in burst request: {e}")
         
         # Calculate overall QCT (Query Completion Time)
         burst_end_time = time.time()
         qct = burst_end_time - burst_start_time
-        
-        # Find the slowest server in this burst
-        slowest_server = None
-        slowest_time = 0
         total_bytes = 0
         
         for resp in responses:
             total_bytes += resp['bytes_received']
-            if resp['response_time'] > slowest_time:
-                slowest_time = resp['response_time']
-                slowest_server = resp['server_ip']
         
         # Log burst QCT details to queue
         if hasattr(self, 'log_queue'):
@@ -917,13 +910,10 @@ class BurstyTcpClient(BaseClient):
                 qct,                         # Total burst completion time
                 len(target_servers),         # Number of servers in burst
                 total_bytes,                 # Total bytes received
-                self.ip,                     # Client IP
-                self.congestion_control,     # Congestion control algorithm
-                slowest_server,              # IP of slowest responding server 
-                slowest_time                 # Time taken by slowest server
+                self.ip                     # Client IP
             ])
         
-        logging.debug(f"Completed burst {burst_id}: QCT={qct:.3f}s, {len(responses)}/{len(target_servers)} servers responded")
+        logging.info(f"Completed burst {burst_id}: QCT={qct:.3f}s, {len(responses)}/{len(target_servers)} servers responded")
         return qct
     
     def _burst_worker(self):
@@ -938,14 +928,13 @@ class BurstyTcpClient(BaseClient):
             
             # Calculate base source port for this burst
             # Increment by burst_servers to ensure enough ports for next burst
-            base_src_port = self.base_src_port + (burst_count * self.burst_servers)
+            base_src_port = self.base_src_port + (burst_count * len(self.burst_server_ips))
             
             # Send burst using the current base source port
             qct = self._send_burst(base_src_port, burst_id)
             burst_count += 1
             
             # Sleep to maintain consistent burst intervals
-            elapsed = time.time() - self.start_time
             next_burst_time = self.start_time + (burst_count * self.burst_interval)
             sleep_time = max(0, next_burst_time - time.time())
             if sleep_time > 0:

@@ -239,10 +239,11 @@ class L3ForwardingControlPlane(BaseControlPlane):
 
 
 class SimpleDeflectionControlPlane(BaseControlPlane):
-    def __init__(self, topology, cmd_path='p4cli', queue_rate=100, queue_depth=100):
+    def __init__(self, topology, cmd_path='p4cli', queue_rate=100, queue_depth=100, n_ports=32):
         super().__init__(topology, cmd_path)
         self.queue_rate = queue_rate
         self.queue_depth = queue_depth
+        self.n_ports = n_ports
 
     @staticmethod
     def send_bee_packets(switch):
@@ -260,6 +261,9 @@ class SimpleDeflectionControlPlane(BaseControlPlane):
 
             leaf_switches = self.topology.get_leaf_switches()
             spine_switches = self.topology.get_spine_switches()
+
+            # if len(self.net_api.node_ports()) > len(leaf_switches):
+            #     raise ValueError("Number of ports on the leaf switches is greater than the number of ports on the spine switches")
 
             # Process each host and add forwarding rules
             for host in self.net_api.hosts():
@@ -309,7 +313,7 @@ class SimpleDeflectionControlPlane(BaseControlPlane):
 
                 register_commands = [
                     f"register_write SimpleDeflectionIngress.neighbor_switch_indicator {logical_port} 1" 
-                    for logical_port in range(8) if logical_port not in spine_logical_ports
+                    for logical_port in range(self.n_ports) if logical_port in spine_logical_ports
                 ]
                 
                 deflection_table_commands = [

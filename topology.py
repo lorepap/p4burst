@@ -39,9 +39,9 @@ class BaseTopology(ABC):
         
     def _map_physical_to_logical_ports(self, switch):
         physical_ports = sorted([port for port in self.net.node_ports()[switch].keys()])
-        
-        if len(physical_ports) > 8:
-            raise ValueError(f"Switch {switch} has {len(physical_ports)} ports. Maximum allowed is 8.")
+
+        # if len(physical_ports) > 8:
+        #     raise ValueError(f"Switch {switch} has {len(physical_ports)} ports. Maximum allowed is 8.")
                 
         return {port: idx for idx, port in enumerate(physical_ports)}
 

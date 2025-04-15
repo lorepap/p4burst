@@ -20,6 +20,80 @@ from datetime import datetime
 import os
 import utils.rl_data_utils as datalib
 import utils.config_override as config_override
+import argparse
+import json
+
+def parse_args():
+    def restricted_float(x):
+        try:
+            x = float(x)
+        except ValueError:
+            raise argparse.ArgumentTypeError(f"{x!r} is not a valid floating-point number")
+        if x < 0.0 or x > 1.0:
+            raise argparse.ArgumentTypeError(f"{x!r} is not in the range [0, 1]")
+        return x
+
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(description='Run SimpleDeflection packet collection experiment')
+    
+    # Basic experiment parameters
+    parser.add_argument('--duration', '-d', type=int, default=5, 
+                        help='Duration of the experiment in seconds (default: 30)')
+    parser.add_argument('--exp_id', type=str, default=None,
+                        help='Experiment ID (default: timestamp)')
+    
+    # Network configuration - only leaf-spine parameters since we're fixed to SimpleDeflection
+    parser.add_argument('--n_hosts', type=int, default=4, 
+                        help='Number of hosts (default: 4)')
+    parser.add_argument('--n_leaf', type=int, default=2, 
+                        help='Number of leaf switches (default: 2)')
+    parser.add_argument('--n_spine', type=int, default=2, 
+                        help='Number of spine switches (default: 2)')
+    parser.add_argument('--bw', type=int, default=10, 
+                        help='Link bandwidth in Mbps (default: 10)')
+    parser.add_argument('--delay', type=float, default=0, 
+                        help='Link delay in ms (default: 0)')
+    parser.add_argument('--queue_rate', type=int, default=1000,
+                        help='Queue rate in Mbps (default: 100)')
+    parser.add_argument('--queue_depth', type=int, default=64,
+                        help='Queue depth in packets (default: 64)')
+
+    # Collection parameters
+    parser.add_argument('--n_clients', type=int, default=1,
+                        help='Number of clients (default: 1)')
+    parser.add_argument('--n_servers', type=int, default=1,
+                        help='Number of servers (default: 1)')
+    parser.add_argument('--flow_iat', type=float, default=0.1, 
+                        help='Background Inter-arrival time between consecutive flows in seconds (default: 0.1)')
+    parser.add_argument('--congestion_control', type=str, default='cubic', # not happening yet since it's udp
+                        help='Congestion control algorithm (default: cubic)')
+    parser.add_argument('--flow_size', type=int, default=1000,
+                        help='Flow size in bytes (default: 1000)')
+    parser.add_argument('--bursty_reply_size', type=int, default=4000,
+                        help='Bursty reply size in bytes (default: 4000)')
+    parser.add_argument('--burst_interval', type=float, default=0.2,
+                        help='Bursty interval in seconds (default: 0.2)')
+    parser.add_argument('--burst_servers', type=int, default=1,
+                        help='Number of servers to use for bursty traffic (default: 1)')
+    parser.add_argument('--burst_clients', type=int, default=None,
+                    help='Number of clients running bursty traffic (default: half of total clients)')
+
+    # Debug options
+    parser.add_argument('--cli', action='store_true', 
+                        help='Start Mininet CLI for debugging')
+    # parser.add_argument('--host_pcap', action='store_true', 
+    #                     help='Enable packet capture on hosts')
+    parser.add_argument('--disable_pcap', action='store_true', 
+                        help='Disable packet capture on hosts')
+    parser.add_argument('--switch_pcap', action='store_true', 
+                        help='Enable packet capture on switches')
+    parser.add_argument('--disable_metrics', action='store_true', 
+                        help='Disable metrics collection')
+    parser.add_argument('--deflection_queue_threshold', type=restricted_float, default=1, help='Float in [0, 1] defining the queue threshold for deflection (1 = full queue).')
+
+    return parser.parse_args()
+
+args = parse_args()
 
 # Set up root logger first thing
 def setup_logging(exp_id):
@@ -42,7 +116,7 @@ def setup_logging(exp_id):
     # Return a logger for this module
     return logging.getLogger("CollectionRunner")
 
-exp_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+exp_id = args.exp_id if args.exp_id else datetime.now().strftime("%Y%m%d_%H%M%S")
 exp_dir = f'tmp/{exp_id}'
 os.makedirs(exp_dir, exist_ok=True)
 logger = setup_logging(exp_id)
@@ -70,7 +144,7 @@ class CollectionRunner:
     def __init__(self, args):
         self.args = args
         self.exp_id = exp_id
-        self.exp_dir = f'tmp/{exp_id}'
+        self.exp_dir = f'tmp/{self.exp_id}'
         
         # Configure experiment parameters - fixed to simple deflection
         self.processes = []
@@ -103,6 +177,45 @@ class CollectionRunner:
         #     self.flow_metrics = FlowMetricsManager(self.exp_id)
             
         logger.info(f"Initialized collection runner with experiment ID: {self.exp_id}")
+        
+        # Save experiment parameters to JSON file
+        self.save_params_to_json()
+
+    def save_params_to_json(self):
+        """Save experiment parameters to a JSON file in the experiment directory."""
+        # Convert args namespace to dictionary
+        args_dict = vars(self.args)
+        
+        params = {
+            "exp_id": self.exp_id,
+            "topology_type": self.topology_type,
+            "n_hosts": self.n_hosts,
+            "n_leaf": self.n_leaf,
+            "n_spine": self.n_spine,
+            "bw": self.bw,
+            "delay": self.delay,
+            "p4_program": self.p4_program,
+            "queue_rate": self.queue_rate,
+            "queue_depth": self.queue_depth,
+            "n_clients": self.n_clients,
+            "n_servers": self.n_servers,
+            "flow_iat": self.flow_iat,
+            "flow_size": self.flow_size,
+            "congestion_control": self.congestion_control,
+            "burst_reply_size": self.burst_reply_size,
+            "burst_interval": self.burst_interval,
+            "burst_servers": self.burst_servers,
+            "burst_clients": self.burst_clients,
+            "threshold": self.threshold,
+            "command_line_args": args_dict
+        }
+        
+        # Save as JSON file
+        json_path = os.path.join(self.exp_dir, "experiment_params.json")
+        with open(json_path, 'w') as f:
+            json.dump(params, f, indent=4)
+            
+        logger.info(f"Saved experiment parameters to {json_path}")
 
     def setup_experiment(self):
         """Set up the experiment topology with SimpleDeflection control plane."""
@@ -210,10 +323,8 @@ class CollectionRunner:
                 '--type collect '
                 f'--server_ips {server_host.IP()} '
                 f'--bg_flow_iat {self.flow_iat} '
-                #f'--num_flows {self.num_flows} '
                 f'--congestion_control {self.congestion_control} '
                 f'--flow_size {self.flow_size} '
-                
             )
             proc = client_host.popen(client_cmd, shell=True, stderr=sys.stderr, stdout=subprocess.DEVNULL)
             self.processes.append(proc)
@@ -238,8 +349,10 @@ class CollectionRunner:
         hosts = self.topology.net.net.hosts
         # Random servers
         servers = random.sample(hosts, self.n_servers)
+        burst_servers = random.sample(hosts, self.burst_servers)
+
         # Random clients
-        clients = random.sample([h for h in hosts if h not in servers], self.n_clients)
+        clients = random.sample(hosts, self.n_clients) # check this (now all hosts can be clients and servers at the same time)
         
         # Start all servers - both background and burst
         for i, server_host in enumerate(servers):
@@ -256,7 +369,7 @@ class CollectionRunner:
             )
             server_host.cmd(bg_server_cmd)
             
-            # Burst TCP server
+        for server_host in burst_servers:
             logger.info(f"Starting burst TCP server on {server_host.name} ({server_host.IP()})...")
             burst_server_cmd = (
                 'python3 -m app --mode server '
@@ -279,7 +392,7 @@ class CollectionRunner:
         
         # Determine how many clients will be bursty (random subset)
         # Add a new parameter to control this or use a fixed percentage
-        num_bursty_clients = min(self.burst_clients, self.n_clients) if hasattr(self.args, 'bursty_clients') else max(1, self.n_clients // 2)
+        num_bursty_clients = min(self.burst_clients, self.n_clients)
         bursty_clients = random.sample(clients, num_bursty_clients)
         logger.info(f"Selected {num_bursty_clients}/{self.n_clients} clients to generate bursty traffic")
         
@@ -310,6 +423,7 @@ class CollectionRunner:
             
             # Burst TCP client - ONLY a subset of clients run this
             if client_host in bursty_clients:
+                burst_server_ips = ' '.join([server.IP() for server in burst_servers])
                 burst_client_file = f"{self.exp_dir}/burst_client_{client_host.name}_log.csv"
                 client_csv_files.append(burst_client_file)
                 
@@ -321,9 +435,8 @@ class CollectionRunner:
                     f'--exp_id {self.exp_id} '
                     '--type collect '
                     '--traffic_type burst '
-                    f'--server_ips {server_ips} '
+                    f'--server_ips {burst_server_ips} '
                     f'--burst_interval {self.burst_interval} '
-                    f'--burst_servers {self.burst_servers} '
                     f'--burst_reply_size {self.burst_reply_size} '
                     f'--duration {self.args.duration} '
                     f'--client_csv_file {burst_client_file} '
@@ -367,6 +480,15 @@ class CollectionRunner:
             # Run collection experiment - get receiver logs but don't generate dataset yet
             self.run_collection()
             
+            time.sleep(5)
+            
+            # Kill queue logger
+            for i, switch in enumerate(self.topology.get_leaf_switches()):
+                queue_logger_proc = subprocess.Popen(
+                    f"pkill -f queue_logger.py --port 909{i}",
+                    shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                self.processes.append(queue_logger_proc) 
+            
             # Wait for all processes to finish
             logger.info("Waiting for all processes to complete...")
             for proc in self.processes:
@@ -375,17 +497,18 @@ class CollectionRunner:
                 except subprocess.TimeoutExpired:
                     logger.warning("Process timeout - terminating")
                     proc.terminate()
-            
-            # Kill queue logger
-            for i, switch in enumerate(self.topology.get_leaf_switches()):
-                queue_logger_proc = subprocess.Popen(
-                    f"pkill -f queue_logger.py --port 909{i}",
+
+            # kill simple switch processes
+            for switch in self.topology.get_leaf_switches():
+                switch_proc = subprocess.Popen(
+                    f"pkill -f simple_switch",
                     shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                self.processes.append(queue_logger_proc) 
+                self.processes.append(switch_proc)
+            
+            
 
-            time.sleep(5)
-
-            datalib.process_and_merge_all_data(self.topology, exp_dir)
+            final_datasets = datalib.process_and_merge_all_data(self.topology, exp_dir)
+            datalib.compute_experiment_stats(final_datasets, exp_dir)
 
         except Exception as e:
             logger.error(f"Error in experiment: {e}") 
@@ -394,80 +517,10 @@ class CollectionRunner:
         finally:
             self.stop_network()
 
-def restricted_float(x):
-    try:
-        x = float(x)
-    except ValueError:
-        raise argparse.ArgumentTypeError(f"{x!r} is not a valid floating-point number")
-    if x < 0.0 or x > 1.0:
-        raise argparse.ArgumentTypeError(f"{x!r} is not in the range [0, 1]")
-    return x
-
-def parse_args():
-    """Parse command line arguments."""
-    parser = argparse.ArgumentParser(description='Run SimpleDeflection packet collection experiment')
-    
-    # Basic experiment parameters
-    parser.add_argument('--duration', '-d', type=int, default=5, 
-                        help='Duration of the experiment in seconds (default: 30)')
-    parser.add_argument('--exp_id', type=str, default=None,
-                        help='Experiment ID (default: timestamp)')
-    
-    # Network configuration - only leaf-spine parameters since we're fixed to SimpleDeflection
-    parser.add_argument('--n_hosts', type=int, default=4, 
-                        help='Number of hosts (default: 4)')
-    parser.add_argument('--n_leaf', type=int, default=2, 
-                        help='Number of leaf switches (default: 2)')
-    parser.add_argument('--n_spine', type=int, default=2, 
-                        help='Number of spine switches (default: 2)')
-    parser.add_argument('--bw', type=int, default=10, 
-                        help='Link bandwidth in Mbps (default: 10)')
-    parser.add_argument('--delay', type=float, default=0, 
-                        help='Link delay in ms (default: 0)')
-    parser.add_argument('--queue_rate', type=int, default=1000,
-                        help='Queue rate in Mbps (default: 100)')
-    parser.add_argument('--queue_depth', type=int, default=64,
-                        help='Queue depth in packets (default: 64)')
-
-    # Collection parameters
-    parser.add_argument('--n_clients', type=int, default=1,
-                        help='Number of clients (default: 1)')
-    parser.add_argument('--n_servers', type=int, default=1,
-                        help='Number of servers (default: 1)')
-    parser.add_argument('--flow_iat', type=float, default=0.1, 
-                        help='Background Inter-arrival time between consecutive flows in seconds (default: 0.1)')
-    parser.add_argument('--congestion_control', type=str, default='cubic', # not happening yet since it's udp
-                        help='Congestion control algorithm (default: cubic)')
-    parser.add_argument('--flow_size', type=int, default=1000,
-                        help='Flow size in bytes (default: 1000)')
-    parser.add_argument('--bursty_reply_size', type=int, default=4000,
-                        help='Bursty reply size in bytes (default: 4000)')
-    parser.add_argument('--burst_interval', type=float, default=0.2,
-                        help='Bursty interval in seconds (default: 0.2)')
-    parser.add_argument('--burst_servers', type=int, default=1,
-                        help='Number of servers to use for bursty traffic (default: 1)')
-    parser.add_argument('--burst_clients', type=int, default=None,
-                    help='Number of clients running bursty traffic (default: half of total clients)')
-
-    # Debug options
-    parser.add_argument('--cli', action='store_true', 
-                        help='Start Mininet CLI for debugging')
-    # parser.add_argument('--host_pcap', action='store_true', 
-    #                     help='Enable packet capture on hosts')
-    parser.add_argument('--disable_pcap', action='store_true', 
-                        help='Disable packet capture on hosts')
-    parser.add_argument('--switch_pcap', action='store_true', 
-                        help='Enable packet capture on switches')
-    parser.add_argument('--disable_metrics', action='store_true', 
-                        help='Disable metrics collection')
-    parser.add_argument('--deflection_queue_threshold', type=restricted_float, default=1, help='Float in [0, 1] defining the queue threshold for deflection (1 = full queue).')
-
-    return parser.parse_args()
 
 
 def main():
     """Main function."""
-    args = parse_args()
     runner = CollectionRunner(args)
     dataset = runner.run_experiment()
     logger.info("Experiment completed successfully")

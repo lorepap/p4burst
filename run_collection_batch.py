@@ -58,24 +58,28 @@ class ExperimentRunner:
         """Generate parameter combinations using predefined ranges"""
         
         # Define parameter ranges
-        bandwidth_values = [10, 50, 100]  # Mbps
-        delay_values = [0.001]  # ms - fixed to small value
+        bandwidth_values = [100]  # Mbps
+        delay_values = [0.0001]  # ms - fixed to small value
+        deflection_thresholds = [0.5, 0.75, 1.0]
         
         # Define burst degree configurations
         burst_degree_configs = {
             'small': {
                 'burst_servers': 8,
-                'bursty_reply_size': 2000,
-                'burst_interval': 0.02  # slower burst interval
+                'burst_clients': 4,
+                'bursty_reply_size': 8000,
+                'burst_interval': 0.1  # slower burst interval
             },
             'medium': {
                 'burst_servers': 16,
-                'bursty_reply_size': 5000,
+                'burst_clients': 8,
+                'bursty_reply_size': 15000,
                 'burst_interval': 0.01  # medium burst interval
             },
             'large': {
                 'burst_servers': 32,
-                'bursty_reply_size': 10000,
+                'burst_clients': 16,
+                'bursty_reply_size': 50000,
                 'burst_interval': 0.005  # faster burst interval
             }
         }
@@ -83,16 +87,16 @@ class ExperimentRunner:
         # Define background load configurations
         bg_load_configs = {
             'small': {
-                'flow_size': 1000,
-                'bg_flow_iat': 0.2  # slower background flow inter-arrival time
+                'flow_size': 10000,
+                'flow_iat': 0.01  # slower background flow inter-arrival time
             },
             'medium': {
-                'flow_size': 5000,
-                'bg_flow_iat': 0.1  # medium background flow inter-arrival time
+                'flow_size': 100000,
+                'flow_iat': 0.005  # medium background flow inter-arrival time
             },
             'large': {
-                'flow_size': 10000,
-                'bg_flow_iat': 0.05  # faster background flow inter-arrival time
+                'flow_size': 800000,
+                'flow_iat': 0.0005  # faster background flow inter-arrival time
             }
         }
         
@@ -105,11 +109,12 @@ class ExperimentRunner:
         n_servers = n_hosts - n_clients  # Calculate servers as remaining hosts
         
         experiment_id = 0
-        for bw, delay, burst_degree, bg_load in itertools.product(
+        for bw, delay, burst_degree, bg_load, deflection_threshold in itertools.product(
             bandwidth_values, 
             delay_values, 
             burst_degree_configs.keys(),
-            bg_load_configs.keys()
+            bg_load_configs.keys(),
+            deflection_thresholds
         ):
             # Get burst and background configurations
             burst_config = burst_degree_configs[burst_degree]
@@ -135,10 +140,11 @@ class ExperimentRunner:
                 'burst_servers': burst_config['burst_servers'],
                 'burst_clients': 4,  # Fixed number of burst clients
                 'flow_size': bg_config['flow_size'],
-                'bg_flow_iat': bg_config['bg_flow_iat'],
+                'flow_iat': bg_config['flow_iat'],
                 'burst_interval': burst_config['burst_interval'],
                 'queue_rate': 100,
-                'queue_depth': 30
+                'queue_depth': 30,
+                'deflection_threshold': deflection_threshold
             }
             
             combinations.append(params)
@@ -182,14 +188,16 @@ class ExperimentRunner:
             "--bw", str(params['bw']),
             "--delay", str(params['delay']),
             "--n_clients", str(params['n_clients']),
-            "--bg_flow_iat", str(params['bg_flow_iat']),
+            "--n_servers", str(params['n_servers']),
+            "--flow_iat", str(params['flow_iat']),
             "--flow_size", str(params['flow_size']),
             "--bursty_reply_size", str(params['bursty_reply_size']),
             "--burst_interval", str(params['burst_interval']),
             "--burst_servers", str(params['burst_servers']),
             "--burst_clients", str(params['burst_clients']),
             "--queue_rate", str(params['queue_rate']),
-            "--queue_depth", str(params['queue_depth'])
+            "--queue_depth", str(params['queue_depth']),
+            "--deflection_queue_threshold", str(params['deflection_threshold'])
         ]
         
         # Log the command

@@ -231,7 +231,6 @@ class DataCollectionApp(App):
                 self.client = BurstyTcpClient(
                     server_ips=args.server_ips, 
                     burst_interval=args.burst_interval,
-                    burst_servers=args.burst_servers,
                     burst_reply_size=args.burst_reply_size,
                     exp_id=args.exp_id, 
                     congestion_control=args.congestion_control, 
@@ -283,7 +282,6 @@ def main():
     collect_group.add_argument('--client_csv_file', type=str, help="Client CSV file")
     collect_group.add_argument('--flow_size', type=int, default=1000, help="Flow size")
     collect_group.add_argument('--burst_interval', type=float, default=1.0, help="Time between bursts (seconds)")
-    collect_group.add_argument('--burst_servers', type=int, default=2, help="Number of servers in each burst")
     collect_group.add_argument('--burst_reply_size', type=int, default=40000, help="Size of burst response")
     collect_group.add_argument('--traffic_type', choices=['background', 'burst'], help='Type of traffic to generate (background or burst)')
     collect_group.add_argument('--disable_pcap', action='store_true', help="Disable pcap capture")

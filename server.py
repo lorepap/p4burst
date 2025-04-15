@@ -602,7 +602,7 @@ class BackgroundTcpServer(BaseServer):
         
         try:
             # Set socket timeout
-            conn.settimeout(5)
+            conn.settimeout(10)
             
             # Start receiving data
             arrival_time = time.time()
@@ -685,7 +685,7 @@ class BurstyTcpServer(BaseServer):
                     except KeyboardInterrupt:
                         raise
                     except Exception as e:
-                        logging.error(f"[{self.ip}]: Error accepting connection: {e}")
+                        logging.error(f"[{self.ip}]: Error accepting connection to port {self.port} from {addr[0]}: {e}")
                         logging.error(traceback.format_exc())
         except KeyboardInterrupt:
             logging.info(f"[{self.ip}]: Bursty TCP server shutting down gracefully.")

@@ -1,5 +1,7 @@
 
 def update_p4_queue_size(p4_file, queue_capacity, threshold):
+
+    print(f"Updating P4 queue size to {queue_capacity*threshold} for {p4_file}")
     with open(p4_file, 'r') as f:
         lines = f.readlines()
 

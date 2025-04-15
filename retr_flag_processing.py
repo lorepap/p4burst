@@ -83,8 +83,8 @@ def analyze_server_pcap(pcap_file, output_csv):
                     # Update flow state
                     state['max_seq'] = max(state['max_seq'], seq_num + payload_len)
                     
-                    # Update expected sequence number if this packet is in order
-                    if seq_num == state['expected_seq']:
+                    # Update expected sequence number if this packet is in order (or previous packet was dropped/delayed)
+                    if seq_num >= state['expected_seq']:
                         state['expected_seq'] = seq_num + payload_len
                 
                 # Get timestamp in a readable format

@@ -16,18 +16,16 @@ import pyshark
 import statistics
 import io
 import subprocess
+import json
+import numpy as np
 
 # Feature names for the RL dataset
-FEATURE_NAMES = (
-    ['total_queue_depth', 'packet_size']  # Simplified feature set
+ALL_COLUMN_NAMES = (
+    ['timestamp', 'action', 'reward', 'total_queue_depth', 'fw_port_depth', 'packet_size', 'out_of_order_flag', 'rtt']
 )
 
-# All column names including metadata and targets
-ALL_COLUMN_NAMES = (
-    ['timestamp', 'action', 'reward'] + 
-    FEATURE_NAMES + 
-    ['flow_id', 'seq']
-)
+# Remove action, timestamp and reward
+FEATURE_NAMES = ALL_COLUMN_NAMES[3:]
 
 def int_to_ip(ip_int):
     """
@@ -115,13 +113,13 @@ def parse_switch_log(log_file, output_csv):
     os.makedirs(os.path.dirname(output_csv), exist_ok=True)
     
     # Regex patterns for parsing logs
-    ingress_pattern = re.compile(r'Ingress: port=(\d+), size=(\d+), timestamp=(\d+)')
-    deflection_pattern = re.compile(r'Deflection: original_port=(\d+), deflected_to=(\d+), random_number=(\d+), fw_port_depth=(\d+)')
+    # ingress_pattern = re.compile(r'Ingress: port=(\d+), size=(\d+), timestamp=(\d+)')
+    deflection_pattern = re.compile(r'Deflection: original_port=(\d+), deflected_to=(\d+), fw_port_depth=(\d+)')
     normal_pattern = re.compile(r'Normal: port=(\d+)')
+    drop_pattern = re.compile(r'Drop: original_port=(\d+), deflected_to=(\d+), fw_port_depth=(\d+)')
     fw_port_depth_pattern = re.compile(r'Forward port depth: port=(\d+), depth=(\d+)')
     queue_depths_pattern = re.compile(r'Queue depths: q0=(\d+) q1=(\d+) q2=(\d+) q3=(\d+) q4=(\d+) q5=(\d+) q6=(\d+) q7=(\d+)')
-    # Add TCP pattern
-    tcp_pattern = re.compile(r'TCP: src_ip=(\d+), dst_ip=(\d+), src_port=(\d+), dst_port=(\d+), seq=(\d+)')
+    tcp_pattern = re.compile(r'TCP: src_ip=(\d+), dst_ip=(\d+), src_port=(\d+), dst_port=(\d+), seq=(\d+) timestamp=(\d+) size=(\d+)')
     
     # Data storage for events
     events = []
@@ -136,13 +134,7 @@ def parse_switch_log(log_file, output_csv):
             event = {'timestamp_str': timestamp_str}
             
             # Parse event type and details
-            if ingress_match := ingress_pattern.search(line):
-                pkt_cnt += 1
-                event['type'] = 'ingress'
-                event['port'] = int(ingress_match.group(1))
-                event['size'] = int(ingress_match.group(2))  # Packet size
-                event['timestamp'] = int(ingress_match.group(3))
-            elif tcp_match := tcp_pattern.search(line):
+            if tcp_match := tcp_pattern.search(line):
                 event['type'] = 'tcp'
                 src_ip_int = tcp_match.group(1)
                 dst_ip_int = tcp_match.group(2)
@@ -151,12 +143,14 @@ def parse_switch_log(log_file, output_csv):
                 event['src_port'] = int(tcp_match.group(3))
                 event['dst_port'] = int(tcp_match.group(4))
                 event['tcp_seq'] = int(tcp_match.group(5))
+                event['timestamp'] = int(tcp_match.group(6))
+                event['size'] = int(tcp_match.group(7))
+                pkt_cnt += 1
             elif deflection_match := deflection_pattern.search(line):
                 event['type'] = 'deflection'
                 event['original_port'] = int(deflection_match.group(1))
                 event['deflected_to'] = int(deflection_match.group(2))
-                event['random_number'] = int(deflection_match.group(3))
-                event['fw_port_depth'] = int(deflection_match.group(4))
+                event['fw_port_depth'] = int(deflection_match.group(3))
             elif normal_match := normal_pattern.search(line):
                 event['type'] = 'normal'
                 event['port'] = int(normal_match.group(1))
@@ -180,13 +174,14 @@ def parse_switch_log(log_file, output_csv):
                 events.append(event)
 
     print(f"Found {pkt_cnt} packets in the log")
+    
     # Sort events by timestamp
     events.sort(key=lambda x: parse_timestamp(x.get('timestamp_str', "[00:00:00.000]")))
     
     # Find the first timestamp for normalization
     t0 = None
     for event in events:
-        if event['type'] == 'ingress':
+        if event['type'] == 'tcp':
             t0 = event['timestamp']
             break
     if t0 is None:
@@ -211,19 +206,18 @@ def parse_switch_log(log_file, output_csv):
     # Dataset creation
     dataset = []
     for event in events:
-        if event['type'] == 'queue_depths':
-            for i, depth in enumerate(event['queue_depths']):
-                current_queue_depth[i] = depth
-            total_queue_depth = sum(current_queue_depth.values())
-        elif event['type'] == 'tcp':
+        if event['type'] == 'tcp':
             # Update current TCP information
             current_tcp['src_ip'] = event['src_ip']
             current_tcp['dst_ip'] = event['dst_ip']
             current_tcp['src_port'] = event['src_port']
             current_tcp['dst_port'] = event['dst_port']
             current_tcp['tcp_seq'] = event['tcp_seq']
-        elif event['type'] == 'ingress':
-            packet_size = event['size']
+            current_tcp['size'] = event['size']
+        elif event['type'] == 'queue_depths':
+            for i, depth in enumerate(event['queue_depths']):
+                current_queue_depth[i] = depth
+            total_queue_depth = sum(current_queue_depth.values())
         elif event['type'] == 'fw_port_depth':
             # Store the fw_port_depth for the port
             fw_port_depths[event['port']] = event['depth']
@@ -246,7 +240,7 @@ def parse_switch_log(log_file, output_csv):
                 'timestamp': event['timestamp_str'],
                 'action': action,
                 'reward': 0,  # Placeholder, will be computed later
-                'packet_size': packet_size,
+                'packet_size': current_tcp['size'],
                 'total_queue_depth': total_queue_depth,
                 'fw_port_depth': fw_port_depth
             }
@@ -496,11 +490,19 @@ def extract_rtt_using_tshark(pcap_file, output_csv=None):
         import io
         
         # Run tshark and get output
-        result = subprocess.run(tshark_cmd, capture_output=True, text=True, check=True)
+        result = subprocess.run(tshark_cmd, capture_output=True, text=True, check=False)
         
+        # Check if the error is the "cut short" warning
         if result.returncode != 0:
-            print(f"Error running tshark: {result.stderr}")
-            return {}
+            if "cut short in the middle of a packet" in result.stderr:
+                print(f"Warning: {result.stderr.strip()}")
+                # Continue processing if we have output
+                if not result.stdout:
+                    print(f"Error: No output from tshark for {pcap_file}")
+                    return {}
+            else:
+                print(f"Error running tshark: {result.stderr}")
+                return {}
         
         # Convert tshark output to DataFrame
         df = pd.read_csv(io.StringIO(result.stdout))
@@ -913,7 +915,7 @@ def process_bursty_rtt(switch_df, bursty_rtt_files, basename):
     # Identify server response packets (from server to client with payload)
     # First determine if payload column is present and what it's called
     payload_column = None
-    for col_name in ['payload_size', 'tcp_len']:
+    for col_name in ['packet_size']:
         if col_name in rtt_df.columns:
             payload_column = col_name
             break
@@ -938,6 +940,7 @@ def process_bursty_rtt(switch_df, bursty_rtt_files, basename):
     else:
         # If we can't determine payload, use IP information if available
         if 'is_from_server' in rtt_df.columns:
+            print("Using is_from_server column to identify server responses")
             rtt_df['is_server_response'] = rtt_df['is_from_server']
         else:
             # Mark all packets as potential server responses as fallback
@@ -1268,11 +1271,28 @@ def create_final_datasets(retr_datasets, rtt_datasets, output_dir):
                     merged_df['rtt'] = merged_df['rtt'].fillna(min_rtt)
                     print(f"Filled {missing_count} missing RTT values with {min_rtt} in final dataset {switch_id}")
             
+            # Keep only the specified columns
+            required_columns = ALL_COLUMN_NAMES
+            
+            # Create missing columns with default values if needed
+            for column in required_columns:
+                if column not in merged_df.columns:
+                    raise ValueError(f"Column {column} not found in merged dataset")
+            
+            # Select only the required columns for the final dataset
+            final_df = merged_df[required_columns]
+            
+            # Compute reward for each row
+            final_df['reward'] = final_df.apply(compute_reward, axis=1)
+
+            # Sort by timestamp
+            final_df = final_df.sort_values('timestamp')
+            
             # Save final dataset
-            merged_df.to_csv(output_file, index=False)
+            final_df.to_csv(output_file, index=False)
             final_datasets.append(output_file)
             
-            print(f"Created final dataset for {switch_id} with {len(merged_df)} rows")
+            print(f"Created final dataset for {switch_id} with {len(final_df)} rows")
             
         except Exception as e:
             print(f"Error creating final dataset for {switch_id}: {e}")
@@ -1542,14 +1562,15 @@ def cleanup_intermediate_files(exp_dir):
         'rtt_bursty_',  # Bursty client RTT files
         's\d+_with_oo.csv',  # Datasets with out-of-order flags
         's\d+_with_rtt.csv', # Datasets with RTT measurements
+        's\d+_rl_dataset.csv', # intermediate rl datasets
         'flow_rtts.csv',     # Flow RTT summary
-        'bg_client_.*\.csv', # Background client data files
-        'bursty_client_.*\.csv', # Bursty client data files
+        # 'bg_client_.*\.csv', # Background client data files
+        # 'bursty_client_.*\.csv', # Bursty client data files
         'server_.*\.csv',   # Server data files
-        # 'burst_server_.*\.log', # Burst server data files
-        # 'burst_client_.*\.log', # Burst client data files
-        # 'bg_server_.*\.log', # Background server data files
-        # 'bg_client_.*\.log', # Background client data files
+        'burst_server_.*\.log', # Burst server data files
+        'burst_client_.*\.log', # Burst client data files
+        'bg_server_.*\.log', # Background server data files
+        'bg_client_.*\.log', # Background client data files
         'bursty_client_.*\.pcap', # Bursty client data files
         'bg_client_.*\.pcap', # Background client data files
         'bursty_server_.*\.pcap', # Bursty server data files
@@ -1705,7 +1726,7 @@ def process_and_merge_all_data(topology, exp_dir):
     final_datasets = create_final_datasets(oo_datasets, rtt_datasets, exp_dir)
     
     # Step 7: Clean up intermediate files
-    #cleanup_intermediate_files(exp_dir)
+    cleanup_intermediate_files(exp_dir)
     
     # Print summary of created files
     print("\nSummary of created files:")
@@ -1713,10 +1734,167 @@ def process_and_merge_all_data(topology, exp_dir):
     
     return final_datasets
 
+def compute_experiment_stats(final_datasets, exp_dir):
+    """
+    Compute and store statistics about the experiment based on the final datasets.
+    
+    Args:
+        final_datasets: List of paths to final dataset CSV files
+        exp_dir: Directory to store the statistics file
+        
+    Returns:
+        Dictionary containing the computed statistics
+    """
+    print("Computing experiment statistics...")
+    
+    # Initialize statistics
+    stats = {
+        'avg_fct': 0,
+        'avg_qct': 0,
+        'p99_fct': 0,
+        'p99_qct': 0,
+        'out_of_order_packets': 0,
+        'total_packets': 0,
+        'deflections': 0,
+        'drops': 0,
+        'total_actions': 0,
+        'avg_total_queue': 0,
+        'p99_total_queue': 0,
+        'avg_fw_queue': 0,
+        'p99_fw_queue': 0,
+        'avg_rtt': 0,
+        'p99_rtt': 0
+    }
+    
+    # Process FCT from background client files
+    fct_values = []
+    for file in os.listdir(exp_dir):
+        if file.startswith('bg_client_') and file.endswith('.csv'):
+            try:
+                df = pd.read_csv(os.path.join(exp_dir, file))
+                if not df.empty and 'flow_completion_time' in df.columns:
+                    fct_values.extend(df['flow_completion_time'].dropna().tolist())
+            except Exception as e:
+                print(f"Error processing FCT file {file}: {e}")
+                traceback.print_exc()
+    
+    # Process QCT from bursty client files
+    qct_values = []
+    for file in os.listdir(exp_dir):
+        if file.startswith('bursty_client_') and file.endswith('.csv'):
+            try:
+                df = pd.read_csv(os.path.join(exp_dir, file))
+                if not df.empty and 'qct' in df.columns:
+                    qct_values.extend(df['qct'].dropna().tolist())
+            except Exception as e:
+                print(f"Error processing QCT file {file}: {e}")
+                traceback.print_exc()
+    
+    # Compute FCT statistics
+    if fct_values:
+        stats['avg_fct'] = float(np.mean(fct_values))
+        stats['p99_fct'] = float(np.percentile(fct_values, 99))
+    else:
+        print("Warning: No FCT values found in background client files")
+    
+    # Compute QCT statistics
+    if qct_values:
+        stats['avg_qct'] = float(np.mean(qct_values))
+        stats['p99_qct'] = float(np.percentile(qct_values, 99))
+    else:
+        print("Warning: No QCT values found in bursty client files")
+    
+    # Initialize lists for queue and RTT statistics
+    total_queue_values = []
+    fw_queue_values = []
+    rtt_values = []
+    
+    # Process each dataset for other statistics
+    for dataset_file in final_datasets:
+        try:
+            df = pd.read_csv(dataset_file)
+            
+            # Collect queue and RTT values
+            if 'total_queue_depth' in df.columns:
+                total_queue_values.extend(df['total_queue_depth'].dropna().tolist())
+            if 'fw_port_depth' in df.columns:
+                fw_queue_values.extend(df['fw_port_depth'].dropna().tolist())
+            if 'rtt' in df.columns:
+                rtt_values.extend(df['rtt'].dropna().tolist())
+            
+            # Count out-of-order packets
+            if 'out_of_order_flag' in df.columns:
+                stats['out_of_order_packets'] += int(df['out_of_order_flag'].sum())
+            
+            # Count deflections
+            if 'action' in df.columns:
+                stats['deflections'] += int(df['action'].sum())
+                stats['total_actions'] += int(len(df))
+
+            # # Count drops
+            # if 'drop' in df.columns:
+            #     stats['drops'] += int(df['drop'].sum())
+            
+            stats['total_packets'] += int(len(df))
+            
+        except Exception as e:
+            print(f"Error processing dataset {dataset_file}: {e}")
+            traceback.print_exc()
+    
+    # Compute queue and RTT statistics
+    if total_queue_values:
+        stats['avg_total_queue'] = float(np.mean(total_queue_values))
+        stats['p99_total_queue'] = float(np.percentile(total_queue_values, 99))
+    else:
+        print("Warning: No total queue depth values found")
+    
+    if fw_queue_values:
+        stats['avg_fw_queue'] = float(np.mean(fw_queue_values))
+        stats['p99_fw_queue'] = float(np.percentile(fw_queue_values, 99))
+    else:
+        print("Warning: No forward queue depth values found")
+    
+    if rtt_values:
+        stats['avg_rtt'] = float(np.mean(rtt_values))
+        stats['p99_rtt'] = float(np.percentile(rtt_values, 99))
+    else:
+        print("Warning: No RTT values found")
+    
+    # Compute percentages
+    if stats['total_packets'] > 0:
+        stats['out_of_order_percentage'] = float((stats['out_of_order_packets'] / stats['total_packets']) * 100)
+        stats['deflection_percentage'] = float((stats['deflections'] / stats['total_actions']) * 100)
+    
+    # Convert all values to Python native types
+    stats = {k: float(v) if isinstance(v, (int, float)) else v for k, v in stats.items()}
+    
+    # Save statistics to JSON file
+    stats_file = os.path.join(exp_dir, "experiment_stats.json")
+    with open(stats_file, 'w') as f:
+        json.dump(stats, f, indent=4)
+    
+    print(f"Experiment statistics saved to {stats_file}")
+    print("\nStatistics Summary:")
+    print(f"Average FCT: {stats['avg_fct']:.2f} s")
+    print(f"P99 FCT: {stats['p99_fct']:.2f} s")
+    print(f"Average QCT: {stats['avg_qct']:.2f} s")
+    print(f"P99 QCT: {stats['p99_qct']:.2f} s")
+    print(f"Average Total Queue: {stats['avg_total_queue']:.2f} packets")
+    print(f"P99 Total Queue: {stats['p99_total_queue']:.2f} packets")
+    print(f"Average Forward Queue: {stats['avg_fw_queue']:.2f} packets")
+    print(f"P99 Forward Queue: {stats['p99_fw_queue']:.2f} packets")
+    print(f"Average RTT: {stats['avg_rtt']:.2f} s")
+    print(f"P99 RTT: {stats['p99_rtt']:.2f} s")
+    print(f"Out-of-order packets: {stats['out_of_order_packets']} ({stats['out_of_order_percentage']:.2f}%)")
+    print(f"Deflections: {stats['deflections']} ({stats['deflection_percentage']:.2f}%)")
+    print(f"Total packets processed: {stats['total_packets']}")
+    
+    return stats
+
 if __name__ == "__main__":
 
     
-    exp_dir = os.path.join('tmp', '20250404_220042')
+    exp_dir = os.path.join('tmp', '20250414_214517')
 
     # Process client PCAP files to extract RTT measurements
     # client_rtts = process_client_pcaps_for_rtt(exp_dir)
@@ -1724,15 +1902,16 @@ if __name__ == "__main__":
     # Collect switch logs and process them
     topology = LeafSpineTopology(
         num_hosts = 4,
-        num_leaf = 2,
+        num_leaf = 4,
         num_spine = 2,
-        bw = 10,
-        latency = 0,
+        bw = 100,
+        latency = 0.001,
         p4_program='p4src/sd/sd.p4'
     )
     topology.generate_topology()
 
-    process_and_merge_all_data(topology, exp_dir)
+    final_datasets = process_and_merge_all_data(topology, exp_dir)
+    compute_experiment_stats(final_datasets, exp_dir)
 
     # switch_datasets = collect_switch_logs(topology, exp_dir)
     
