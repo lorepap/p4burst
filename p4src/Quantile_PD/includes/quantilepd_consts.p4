@@ -12,7 +12,7 @@ const bit<16> NUM_FLOWS       = 500;
 const bit<16> NUM_PREFIXES    = 500;
 const bit<32> QUEUE_SIZE      = 8;    // Value overriden from config.py
 const bit<16> SAMPLE_COUNT    = 1;
-const bit<32> NUM_LOGICAL_PORTS = 8;
+const bit<32> NUM_LOGICAL_PORTS = 32;
 const bit<32> COUNT_ALL_SHIFT = 2;
 
 #endif

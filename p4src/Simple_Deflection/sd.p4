@@ -18,17 +18,17 @@ control SwitchIngress(inout header_t hdr,
 
     Routing() routing;
 
-    register<bit<1>>(8) queue_occupancy_info;
+    register<bit<1>>(32) queue_occupancy_info;
 
     // Better to use constants, since they are not changing. For the moment a regiter is more usefull since avoids to create different costants for each switch.
-    register<bit<1>>(8) neighbor_switch_indicator;
+    register<bit<1>>(32) neighbor_switch_indicator;
 
     action drop() {
         mark_to_drop(standard_metadata);
     }
 
     action generate_random() {
-        random(meta.random_number, 0, 7);
+        random(meta.random_number, 0, 31);
     }
     
     action set_deflect_eggress_port_action(bit<9> idx) {
@@ -78,6 +78,30 @@ control SwitchIngress(inout header_t hdr,
                 queue_occupancy_info.read(meta.is_queue_full_5, (bit<32>)5);
                 queue_occupancy_info.read(meta.is_queue_full_6, (bit<32>)6);
                 queue_occupancy_info.read(meta.is_queue_full_7, (bit<32>)7);
+                queue_occupancy_info.read(meta.is_queue_full_8, (bit<32>)8);
+                queue_occupancy_info.read(meta.is_queue_full_9, (bit<32>)9);
+                queue_occupancy_info.read(meta.is_queue_full_10, (bit<32>)10);
+                queue_occupancy_info.read(meta.is_queue_full_11, (bit<32>)11);
+                queue_occupancy_info.read(meta.is_queue_full_12, (bit<32>)12);
+                queue_occupancy_info.read(meta.is_queue_full_13, (bit<32>)13);
+                queue_occupancy_info.read(meta.is_queue_full_14, (bit<32>)14);
+                queue_occupancy_info.read(meta.is_queue_full_15, (bit<32>)15);
+                queue_occupancy_info.read(meta.is_queue_full_16, (bit<32>)16);
+                queue_occupancy_info.read(meta.is_queue_full_17, (bit<32>)17);
+                queue_occupancy_info.read(meta.is_queue_full_18, (bit<32>)18);
+                queue_occupancy_info.read(meta.is_queue_full_19, (bit<32>)19);
+                queue_occupancy_info.read(meta.is_queue_full_20, (bit<32>)20);
+                queue_occupancy_info.read(meta.is_queue_full_21, (bit<32>)21);
+                queue_occupancy_info.read(meta.is_queue_full_22, (bit<32>)22);
+                queue_occupancy_info.read(meta.is_queue_full_23, (bit<32>)23);
+                queue_occupancy_info.read(meta.is_queue_full_24, (bit<32>)24);
+                queue_occupancy_info.read(meta.is_queue_full_25, (bit<32>)25);
+                queue_occupancy_info.read(meta.is_queue_full_26, (bit<32>)26);
+                queue_occupancy_info.read(meta.is_queue_full_27, (bit<32>)27);
+                queue_occupancy_info.read(meta.is_queue_full_28, (bit<32>)28);
+                queue_occupancy_info.read(meta.is_queue_full_29, (bit<32>)29);
+                queue_occupancy_info.read(meta.is_queue_full_30, (bit<32>)30);
+                queue_occupancy_info.read(meta.is_queue_full_31, (bit<32>)31);
 
                 neighbor_switch_indicator.read(meta.neighbor_switch_indicator_0, (bit<32>)0);
                 neighbor_switch_indicator.read(meta.neighbor_switch_indicator_1, (bit<32>)1);
@@ -87,6 +111,30 @@ control SwitchIngress(inout header_t hdr,
                 neighbor_switch_indicator.read(meta.neighbor_switch_indicator_5, (bit<32>)5);
                 neighbor_switch_indicator.read(meta.neighbor_switch_indicator_6, (bit<32>)6);
                 neighbor_switch_indicator.read(meta.neighbor_switch_indicator_7, (bit<32>)7);
+                neighbor_switch_indicator.read(meta.neighbor_switch_indicator_8, (bit<32>)8);
+                neighbor_switch_indicator.read(meta.neighbor_switch_indicator_9, (bit<32>)9);
+                neighbor_switch_indicator.read(meta.neighbor_switch_indicator_10, (bit<32>)10);
+                neighbor_switch_indicator.read(meta.neighbor_switch_indicator_11, (bit<32>)11);
+                neighbor_switch_indicator.read(meta.neighbor_switch_indicator_12, (bit<32>)12);
+                neighbor_switch_indicator.read(meta.neighbor_switch_indicator_13, (bit<32>)13);
+                neighbor_switch_indicator.read(meta.neighbor_switch_indicator_14, (bit<32>)14);
+                neighbor_switch_indicator.read(meta.neighbor_switch_indicator_15, (bit<32>)15);
+                neighbor_switch_indicator.read(meta.neighbor_switch_indicator_16, (bit<32>)16);
+                neighbor_switch_indicator.read(meta.neighbor_switch_indicator_17, (bit<32>)17);
+                neighbor_switch_indicator.read(meta.neighbor_switch_indicator_18, (bit<32>)18);
+                neighbor_switch_indicator.read(meta.neighbor_switch_indicator_19, (bit<32>)19);
+                neighbor_switch_indicator.read(meta.neighbor_switch_indicator_20, (bit<32>)20);
+                neighbor_switch_indicator.read(meta.neighbor_switch_indicator_21, (bit<32>)21);
+                neighbor_switch_indicator.read(meta.neighbor_switch_indicator_22, (bit<32>)22);
+                neighbor_switch_indicator.read(meta.neighbor_switch_indicator_23, (bit<32>)23);
+                neighbor_switch_indicator.read(meta.neighbor_switch_indicator_24, (bit<32>)24);
+                neighbor_switch_indicator.read(meta.neighbor_switch_indicator_25, (bit<32>)25);
+                neighbor_switch_indicator.read(meta.neighbor_switch_indicator_26, (bit<32>)26);
+                neighbor_switch_indicator.read(meta.neighbor_switch_indicator_27, (bit<32>)27);
+                neighbor_switch_indicator.read(meta.neighbor_switch_indicator_28, (bit<32>)28);
+                neighbor_switch_indicator.read(meta.neighbor_switch_indicator_29, (bit<32>)29);
+                neighbor_switch_indicator.read(meta.neighbor_switch_indicator_30, (bit<32>)30);
+                neighbor_switch_indicator.read(meta.neighbor_switch_indicator_31, (bit<32>)31);
 
                 queue_occupancy_info.read(meta.is_fw_port_full, (bit<32>)meta.fw_port_idx);
                 
@@ -101,25 +149,97 @@ control SwitchIngress(inout header_t hdr,
                 meta.is_queue_full_5 = meta.is_queue_full_5 | meta.neighbor_switch_indicator_5;
                 meta.is_queue_full_6 = meta.is_queue_full_6 | meta.neighbor_switch_indicator_6;
                 meta.is_queue_full_7 = meta.is_queue_full_7 | meta.neighbor_switch_indicator_7;
+                meta.is_queue_full_8 = meta.is_queue_full_8 | meta.neighbor_switch_indicator_8;
+                meta.is_queue_full_9 = meta.is_queue_full_9 | meta.neighbor_switch_indicator_9;
+                meta.is_queue_full_10 = meta.is_queue_full_10 | meta.neighbor_switch_indicator_10;
+                meta.is_queue_full_11 = meta.is_queue_full_11 | meta.neighbor_switch_indicator_11;
+                meta.is_queue_full_12 = meta.is_queue_full_12 | meta.neighbor_switch_indicator_12;
+                meta.is_queue_full_13 = meta.is_queue_full_13 | meta.neighbor_switch_indicator_13;
+                meta.is_queue_full_14 = meta.is_queue_full_14 | meta.neighbor_switch_indicator_14;
+                meta.is_queue_full_15 = meta.is_queue_full_15 | meta.neighbor_switch_indicator_15;
+                meta.is_queue_full_16 = meta.is_queue_full_16 | meta.neighbor_switch_indicator_16;
+                meta.is_queue_full_17 = meta.is_queue_full_17 | meta.neighbor_switch_indicator_17;
+                meta.is_queue_full_18 = meta.is_queue_full_18 | meta.neighbor_switch_indicator_18;
+                meta.is_queue_full_19 = meta.is_queue_full_19 | meta.neighbor_switch_indicator_19;
+                meta.is_queue_full_20 = meta.is_queue_full_20 | meta.neighbor_switch_indicator_20;
+                meta.is_queue_full_21 = meta.is_queue_full_21 | meta.neighbor_switch_indicator_21;
+                meta.is_queue_full_22 = meta.is_queue_full_22 | meta.neighbor_switch_indicator_22;
+                meta.is_queue_full_23 = meta.is_queue_full_23 | meta.neighbor_switch_indicator_23;
+                meta.is_queue_full_24 = meta.is_queue_full_24 | meta.neighbor_switch_indicator_24;
+                meta.is_queue_full_25 = meta.is_queue_full_25 | meta.neighbor_switch_indicator_25;
+                meta.is_queue_full_26 = meta.is_queue_full_26 | meta.neighbor_switch_indicator_26;
+                meta.is_queue_full_27 = meta.is_queue_full_27 | meta.neighbor_switch_indicator_27;
+                meta.is_queue_full_28 = meta.is_queue_full_28 | meta.neighbor_switch_indicator_28;
+                meta.is_queue_full_29 = meta.is_queue_full_29 | meta.neighbor_switch_indicator_29;
+                meta.is_queue_full_30 = meta.is_queue_full_30 | meta.neighbor_switch_indicator_30;
+                meta.is_queue_full_31 = meta.is_queue_full_31 | meta.neighbor_switch_indicator_31;
 
                 if (meta.is_fw_port_full == 1) {
                     // queue is full
-                    if (meta.random_number <= 0 && meta.is_queue_full_0 == 0) {
+                    if (meta.random_number == 0 && meta.is_queue_full_0 == 0) {
                         meta.output_port_idx = 0;
-                    } else if (meta.random_number <= 1 && meta.is_queue_full_1 == 0) {
+                    } else if (meta.random_number == 1 && meta.is_queue_full_1 == 0) {
                         meta.output_port_idx = 1;
-                    } else if (meta.random_number <= 2 && meta.is_queue_full_2 == 0) {
+                    } else if (meta.random_number == 2 && meta.is_queue_full_2 == 0) {
                         meta.output_port_idx = 2;
-                    } else if (meta.random_number <= 3 && meta.is_queue_full_3 == 0) {
+                    } else if (meta.random_number == 3 && meta.is_queue_full_3 == 0) {
                         meta.output_port_idx = 3;
-                    } else if (meta.random_number <= 4 && meta.is_queue_full_4 == 0) {
+                    } else if (meta.random_number == 4 && meta.is_queue_full_4 == 0) {
                         meta.output_port_idx = 4;
-                    } else if (meta.random_number <= 5 && meta.is_queue_full_5 == 0) {
+                    } else if (meta.random_number == 5 && meta.is_queue_full_5 == 0) {
                         meta.output_port_idx = 5;
-                    } else if (meta.random_number <= 6 && meta.is_queue_full_6 == 0) {
+                    } else if (meta.random_number == 6 && meta.is_queue_full_6 == 0) {
                         meta.output_port_idx = 6;
-                    } else if (meta.random_number <= 7 && meta.is_queue_full_7 == 0) {
+                    } else if (meta.random_number == 7 && meta.is_queue_full_7 == 0) {
                         meta.output_port_idx = 7;
+                    } else if (meta.random_number == 8 && meta.is_queue_full_8 == 0) {
+                        meta.output_port_idx = 8;
+                    } else if (meta.random_number == 9 && meta.is_queue_full_9 == 0) {
+                        meta.output_port_idx = 9;
+                    } else if (meta.random_number == 10 && meta.is_queue_full_10 == 0) {
+                        meta.output_port_idx = 10;
+                    } else if (meta.random_number == 11 && meta.is_queue_full_11 == 0) {
+                        meta.output_port_idx = 11;
+                    } else if (meta.random_number == 12 && meta.is_queue_full_12 == 0) {
+                        meta.output_port_idx = 12;
+                    } else if (meta.random_number == 13 && meta.is_queue_full_13 == 0) {
+                        meta.output_port_idx = 13;
+                    } else if (meta.random_number == 14 && meta.is_queue_full_14 == 0) {
+                        meta.output_port_idx = 14;
+                    } else if (meta.random_number == 15 && meta.is_queue_full_15 == 0) {
+                        meta.output_port_idx = 15;
+                    } else if (meta.random_number == 16 && meta.is_queue_full_16 == 0) {
+                        meta.output_port_idx = 16;
+                    } else if (meta.random_number == 17 && meta.is_queue_full_17 == 0) {
+                        meta.output_port_idx = 17;
+                    } else if (meta.random_number == 18 && meta.is_queue_full_18 == 0) {
+                        meta.output_port_idx = 18;
+                    } else if (meta.random_number == 19 && meta.is_queue_full_19 == 0) {
+                        meta.output_port_idx = 19;
+                    } else if (meta.random_number == 20 && meta.is_queue_full_20 == 0) {
+                        meta.output_port_idx = 20;
+                    } else if (meta.random_number == 21 && meta.is_queue_full_21 == 0) {
+                        meta.output_port_idx = 21;
+                    } else if (meta.random_number == 22 && meta.is_queue_full_22 == 0) {
+                        meta.output_port_idx = 22;
+                    } else if (meta.random_number == 23 && meta.is_queue_full_23 == 0) {
+                        meta.output_port_idx = 23;
+                    } else if (meta.random_number == 24 && meta.is_queue_full_24 == 0) {
+                        meta.output_port_idx = 24;
+                    } else if (meta.random_number == 25 && meta.is_queue_full_25 == 0) {
+                        meta.output_port_idx = 25;
+                    } else if (meta.random_number == 26 && meta.is_queue_full_26 == 0) {
+                        meta.output_port_idx = 26;
+                    } else if (meta.random_number == 27 && meta.is_queue_full_27 == 0) {
+                        meta.output_port_idx = 27;
+                    } else if (meta.random_number == 28 && meta.is_queue_full_28 == 0) {
+                        meta.output_port_idx = 28;
+                    } else if (meta.random_number == 29 && meta.is_queue_full_29 == 0) {
+                        meta.output_port_idx = 29;
+                    } else if (meta.random_number == 30 && meta.is_queue_full_30 == 0) {
+                        meta.output_port_idx = 30;
+                    } else if (meta.random_number == 31 && meta.is_queue_full_31 == 0) {
+                        meta.output_port_idx = 31;
                     } else {
                         // it's a loop check
                         if (meta.is_queue_full_0 == 0) {
@@ -138,6 +258,54 @@ control SwitchIngress(inout header_t hdr,
                             meta.output_port_idx = 6;
                         } else if (meta.is_queue_full_7 == 0) {
                             meta.output_port_idx = 7;
+                        } else if (meta.is_queue_full_8 == 0) {
+                            meta.output_port_idx = 8;
+                        } else if (meta.is_queue_full_9 == 0) {
+                            meta.output_port_idx = 9;
+                        } else if (meta.is_queue_full_10 == 0) {
+                            meta.output_port_idx = 10;
+                        } else if (meta.is_queue_full_11 == 0) {
+                            meta.output_port_idx = 11;
+                        } else if (meta.is_queue_full_12 == 0) {
+                            meta.output_port_idx = 12;
+                        } else if (meta.is_queue_full_13 == 0) {
+                            meta.output_port_idx = 13;
+                        } else if (meta.is_queue_full_14 == 0) {
+                            meta.output_port_idx = 14;
+                        } else if (meta.is_queue_full_15 == 0) {
+                            meta.output_port_idx = 15;
+                        } else if (meta.is_queue_full_16 == 0) {
+                            meta.output_port_idx = 16;
+                        } else if (meta.is_queue_full_17 == 0) {
+                            meta.output_port_idx = 17;
+                        } else if (meta.is_queue_full_18 == 0) {
+                            meta.output_port_idx = 18;
+                        } else if (meta.is_queue_full_19 == 0) {
+                            meta.output_port_idx = 19;
+                        } else if (meta.is_queue_full_20 == 0) {
+                            meta.output_port_idx = 20;
+                        } else if (meta.is_queue_full_21 == 0) {
+                            meta.output_port_idx = 21;
+                        } else if (meta.is_queue_full_22 == 0) {
+                            meta.output_port_idx = 22;
+                        } else if (meta.is_queue_full_23 == 0) {
+                            meta.output_port_idx = 23;
+                        } else if (meta.is_queue_full_24 == 0) {
+                            meta.output_port_idx = 24;
+                        } else if (meta.is_queue_full_25 == 0) {
+                            meta.output_port_idx = 25;
+                        } else if (meta.is_queue_full_26 == 0) {
+                            meta.output_port_idx = 26;
+                        } else if (meta.is_queue_full_27 == 0) {
+                            meta.output_port_idx = 27;
+                        } else if (meta.is_queue_full_28 == 0) {
+                            meta.output_port_idx = 28;
+                        } else if (meta.is_queue_full_29 == 0) {
+                            meta.output_port_idx = 29;
+                        } else if (meta.is_queue_full_30 == 0) {
+                            meta.output_port_idx = 30;
+                        } else if (meta.is_queue_full_31 == 0) {
+                            meta.output_port_idx = 31;
                         }
                     }
                     
@@ -158,7 +326,7 @@ control SwitchEgress(inout header_t hdr,
                  inout metadata_t meta,
                  inout standard_metadata_t standard_metadata) {
 
-    register<bit<1>>(8) queue_occupancy_info;
+    register<bit<1>>(32) queue_occupancy_info;
 
     // TODO: Following action and table can be avoided if we unify output_port_idx and fw_port_idx.
     //       This would avoid a table lookup, but like that we can count the number of deflected packets.

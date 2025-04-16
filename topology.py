@@ -39,9 +39,6 @@ class BaseTopology(ABC):
         
     def _map_physical_to_logical_ports(self, switch):
         physical_ports = sorted([port for port in self.net.node_ports()[switch].keys()])
-        
-        if len(physical_ports) > 8:
-            raise ValueError(f"Switch {switch} has {len(physical_ports)} ports. Maximum allowed is 8.")
                 
         return {port: idx for idx, port in enumerate(physical_ports)}
 
@@ -96,6 +93,7 @@ class LeafSpineTopology(BaseTopology):
         self.p4_program = p4_program
         self.create_switch_commands(num_leaf + num_spine)
 
+    #TODO: uno switch senza host viene scambiato per spine, ma viene inserito prog leaf
     def get_spine_switches(self):
         return [switch for switch in self.net.switches()
                 if not any(host in nodes 

@@ -55,7 +55,7 @@ struct metadata_t {
     @field_list(0) // to avoid warning "no user metadata fields tagged with @field_list(0)"
     bit<1> dummy;
 
-    bit <5> random_number;
+    bit<5> random_number;
 
     bit<32> queue_length;
     bit<32> queue_length2;
@@ -71,6 +71,30 @@ struct metadata_t {
     bit<1> is_queue_full_5;
     bit<1> is_queue_full_6;
     bit<1> is_queue_full_7;
+    bit<1> is_queue_full_8;
+    bit<1> is_queue_full_9;
+    bit<1> is_queue_full_10;
+    bit<1> is_queue_full_11;
+    bit<1> is_queue_full_12;
+    bit<1> is_queue_full_13;
+    bit<1> is_queue_full_14;
+    bit<1> is_queue_full_15;
+    bit<1> is_queue_full_16;
+    bit<1> is_queue_full_17;
+    bit<1> is_queue_full_18;
+    bit<1> is_queue_full_19;
+    bit<1> is_queue_full_20;
+    bit<1> is_queue_full_21;
+    bit<1> is_queue_full_22;
+    bit<1> is_queue_full_23;
+    bit<1> is_queue_full_24;
+    bit<1> is_queue_full_25;
+    bit<1> is_queue_full_26;
+    bit<1> is_queue_full_27;
+    bit<1> is_queue_full_28;
+    bit<1> is_queue_full_29;
+    bit<1> is_queue_full_30;
+    bit<1> is_queue_full_31;
 
     bit<1> neighbor_switch_indicator_0;
     bit<1> neighbor_switch_indicator_1;
@@ -80,12 +104,35 @@ struct metadata_t {
     bit<1> neighbor_switch_indicator_5;
     bit<1> neighbor_switch_indicator_6;
     bit<1> neighbor_switch_indicator_7;
+    bit<1> neighbor_switch_indicator_8;
+    bit<1> neighbor_switch_indicator_9;
+    bit<1> neighbor_switch_indicator_10;
+    bit<1> neighbor_switch_indicator_11;
+    bit<1> neighbor_switch_indicator_12;
+    bit<1> neighbor_switch_indicator_13;
+    bit<1> neighbor_switch_indicator_14;
+    bit<1> neighbor_switch_indicator_15;
+    bit<1> neighbor_switch_indicator_16;
+    bit<1> neighbor_switch_indicator_17;
+    bit<1> neighbor_switch_indicator_18;
+    bit<1> neighbor_switch_indicator_19;
+    bit<1> neighbor_switch_indicator_20;
+    bit<1> neighbor_switch_indicator_21;
+    bit<1> neighbor_switch_indicator_22;
+    bit<1> neighbor_switch_indicator_23;
+    bit<1> neighbor_switch_indicator_24;
+    bit<1> neighbor_switch_indicator_25;
+    bit<1> neighbor_switch_indicator_26;
+    bit<1> neighbor_switch_indicator_27;
+    bit<1> neighbor_switch_indicator_28;
+    bit<1> neighbor_switch_indicator_29;
+    bit<1> neighbor_switch_indicator_30;
+    bit<1> neighbor_switch_indicator_31;
 
     bit<16> port_idx_in_reg;
     bit<1> is_fw_port_full;
 
 }
-
 
 struct header_t {
     ethernet_h ethernet;

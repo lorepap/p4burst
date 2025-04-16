@@ -70,26 +70,26 @@ struct metadata_t {
 
     bit<32> rank;
 
-    bit<1> check_results_0;
-    bit<1> check_results_1;
-    bit<1> check_results_2;
-    bit<1> check_results_3;
-    bit<1> check_results_4;
-    bit<1> check_results_5;
-    bit<1> check_results_6;
-    bit<1> check_results_7;
-    bit<1> check_results_8;
-    bit<1> check_results_9;
-    bit<1> check_results_10;
-    bit<1> check_results_11;
-    bit<1> check_results_12;
-    bit<1> check_results_13;
-    bit<1> check_results_14;
-    bit<1> check_results_15;
-    bit<1> check_results_16;
-    bit<1> check_results_17;
-    bit<1> check_results_18;
-    bit<1> check_results_19;
+    bit<8> check_results_0;
+    bit<8> check_results_1;
+    bit<8> check_results_2;
+    bit<8> check_results_3;
+    bit<8> check_results_4;
+    bit<8> check_results_5;
+    bit<8> check_results_6;
+    bit<8> check_results_7;
+    bit<8> check_results_8;
+    bit<8> check_results_9;
+    bit<8> check_results_10;
+    bit<8> check_results_11;
+    bit<8> check_results_12;
+    bit<8> check_results_13;
+    bit<8> check_results_14;
+    bit<8> check_results_15;
+    bit<8> check_results_16;
+    bit<8> check_results_17;
+    bit<8> check_results_18;
+    bit<8> check_results_19;
 
     bit<9> deflect_egress_spec;
     bit<16> port_idx_in_reg;

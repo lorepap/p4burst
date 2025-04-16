@@ -55,23 +55,49 @@ struct metadata_t {
 
     @field_list(0) // to avoid warning "no user metadata fields tagged with @field_list(0)"
     bit<1> dummy;
-    //bit<16> queue_lenght_0;
-    //bit<16> queue_lenght_1;
-    //bit<16> queue_lenght_2;
-    //bit<16> queue_lenght_3;
+    
+    // Updated to support 32 ports (maintaining existing ones and adding more)
+    bit<16> queue_lenght_0;
+    bit<16> queue_lenght_1;
+    bit<16> queue_lenght_2;
+    bit<16> queue_lenght_3;
     bit<16> queue_lenght_4;
     bit<16> queue_lenght_5;
     bit<16> queue_lenght_6;
     bit<16> queue_lenght_7;
+    bit<16> queue_lenght_8;
+    bit<16> queue_lenght_9;
+    bit<16> queue_lenght_10;
+    bit<16> queue_lenght_11;
+    bit<16> queue_lenght_12;
+    bit<16> queue_lenght_13;
+    bit<16> queue_lenght_14;
+    bit<16> queue_lenght_15;
+    bit<16> queue_lenght_16;
+    bit<16> queue_lenght_17;
+    bit<16> queue_lenght_18;
+    bit<16> queue_lenght_19;
+    bit<16> queue_lenght_20;
+    bit<16> queue_lenght_21;
+    bit<16> queue_lenght_22;
+    bit<16> queue_lenght_23;
+    bit<16> queue_lenght_24;
+    bit<16> queue_lenght_25;
+    bit<16> queue_lenght_26;
+    bit<16> queue_lenght_27;
+    bit<16> queue_lenght_28;
+    bit<16> queue_lenght_29;
+    bit<16> queue_lenght_30;
+    bit<16> queue_lenght_31;
 
     bit<1> neighbor_switch_indicator;
     bit<9> deflect_port;
-    bit<3> deflect_port_id;
-    bit<3> port_logical_id;
+    bit<5> deflect_port_id;    // Increased from bit<3> to bit<5> to support 32 ports
+    bit<5> port_logical_id;    // Increased from bit<3> to bit<5>
     bit<8> switch_id;
-    bit<3> max_free_space_queue_id_tmp;
+    bit<5> max_free_space_queue_id_tmp;  // Increased from bit<3> to bit<5>
     bit<16> max_free_space_queue;
-    bit<3> port_id;
+    bit<5> port_id;            // Increased from bit<3> to bit<5>
     bit<16> DT_field;
     bit<16> DT_val;
     bit<1> DT_leaf_reached;

@@ -116,6 +116,7 @@ class CollectionRunner:
         self.burst_interval = args.burst_interval
         self.burst_servers = args.burst_servers
         self.burst_clients = args.burst_clients
+        self.exp_id = args.exp_id
         
         # Initialize flow metrics if tracking enabled
         # if not args.disable_metrics:
@@ -255,7 +256,7 @@ class CollectionRunner:
         # Random servers
         servers = random.sample(hosts, self.n_servers)
         # Random clients
-        clients = random.sample([h for h in hosts if h not in servers], self.n_clients)
+        clients = random.sample(hosts, self.n_clients)
         
         # Start all servers - both background and burst
         for i, server_host in enumerate(servers):
@@ -295,7 +296,7 @@ class CollectionRunner:
         
         # Determine how many clients will be bursty (random subset)
         # Add a new parameter to control this or use a fixed percentage
-        num_bursty_clients = min(self.burst_clients, self.n_clients) if hasattr(self.args, 'bursty_clients') else max(1, self.n_clients // 2)
+        num_bursty_clients = min(self.burst_clients, self.n_clients) if hasattr(self.args, 'burst_clients') else max(1, self.n_clients // 2)
         bursty_clients = random.sample(clients, num_bursty_clients)
         logger.info(f"Selected {num_bursty_clients}/{self.n_clients} clients to generate bursty traffic")
         
