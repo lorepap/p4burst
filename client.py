@@ -14,7 +14,7 @@ import pandas as pd
 import threading
 import numpy as np
 import traceback
-from metrics import FlowMetricsManager
+# from metrics import FlowMetricsManager
 import subprocess
 import csv
 import struct
@@ -27,8 +27,8 @@ class BaseClient(ABC):
         self.server_ip = server_ip
         self.congestion_control = congestion_control
         self.exp_id = exp_id
-        if self.exp_id:
-            self.flowtracker = FlowMetricsManager(self.exp_id)
+        # if self.exp_id:
+        #     self.flowtracker = FlowMetricsManager(self.exp_id)
         # Add tcpdump process tracking
         self.tcpdump_process = None
 
@@ -549,7 +549,7 @@ class DataCollectionClient(BaseClient):
 
 class BackgroundTcpClient(BaseClient):
     """Client for sending background TCP traffic with optimized buffered logging."""
-    def __init__(self, server_ips, flow_size=1000000, flow_iat=0.1,
+    def __init__(self, server_ips, flow_size=1000, flow_iat=0.1,
                  congestion_control='cubic', exp_id='', duration=None, 
                  capture_pcap=True, log_buffer_size=1000, log_flush_interval=1.0):
         

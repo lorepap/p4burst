@@ -5,7 +5,7 @@ import logging
 import traceback
 import math
 import csv
-from metrics import FlowMetricsManager
+# from metrics import FlowMetricsManager
 import threading
 import os
 from scapy.all import sniff, Ether, IP, UDP, Packet, BitField, bind_layers
@@ -25,8 +25,8 @@ class BaseServer(ABC):
             self.ip = ip 
         else: raise ValueError("IP address must be specified")
 
-        if self.exp_id:
-            self.flowtracker = FlowMetricsManager(self.exp_id)
+        # if self.exp_id:
+        #     self.flowtracker = FlowMetricsManager(self.exp_id)
         # Add tcpdump process tracking
         self.tcpdump_process = None
         self.running = True
@@ -555,7 +555,7 @@ class BackgroundTcpServer(BaseServer):
                 s.setsockopt(socket.IPPROTO_TCP, socket.TCP_QUICKACK, 1)
                 
                 s.bind(('0.0.0.0', self.port))
-                s.listen(10)  # Allow up to 10 pending connections
+                s.listen(1024)
                 logging.info(f"[{self.ip}]: Background TCP server listening on port {self.port}")
                 
                 while self.running:
@@ -657,7 +657,7 @@ class BurstyTcpServer(BaseServer):
                 s.setsockopt(socket.IPPROTO_TCP, socket.TCP_QUICKACK, 1)
                 
                 s.bind(('0.0.0.0', self.port))
-                s.listen(10)  # Allow up to 10 pending connections
+                s.listen(1024)
                 logging.info(f"[{self.ip}]: Bursty TCP server listening on port {self.port}")
                 
                 while self.running:
