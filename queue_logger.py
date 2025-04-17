@@ -56,7 +56,6 @@ def main(args):
     cli_cmd_deflected_counter = f"echo 'counter_read SimpleDeflectionIngress.deflected_ctr 0' | simple_switch_CLI --thrift-port {port}"
     cli_cmd_dropped_counter = f"echo 'counter_read SimpleDeflectionIngress.dropped_ctr 0' | simple_switch_CLI --thrift-port {port}"
     cli_cmd_queue_depths = f"echo 'register_read SimpleDeflectionEgress.queue_depth_info' | simple_switch_CLI --thrift-port {port}"
-    cli_cmd_flow_pkt_counter = f"echo 'counter_read SimpleDeflectionIngress.flow_header_counter 0' | simple_switch_CLI --thrift-port {port}"
 
 
     with open(log_file, "w") as f:
@@ -121,13 +120,7 @@ def main(args):
                     f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - Error: Could not connect to thrift client\n")
                 print("\n[*] Stopping queue logging due to connection error. Log saved in queue_log.txt")
                 return
-            
-            result_flow_pkt_counter = subprocess.run(cli_cmd_flow_pkt_counter, shell=True, capture_output=True, text=True)
-            if check_thrift_error(result_flow_pkt_counter):
-                with open(log_file, "a") as f:
-                    f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - Error: Could not connect to thrift client\n")
-                print("\n[*] Stopping queue logging due to connection error. Log saved in queue_log.txt")
-                return
+
 
             output_queue = result_queue.stdout.strip()
             output_fw_full = result_fw_full.stdout.strip()
@@ -137,7 +130,6 @@ def main(args):
             output_counter_deflected = result_counter_deflected.stdout.strip()
             output_counter_dropped = result_counter_dropped.stdout.strip()
             output_queue_depths = result_queue_depths.stdout.strip()
-            output_flow_pkt_counter = result_flow_pkt_counter.stdout.strip()
 
             # Debugging: Print raw output
             # print("Raw Queue Output:", output_queue)
@@ -155,7 +147,6 @@ def main(args):
                 f.write(f"{output_counter_deflected}\n")
                 f.write(f"{output_counter_dropped}\n")
                 f.write(f"{output_queue_depths}\n")
-                f.write(f"{output_flow_pkt_counter}\n")
                 f.write("\n")
 
 
