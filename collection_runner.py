@@ -22,6 +22,10 @@ import utils.rl_data_utils as datalib
 import utils.config_override as config_override
 import argparse
 import json
+import signal
+
+# Global runner reference for signal handling
+current_runner = None
 
 def parse_args():
     def restricted_float(x):
@@ -148,6 +152,7 @@ class CollectionRunner:
         
         # Configure experiment parameters - fixed to simple deflection
         self.processes = []
+        self.queue_logger_processes = []  # Track queue logger processes separately
         self.topology_type = 'leafspine'  # Only using leaf-spine topology
         self.n_hosts = args.n_hosts
         self.n_leaf = args.n_leaf
@@ -260,6 +265,9 @@ class CollectionRunner:
 
     def stop_network(self):
         """Stop the network."""
+        # First clean up processes
+        self.cleanup_processes()
+        
         if hasattr(self, 'topology') and self.topology.net:
             logger.info("Stopping network...")
             self.topology.net.stopNetwork()
@@ -326,7 +334,7 @@ class CollectionRunner:
                 f'--congestion_control {self.congestion_control} '
                 f'--flow_size {self.flow_size} '
             )
-            proc = client_host.popen(client_cmd, shell=True, stderr=sys.stderr, stdout=subprocess.DEVNULL)
+            proc = client_host.popen(client_cmd,  shell=True, stderr=sys.stderr, stdout=subprocess.DEVNULL)
             self.processes.append(proc)
         
         # Wait for client to finish
@@ -341,21 +349,30 @@ class CollectionRunner:
         return receiver_logs
 
     def run_collection(self):
-        """Run the traffic collection experiment with separate background and bursty traffic."""
+        """
+        Run the traffic collection experiment with separate background and bursty traffic.
+        Logic: 
+        - all hosts are initialized as background servers and burst servers
+        - random n_clients send background traffic to random n_servers
+        - random n_burst_clients send bursty traffic to random n_burst_servers
+        """
         logger.info("Starting TCP traffic experiment...")
         receiver_logs = []
         
         # Use available hosts as servers
         hosts = self.topology.net.net.hosts
+        
         # Random servers
-        servers = random.sample(hosts, self.n_servers)
-        burst_servers = random.sample(hosts, self.burst_servers)
+        # servers = random.sample(hosts, self.n_servers)
+        if self.burst_servers == self.n_hosts:
+            raise ValueError("Burst servers cannot be the same as the number of hosts")
+        #burst_servers = random.sample(hosts, self.burst_servers)
 
         # Random clients
         clients = random.sample(hosts, self.n_clients) # check this (now all hosts can be clients and servers at the same time)
         
         # Start all servers - both background and burst
-        for i, server_host in enumerate(servers):
+        for i, server_host in enumerate(hosts):
             logger.info(f"Starting background TCP server on {server_host.name} ({server_host.IP()})...")
             bg_server_cmd = (
                 'python3 -m app --mode server '
@@ -369,7 +386,9 @@ class CollectionRunner:
             )
             server_host.cmd(bg_server_cmd)
             
-        for server_host in burst_servers:
+        # for server_host in burst_servers:
+        # EDIT: now all hosts can be burst servers - only a few will be used
+        for i, server_host in enumerate(hosts):
             logger.info(f"Starting burst TCP server on {server_host.name} ({server_host.IP()})...")
             burst_server_cmd = (
                 'python3 -m app --mode server '
@@ -390,11 +409,10 @@ class CollectionRunner:
         # Start clients - ALL clients run background traffic, but only a subset runs bursty traffic
         client_csv_files = []
         
-        # Determine how many clients will be bursty (random subset)
-        # Add a new parameter to control this or use a fixed percentage
-        num_bursty_clients = min(self.burst_clients, self.n_clients)
-        bursty_clients = random.sample(clients, num_bursty_clients)
-        logger.info(f"Selected {num_bursty_clients}/{self.n_clients} clients to generate bursty traffic")
+        # Select a random subset of clients to run bursty traffic that is not among the bursty servers
+        # clients_pool = [client for client in clients if client not in burst_servers]
+        # bursty_clients = random.sample(clients_pool, self.burst_clients) 
+        # logger.info(f"Selected {self.burst_clients}/{self.n_clients} clients to generate bursty traffic")
         
         for i, client_host in enumerate(clients):
             # Background TCP client - ALL clients run this
@@ -402,7 +420,11 @@ class CollectionRunner:
             client_csv_files.append(bg_client_file)
             
             logger.info(f"Starting background TCP client on {client_host.name} ({client_host.IP()})...")
-            server_ips = ' '.join([server.IP() for server in servers])
+            
+            # All servers but client host
+            server_pool_all = [server for server in hosts if server != client_host]
+            server_pool = random.sample(server_pool_all, self.n_servers)
+            server_ips = ' '.join([server.IP() for server in server_pool])
             
             bg_client_cmd = (
                 'python3 -m app '
@@ -421,30 +443,37 @@ class CollectionRunner:
             proc = client_host.popen(bg_client_cmd, shell=True)
             self.processes.append(proc)
             
-            # Burst TCP client - ONLY a subset of clients run this
-            if client_host in bursty_clients:
-                burst_server_ips = ' '.join([server.IP() for server in burst_servers])
-                burst_client_file = f"{self.exp_dir}/burst_client_{client_host.name}_log.csv"
-                client_csv_files.append(burst_client_file)
-                
-                logger.info(f"Starting burst TCP client on {client_host.name} ({client_host.IP()})...")
-                
-                burst_client_cmd = (
-                    'python3 -m app '
-                    '--mode client '
-                    f'--exp_id {self.exp_id} '
-                    '--type collect '
-                    '--traffic_type burst '
-                    f'--server_ips {burst_server_ips} '
-                    f'--burst_interval {self.burst_interval} '
-                    f'--burst_reply_size {self.burst_reply_size} '
-                    f'--duration {self.args.duration} '
-                    f'--client_csv_file {burst_client_file} '
-                    f'{"--disable_pcap" if self.args.disable_pcap else ""} '
-                    f'> {self.exp_dir}/burst_client_{client_host.name}_out.log 2>&1 &'
-                )
-                proc = client_host.popen(burst_client_cmd, shell=True)
-                self.processes.append(proc)
+        # Burst TCP client - ONLY a subset of clients run this
+        burst_clients = random.sample(clients, self.burst_clients)
+        for client_host in burst_clients:
+            #burst_server_ips = ' '.join([server.IP() for server in burst_servers])
+            
+            # Select self.burst_servers to be queried by the burst client
+            burst_server_pool = [server for server in hosts if server != client_host]
+            burst_servers = random.sample(burst_server_pool, self.burst_servers)
+            burst_server_ips = ' '.join([server.IP() for server in burst_servers])
+
+            burst_client_file = f"{self.exp_dir}/burst_client_{client_host.name}_log.csv"
+            client_csv_files.append(burst_client_file)
+            
+            logger.info(f"Starting burst TCP client on {client_host.name} ({client_host.IP()})...")
+            
+            burst_client_cmd = (
+                'python3 -m app '
+                '--mode client '
+                f'--exp_id {self.exp_id} '
+                '--type collect '
+                '--traffic_type burst '
+                f'--server_ips {burst_server_ips} '
+                f'--burst_interval {self.burst_interval} '
+                f'--burst_reply_size {self.burst_reply_size} '
+                f'--duration {self.args.duration} '
+                f'--client_csv_file {burst_client_file} '
+                f'{"--disable_pcap" if self.args.disable_pcap else ""} '
+                f'> {self.exp_dir}/burst_client_{client_host.name}_out.log 2>&1 &'
+            )
+            proc = client_host.popen(burst_client_cmd, shell=True)
+            self.processes.append(proc)
                 
         # Wait for the experiment to finish
         logger.info(f"Waiting for TCP traffic experiment to complete (duration: {self.args.duration}s)...")
@@ -470,7 +499,7 @@ class CollectionRunner:
                 queue_logger_proc = subprocess.Popen(
                     f"python3 queue_logger.py --port 909{i} --log {self.exp_dir}/queue_log_{switch}.txt",
                     shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                self.processes.append(queue_logger_proc)
+                self.queue_logger_processes.append(queue_logger_proc)
             
             # Run CLI if requested
             if (self.args.cli):
@@ -480,33 +509,11 @@ class CollectionRunner:
             # Run collection experiment - get receiver logs but don't generate dataset yet
             self.run_collection()
             
+            # Wait for experiment to finish
             time.sleep(5)
             
-            # Kill queue logger
-            for i, switch in enumerate(self.topology.get_leaf_switches()):
-                queue_logger_proc = subprocess.Popen(
-                    f"pkill -f queue_logger.py --port 909{i}",
-                    shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                self.processes.append(queue_logger_proc) 
-            
-            # Wait for all processes to finish
-            logger.info("Waiting for all processes to complete...")
-            for proc in self.processes:
-                try:
-                    proc.wait(timeout=5)  # Wait for each process to finish
-                except subprocess.TimeoutExpired:
-                    logger.warning("Process timeout - terminating")
-                    proc.terminate()
-
-            # kill simple switch processes
-            for switch in self.topology.get_leaf_switches():
-                switch_proc = subprocess.Popen(
-                    f"pkill -f simple_switch",
-                    shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                self.processes.append(switch_proc)
-            
-            
-
+            # Process data and compute statistics
+            logger.info("Processing collected data...")
             final_datasets = datalib.process_and_merge_all_data(self.topology, exp_dir)
             datalib.compute_experiment_stats(final_datasets, exp_dir)
 
@@ -515,16 +522,81 @@ class CollectionRunner:
             traceback.print_exc()
             raise
         finally:
+            # Always clean up properly to ensure no orphaned processes
             self.stop_network()
 
+    def cleanup_processes(self):
+        """Kill all spawned processes and clean up."""
+        logger.info("Cleaning up processes...")
+        
+        # Terminate queue logger processes directly
+        for proc in self.queue_logger_processes:
+            try:
+                logger.info(f"Killing queue logger process PID: {proc.pid}")
+                # Send SIGTERM first
+                proc.terminate()
+                try:
+                    # Wait for a short time for process to terminate
+                    proc.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    # If it doesn't respond to SIGTERM, use SIGKILL
+                    logger.warning(f"Process {proc.pid} not responding to SIGTERM, sending SIGKILL")
+                    proc.kill()
+            except Exception as e:
+                logger.error(f"Error terminating process {proc.pid}: {e}")
+        
+        # Kill all other processes
+        for proc in self.processes:
+            try:
+                logger.info(f"Terminating process PID: {proc.pid}")
+                proc.terminate()
+                try:
+                    proc.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    logger.warning(f"Process {proc.pid} not responding to SIGTERM, sending SIGKILL")
+                    proc.kill()
+            except Exception as e:
+                logger.error(f"Error terminating process {proc.pid}: {e}")
+            
+        # Use more forceful methods to ensure queue loggers are terminated
+        # This is a direct OS kill of any remaining queue_logger processes
+        try:
+            subprocess.run("pkill -f 'python3 queue_logger.py'", shell=True, check=False)
+        except Exception as e:
+            logger.error(f"Error killing queue logger processes: {e}")
 
+        try:
+            subprocess.run("pkill -f 'python3 -m app'", shell=True, check=False)
+        except Exception as e:
+            logger.error(f"Error killing app processes: {e}")
+
+def signal_handler(sig, frame):
+    """Handle signals like SIGINT (Ctrl+C) and SIGTERM to clean up gracefully."""
+    logger.info(f"Received signal {sig}, cleaning up...")
+    if current_runner:
+        current_runner.cleanup_processes()
+        if hasattr(current_runner, 'topology') and current_runner.topology.net:
+            current_runner.stop_network()
+    sys.exit(0)
 
 def main():
     """Main function."""
+    global current_runner
+    
+    # Set up signal handling
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+
     runner = CollectionRunner(args)
-    dataset = runner.run_experiment()
-    logger.info("Experiment completed successfully")
-    return dataset # return for the collection batch script
+    current_runner = runner  # Store reference for signal handler
+    
+    try:
+        dataset = runner.run_experiment()
+        logger.info("Experiment completed successfully")
+        return dataset # return for the collection batch script
+    finally:
+        # Ensure cleanup even if something unexpected happens
+        runner.cleanup_processes()
 
 if __name__ == "__main__":
     main()
