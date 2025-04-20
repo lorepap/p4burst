@@ -188,7 +188,7 @@ control GetQuantile(inout metadata_t meta) {
             meta.check_results_##INDEX = 0;                             \
         }                                                               \
         if (meta.tail == (bit<16>)(INDEX * SAMPLE_COUNT)) {             \
-            window_register.write(INDEX, meta.rank);                    \ 
+            window_register.write(INDEX, meta.rank);                    \
         }                                                               \
 
     action sum_columns_and_compute_count_all() {
@@ -232,7 +232,7 @@ control GetQuantile(inout metadata_t meta) {
         }
 
         // Moltiplichiamo count_all (shift left di COUNT_ALL_SHIFT bit equivale a moltiplicare per 2^COUNT_ALL_SHIFT)
-        meta.count_all = meta.count_all << COUNT_ALL_SHIFT;
+        meta.count_all = meta.count_all << (bit<8>)COUNT_ALL_SHIFT;
     }
 
 /*

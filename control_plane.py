@@ -7,12 +7,14 @@ import math
 import utils.bee_packets
 
 class BaseControlPlane(ABC):
-    def __init__(self, topology, cmd_path='p4cli', queue_rate=100, queue_depth=100):
+    def __init__(self, topology, cmd_path='p4cli', queue_rate=100, queue_depth=100, burst_port=12346, bg_port=12345):
         self.topology = topology
         self.net_api = topology.net
         self.path = cmd_path
         self.queue_rate = queue_rate
         self.queue_depth = queue_depth
+        self.burst_port = burst_port
+        self.bg_port = bg_port
 
     @abstractmethod
     def generate_control_plane(self):
@@ -25,39 +27,38 @@ class BaseControlPlane(ABC):
             f.write('\n'.join(commands))
 
 class ECMPControlPlane(BaseControlPlane):
-    def __init__(self, topology, leaf_switches, spine_switches):
-        super().__init__(topology)
-        self.num_leaf = leaf_switches
-        self.num_spine = spine_switches
 
     def generate_control_plane(self):
         if not isinstance(self.topology, LeafSpineTopology):
             raise ValueError("ECMPControlPlane can only be used with LeafSpineTopology")
-        for switch in self.net_api.switches():
-            commands = []
-            switch_num = int(switch[1:])
-            is_spine = switch_num > self.num_leaf
-
-            if is_spine:
-                self._generate_spine_commands(switch, commands)
-            else:
-                self._generate_leaf_commands(switch, commands)
-
-            self.save_commands(switch_num, commands)
-
-    def _generate_spine_commands(self, switch, commands):
+        for switch in self.topology.get_spine_switches():
+            self._generate_spine_commands(switch)
+        for switch in self.topology.get_leaf_switches():
+            self._generate_leaf_commands(switch)
+            
+    def _generate_spine_commands(self, switch):
+        commands = [f"set_queue_rate {self.queue_rate}", f"set_queue_depth {self.queue_depth}"]  # Inizializza la lista di comandi
         commands.append("table_set_default ipv4_lpm drop")
-        for leaf in range(1, self.num_leaf + 1):
-            leaf_switch = f's{leaf}'
+        
+        # Ottieni i leaf switch dalla topologia
+        leaf_switches = self.topology.get_leaf_switches()
+        
+        for leaf_switch in leaf_switches:
+            leaf_id = int(leaf_switch[1:])  # Estrai l'ID numerico rimuovendo il prefisso 's'
+            
             for port, nodes in self.net_api.node_ports()[switch].items():
                 if leaf_switch in nodes:
                     leaf_mac = self.topology.get_switch_mac(switch, leaf_switch)
                     for host in self.net_api.hosts():
                         if self.is_host_connected_to_leaf(host, leaf_switch):
-                            host_ip = f'10.0.{leaf}.{host[1:]}/32'
+                            host_ip = f'10.0.{leaf_id}.{host[1:]}/32'
                             commands.append(f"table_add ipv4_lpm ipv4_forward {host_ip} => {leaf_mac} {port}")
-    
-    def _generate_leaf_commands(self, switch, commands):
+        
+        # Salva i comandi generati
+        self.save_commands(switch[1:], commands)
+        
+    def _generate_leaf_commands(self, switch):
+        commands = [f"set_queue_rate {self.queue_rate}", f"set_queue_depth {self.queue_depth}"]  # Inizializza la lista di comandi
         commands.append("table_set_default ipv4_lpm drop")
         commands.append("table_set_default ecmp_group drop")
         commands.append("table_set_default ecmp_nhop drop")
@@ -65,20 +66,26 @@ class ECMPControlPlane(BaseControlPlane):
         # Handle local hosts
         for host in self.net_api.hosts():
             if self.is_host_connected_to_leaf(host, switch):
-                host_ip = f'10.0.{switch[1:]}.{host[1:]}/32'
+                leaf_id = int(switch[1:])
+                host_ip = f'10.0.{leaf_id}.{host[1:]}/32'
                 for port, nodes in self.net_api.node_ports()[switch].items():
                     if host in nodes:
                         host_mac = self.topology.get_host_mac(host)
                         commands.append(f"table_add ipv4_lpm set_nhop {host_ip} => {host_mac} {port}")
 
         # Handle remote hosts (ECMP to spine switches)
-        commands.append(f"table_add ecmp_group set_ecmp_select 0.0.0.0/0 => 1 {self.num_spine}")
-        for i, spine in enumerate(range(self.num_leaf + 1, self.num_leaf + self.num_spine + 1)):
-            spine_switch = f's{spine}'
+        spine_switches = self.topology.get_spine_switches()
+        num_spine = len(spine_switches)
+        commands.append(f"table_add ecmp_group set_ecmp_select 0.0.0.0/0 => 1 {num_spine}")
+        
+        for i, spine_switch in enumerate(spine_switches):
             for port, nodes in self.net_api.node_ports()[switch].items():
                 if spine_switch in nodes:
                     spine_mac = self.topology.get_switch_mac(switch, spine_switch)
                     commands.append(f"table_add ecmp_nhop set_nhop 1 {i} => {spine_mac} {port}")
+        
+        # Salva i comandi generati
+        self.save_commands(switch[1:], commands)
 
     def is_host_connected_to_leaf(self, host, leaf_switch):
         for port, nodes in self.net_api.node_ports()[leaf_switch].items():
@@ -89,7 +96,7 @@ class ECMPControlPlane(BaseControlPlane):
 class L3ForwardingControlPlane(BaseControlPlane):
     def generate_control_plane(self):
         for switch in self.net_api.switches():
-            commands = []
+            commands = [f"set_queue_rate {self.queue_rate}", f"set_queue_depth {self.queue_depth}"]
             commands.append("table_set_default MyIngress.ipv4_lpm drop")
             host_entries = {}  # Track individual host entries for each switch
 
@@ -316,10 +323,12 @@ class SimpleDeflectionControlPlane(BaseDeflectionControlPlane):
             self.save_commands(switch[1:], commands)
 
 class BasePreemptiveDeflectionControlPlane(BaseDeflectionControlPlane):
+        
     def generate_leaf_spine_control_plane(self):
         super().generate_leaf_spine_control_plane()
-        hosts_pairs = itertools.combinations(self.net_api.hosts(), 2)
+        #hosts_pairs = itertools.combinations(self.net_api.hosts(), 2)
         switch_commands = defaultdict(set)
+        '''
         for host1, host2 in hosts_pairs:
             h1_ip = self.topology.get_host_ip_no_mask(host1)
             h2_ip = self.topology.get_host_ip_no_mask(host2)
@@ -332,7 +341,8 @@ class BasePreemptiveDeflectionControlPlane(BaseDeflectionControlPlane):
             ]
             switch_commands[h1_connected_sw].update(rank_commands)
             switch_commands[h2_connected_sw].update(rank_commands)
-
+        '''
+        
         for host in self.net_api.hosts():
 
             host_ip = self.topology.get_host_ip_no_mask(host)
@@ -350,7 +360,7 @@ class BasePreemptiveDeflectionControlPlane(BaseDeflectionControlPlane):
                 )
         
         for leaf in self.leaf_switches:
-            commands = list(switch_commands[leaf])
+            commands = list(switch_commands[leaf]) + [f"table_add SwitchIngress.get_flow_priority_table get_flow_priority_action {self.bg_port} => {self.bg_rank()}", f"table_add SwitchIngress.get_flow_priority_table get_flow_priority_action {self.burst_port} => {self.bursty_rank()}"]
             self.save_commands(leaf[1:], commands, mode='a')
         
 
@@ -359,9 +369,22 @@ class BasePreemptiveDeflectionControlPlane(BaseDeflectionControlPlane):
     @abstractmethod
     def calculate_rank(ip_address_1, ip_address_2):
         pass
+    
+    @abstractmethod
+    def bg_rank(self):
+        pass
+    
+    @abstractmethod
+    def bursty_rank(self):
+        pass
 
 
 class QuantilePreemptiveDeflectionControlPlane(BasePreemptiveDeflectionControlPlane):
+    
+    @staticmethod
+    def send_bee_packets(switch):
+        utils.bee_packets.send_bee_packets_qpd(switch)
+    
     def calculate_rank(self, ip_address_1, ip_address_2): # TODO: we have to think about priorities of packets
         # Sort IPs to ensure consistent ordering
         ips = sorted([ip_address_1, ip_address_2])
@@ -371,8 +394,14 @@ class QuantilePreemptiveDeflectionControlPlane(BasePreemptiveDeflectionControlPl
         hash_value = hash(combined) & 0xFFFFFFFF  # Get positive 32-bit value
     
         # Map to 1 or 2 with 75%-25% distribution
-        #return 1 if hash_value % 4 < 3 else 2
-        return 1 if hash_value % 2==0 else 2
+        return None if hash_value % 4 < 3 else 2
+        #return 1 if hash_value % 2==0 else 2
+    
+    def bg_rank(self):
+        return 1
+    
+    def bursty_rank(self):
+        return 2
     
     def generate_leaf_spine_control_plane(self):
         super().generate_leaf_spine_control_plane()
@@ -381,6 +410,22 @@ class QuantilePreemptiveDeflectionControlPlane(BasePreemptiveDeflectionControlPl
         raise NotImplementedError("QuantilePreemptiveDeflectionControlPlane is not implemented for DumbbellTopology")
     
 class DistPreemptiveDeflectionControlPlane(BasePreemptiveDeflectionControlPlane):
+    
+    @staticmethod
+    def send_bee_packets(switch):
+        utils.bee_packets.send_bee_packets_dpd(switch)
+    
+    def __init__(self, topology, cmd_path='p4cli', queue_rate=100, queue_depth=100, 
+                 alpha=0.8, m_prio_num_entries=4, m_prio_rank_entries=4, 
+                 m_newm_num_entries=4, m_newm_rank_entries=4, burst_port=12346, bg_port=12345):
+        super().__init__(topology, cmd_path, queue_rate, queue_depth, burst_port, bg_port)
+        self.alpha = alpha
+        self.m_prio_num_entries = m_prio_num_entries
+        self.m_prio_rank_entries = m_prio_rank_entries
+        self.m_newm_num_entries = m_newm_num_entries
+        self.m_newm_rank_entries = m_newm_rank_entries
+    
+        
     def calculate_rank(self, ip_address_1, ip_address_2): # TODO: we have to think about priorities of packets
         # Sort IPs to ensure consistent ordering
         ips = sorted([ip_address_1, ip_address_2])
@@ -392,21 +437,22 @@ class DistPreemptiveDeflectionControlPlane(BasePreemptiveDeflectionControlPlane)
         # Map to 45 or 2 with 80%-20% distribution
         return 45 if hash_value % 5 < 4 else 2
     
+    def bg_rank(self):
+        return 45
+    
+    def bursty_rank(self):
+        return 2
+    
     def generate_leaf_spine_control_plane(self):
         super().generate_leaf_spine_control_plane()
         commands = []
         C = self.queue_depth - 1
-        alpha = config.ALPHA
-        m_prio_num_entries = config.M_PRIO_NUM_ENTRIES
-        m_prio_rank_entries = config.M_PRIO_RANK_ENTRIES
-        m_newm_num_entries = config.M_NEWM_NUM_ENTRIES
-        m_newm_rank_entries = config.M_NEWM_RANK_ENTRIES
 
-        for i in range(m_prio_num_entries):
+        for i in range(self.m_prio_num_entries):
             m_start, m_end, mid_m = DistPreemptiveDeflectionControlPlane.compute_interval_and_midpoint(i)
-            for j in range(m_prio_rank_entries):
+            for j in range(self.m_prio_rank_entries):
                 rank_start, rank_end, mid_rank = DistPreemptiveDeflectionControlPlane.compute_interval_and_midpoint(j)
-                rel_prio = math.floor(C * alpha * (1 - math.exp(- (mid_rank / mid_m))))
+                rel_prio = math.floor(C * self.alpha * (1 - math.exp(- (mid_rank / mid_m))))
                 commands.append(
                     f"table_add SwitchIngress.get_rel_prio_table get_rel_prio_action {rank_start}->{rank_end} {m_start}->{m_end} => {rel_prio} 1"
                 )
@@ -414,9 +460,9 @@ class DistPreemptiveDeflectionControlPlane(BasePreemptiveDeflectionControlPlane)
                     f"table_add SwitchIngress.get_deflect_rel_prio_table get_deflect_rel_prio_action {rank_start}->{rank_end} {m_start}->{m_end} => {rel_prio} 1"
                 )
 
-        for i in range(m_newm_num_entries):
+        for i in range(self.m_newm_num_entries):
             m_start, m_end, mid_m = DistPreemptiveDeflectionControlPlane.compute_interval_and_midpoint(i)
-            for j in range(m_newm_rank_entries):
+            for j in range(self.m_newm_rank_entries):
                 rank_start, rank_end, mid_rank = DistPreemptiveDeflectionControlPlane.compute_interval_and_midpoint(j)
                 new_m = self.compute_new_m(mid_m, mid_rank)
                 commands.append(

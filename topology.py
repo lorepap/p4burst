@@ -48,6 +48,9 @@ class BaseTopology(ABC):
     
     def get_host_ip(self, host):
         return self.net.getNode(host).get('ip')
+    
+    def get_host_ip_no_mask(self, host):
+        return self.get_host_ip(host).split('/')[0]
 
     def get_host_mac(self, host):
         return self.net.getNode(host).get('mac')

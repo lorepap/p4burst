@@ -37,8 +37,7 @@ control SwitchIngress(
 
     table get_flow_priority_table {
         key = {
-            hdr.ipv4.srcAddr: exact;
-            hdr.ipv4.dstAddr: exact;
+            hdr.tcp.dstPort: exact;
         }
         actions = { get_flow_priority_action; }
         size = TABLE_SIZE;
@@ -54,6 +53,7 @@ control SwitchIngress(
         size = TABLE_SIZE;
     }
 
+/*
     table debug_queue_length {
         key = {
             //meta.fw_port_idx: exact;
@@ -90,6 +90,7 @@ control SwitchIngress(
         default_action = NoAction();
         size = TABLE_SIZE;
     }
+*/
 
     action get_tail_action() {
         bit<16> t_low;
@@ -152,7 +153,7 @@ control SwitchIngress(
             deflect_get_min.apply(meta);
 
 
-            debug_deflection.apply();
+            //debug_deflection.apply();
             if (meta.min_value == meta.queue_length) {
                 if (meta.deflect_min_value != meta.deflect_queue_length) {
                     debug_deflected.apply();

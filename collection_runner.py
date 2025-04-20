@@ -54,7 +54,7 @@ import argparse
 import subprocess
 
 from topology import LeafSpineTopology, DumbbellTopology
-from control_plane import RLDeflectionControlPlane, SimpleDeflectionControlPlane
+from control_plane import ECMPControlPlane, RLDeflectionControlPlane, SimpleDeflectionControlPlane, DistPreemptiveDeflectionControlPlane, QuantilePreemptiveDeflectionControlPlane
 # from metrics import FlowMetricsManager
 # from utils.rl_data_utils import collect_switch_logs, combine_datasets
 
@@ -80,6 +80,9 @@ p4_const_paths = {
 p4_control_plane = {
     'simple_deflection': SimpleDeflectionControlPlane,
     'rl_deflection': RLDeflectionControlPlane,
+    'ecmp': ECMPControlPlane,
+    'dist_preemptive_deflection': DistPreemptiveDeflectionControlPlane,
+    'quantile_preemptive_deflection': QuantilePreemptiveDeflectionControlPlane
 }
 
 
@@ -117,6 +120,8 @@ class CollectionRunner:
         self.burst_servers = args.burst_servers
         self.burst_clients = args.burst_clients
         self.exp_id = args.exp_id
+        self.burst_port = args.burst_port
+        self.bg_port = args.bg_port
         
         # Initialize flow metrics if tracking enabled
         # if not args.disable_metrics:
@@ -140,7 +145,7 @@ class CollectionRunner:
         
         # Create control plane - fixed to SimpleDeflection
         self.control_plane = p4_control_plane[self.policy](self.topology, queue_rate=self.queue_rate, 
-                                                          queue_depth=self.queue_depth)
+                                                          queue_depth=self.queue_depth, burst_port=self.burst_port, bg_port=self.bg_port)
         
         logger.info("Experiment setup complete")
 
@@ -266,7 +271,7 @@ class CollectionRunner:
                 f'--exp_id {self.exp_id} '
                 '--type collect '
                 '--traffic_type background '
-                '--port 12345 '
+                f'--port {self.bg_port} '
                 f'--server_ips {server_host.IP()} '
                 f'{"--disable_pcap" if self.args.disable_pcap else ""} '
                 f'> {self.exp_dir}/bg_server_{server_host.name}_out.log 2>&1 &'
@@ -280,7 +285,7 @@ class CollectionRunner:
                 f'--exp_id {self.exp_id} '
                 '--type collect '
                 '--traffic_type burst '
-                '--port 12346 '
+                f'--port {self.burst_port}'
                 f'--server_ips {server_host.IP()} '
                 f'--burst_reply_size {self.burst_reply_size} '
                 f'{"--disable_pcap" if self.args.disable_pcap else ""} '
@@ -365,9 +370,11 @@ class CollectionRunner:
             
             # Configure the SimpleDeflection control plane
             logger.info("Sending BEE packets for SimpleDeflection control plane")
+            # Versione corretta 2: if dentro il ciclo
             for switch in self.topology.get_leaf_switches():
-                logger.info(f"Sending BEE packets to switch {switch}")
-                self.control_plane.send_bee_packets(switch)
+                if self.policy != 'ecmp':
+                    logger.info(f"Sending BEE packets to switch {switch}")
+                    self.control_plane.send_bee_packets(switch)
             
             # Run queue logger for debugging
             for i, switch in enumerate(self.topology.get_leaf_switches()):
@@ -470,6 +477,8 @@ def parse_args():
                         help='Disable metrics collection')
     parser.add_argument('--policy', type=str, choices=['simple_deflection', 'ecmp', 'dist_preemptive_deflection', 'quantile_preemptive_deflection', 'rl_deflection'], 
                     default='simple_deflection', help='P4 program to use (default: simple_deflection)')
+    parser.add_argument('--burst_port', type=int, default=12346)
+    parser.add_argument('--bg_port', type=int, default=12345)
     
     return parser.parse_args()
 

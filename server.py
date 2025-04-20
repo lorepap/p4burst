@@ -421,6 +421,8 @@ class DataCollectionServer(BaseServer):
         self.highest_seq = {}  # Store highest sequence number seen per flow
         self.burst_reply_size = burst_reply_size  # Size of response for burst requests
         
+        logging.info(f"burst reply size: {self.burst_reply_size}")
+        print("burst reply size: {self.burst_reply_size}")
         # Initialize the CSV log file
         with open(self.log_file, 'w', newline='') as csvfile:
             writer = csv.writer(csvfile)
@@ -552,7 +554,7 @@ class BackgroundTcpServer(BaseServer):
                 s.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 16384)  # Moderate buffer size
                 
                 s.bind(('0.0.0.0', self.port))
-                s.listen(10)  # Allow up to 10 pending connections
+                s.listen(1024)  # Allow up to 10 pending connections
                 logging.info(f"[{self.ip}]: Background TCP server listening on port {self.port}")
                 
                 while self.running:
@@ -648,7 +650,7 @@ class BurstyTcpServer(BaseServer):
                 s.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 16384)  # Moderate buffer size
                 
                 s.bind(('0.0.0.0', self.port))
-                s.listen(10)  # Allow up to 10 pending connections
+                s.listen(1024)  # Allow up to 10 pending connections
                 logging.info(f"[{self.ip}]: Bursty TCP server listening on port {self.port}")
                 
                 while self.running:

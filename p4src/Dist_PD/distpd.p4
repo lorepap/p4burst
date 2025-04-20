@@ -49,11 +49,10 @@ control SwitchIngress(
     }
     table get_flow_priority_table {
         key = {
-            hdr.ipv4.srcAddr: exact;
-            hdr.ipv4.dstAddr: exact;
+            hdr.tcp.dstPort: exact;
         }
         actions = { get_flow_priority_action; }
-        size = TABLE_SIZE;
+        size = 2048;
     }
     
     

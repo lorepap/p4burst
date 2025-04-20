@@ -3,8 +3,8 @@ import socket
 import time
 import random
 from abc import ABC, abstractmethod
-from client import BaseClient, BurstyClient, BackgroundClient, IperfClient, DataCollectionClient, TestCollectionClient, BackgroundTcpClient, BurstyTcpClient
-from server import BaseServer, BurstyServer, BackgroundServer, IperfServer, DataCollectionServer, TestCollectionServer, BackgroundTcpServer, BurstyTcpServer
+from client import BaseClient, BackgroundTcpClient, BurstyTcpClient
+from server import BaseServer, BackgroundTcpServer, BurstyTcpServer
 import logging
 import os
 import csv
@@ -73,123 +73,6 @@ class App(ABC):
             self.server.stop()
 
 
-class BurstyApp(App):
-    def __init__(self, args):
-        super().__init__(args)
-        mode = args.mode
-        server_ips = args.server_ips
-        reply_size = self.config.getint('bursty', 'reply_size')
-        qps = self.config.getint('bursty', 'qps')
-        if mode == 'server':
-            self.server = BurstyServer(reply_size=reply_size, ip=args.host_ip, exp_id=args.exp_id)
-        elif mode == 'client':
-            if server_ips is None:
-                raise ValueError("server_ips must be provided for client mode")
-            self.client = BurstyClient(server_ips, reply_size, duration=args.duration, qps=qps, exp_id=args.exp_id)
-        else:
-            raise ValueError("Invalid mode. Choose 'server' or 'client'.")
-
-    def run(self):
-        if self.mode == 'server':
-            self.server.start()
-        elif self.mode == 'client':
-            self.client.start()
-
-class BackgroundApp(App):
-    def __init__(self, args):
-        super().__init__(args)
-        mode = args.mode
-        # host_id = args.host_id
-        host_ip = args.host_ip
-        server_ips = args.server_ips
-        flow_ids = args.flow_ids
-        flow_sizes = args.flow_sizes
-        inter_arrival_times = args.iat
-        congestion_control = args.congestion_control
-
-        if mode == 'server':
-            self.server = BackgroundServer(ip=host_ip, exp_id=args.exp_id)
-        elif mode == 'client':
-            # Pass necessary flow data for the client
-            self.client = BackgroundClient(
-                server_ips,
-                flow_ids,
-                flow_sizes,
-                inter_arrival_times,
-                duration=args.duration,
-                exp_id=args.exp_id,
-                congestion_control=congestion_control
-            )
-        else:
-            raise ValueError("Invalid mode. Choose 'server' or 'client'.")
-
-    def run(self):
-        if self.mode == 'client':
-            self.client.start()
-        elif self.mode == 'server':
-            self.server.start()
-
-class SimplePacketApp(App):
-    def __init__(self, args):
-        super().__init__(args)
-        mode = args.mode
-        server_ip = args.server_ips
-        # packet_size = args.packet_size
-        if mode == 'server':
-            self.server = BaseServer(port=12345, ip=args.host_ip, exp_id=args.exp_id)  # Use a basic server listener
-        elif mode == 'client':
-            if server_ip is None:
-                raise ValueError("server_ip must be provided for client mode")
-            self.client = BaseClient(server_ip=server_ip[0])
-        else:
-            raise ValueError("Invalid mode. Choose 'server' or 'client'.")
-
-    def run(self):
-        if self.mode == 'server':
-            self.server.start()  # Blocking call to start listening for packets
-        elif self.mode == 'client':
-            self.client.start()  # Send a single packet and then exit
-
-class IperfApp(App):
-    def __init__(self, args):
-        super().__init__(args)
-        mode = args.mode
-        server_ip = args.server_ips
-        if mode == 'server':
-            self.server = IperfServer(port=12345, ip=args.host_ip)  # Use a basic server listener
-        elif mode == 'client':
-            if server_ip is None:
-                raise ValueError("server_ip must be provided for client mode")
-            self.client = IperfClient(server_ip[0], duration=10)
-        else:
-            raise ValueError("Invalid mode. Choose 'server' or 'client'.")
-
-    def run(self):
-        if self.mode == 'server':
-            self.server.start()  # Blocking call to start listening for packets
-        elif self.mode == 'client':
-            self.client.start()  # Send a single packet and then exit
-
-
-# class TestCollectionApp(App):
-#     """
-#     N clients to 1 server
-#     """
-#     def __init__(self, args):
-#         super().__init__(args)
-#         if self.mode == 'server':
-#             self.server = TestCollectionServer(ip=args.server_ips[0], port=args.port, exp_id=args.exp_id, log_file=args.server_csv_file)
-#         elif self.mode == 'client':
-#             self.client = TestCollectionClient(server_ip=args.server_ips[0], server_port=args.port, 
-#                             num_packets=args.num_packets, interval=args.interval, num_flows=args.num_flows,
-#                             exp_id=args.exp_id, congestion_control=args.congestion_control, packet_size=args.packet_size)
-
-#     def run(self):
-#         if self.mode == 'server':
-#             self.server.start()
-#         elif self.mode == 'client':
-#             self.client.start()
-
 class DataCollectionApp(App):
     """
     Client-server app that simulates mixed background and bursty traffic using TCP.
@@ -225,7 +108,8 @@ class DataCollectionApp(App):
                     congestion_control=args.congestion_control, 
                     #log_file=args.client_csv_file,
                     duration=args.duration,
-                    capture_pcap=not args.disable_pcap
+                    capture_pcap=not args.disable_pcap,
+                    port=args.port,
                 )
             elif args.traffic_type == 'burst':
                 self.client = BurstyTcpClient(
@@ -237,7 +121,8 @@ class DataCollectionApp(App):
                     congestion_control=args.congestion_control, 
                     #log_file=args.client_csv_file,
                     duration=args.duration,
-                    capture_pcap=not args.disable_pcap
+                    capture_pcap=not args.disable_pcap,
+                    port=args.port,
                 )
             else:
                 raise ValueError(f"Invalid traffic type: {args.traffic_type}. Choose 'background' or 'burst'.")
@@ -290,19 +175,8 @@ def main():
 
     args = parser.parse_args()
 
-    # Rest of your code remains the same
-    if args.type == 'bursty':
-        app = BurstyApp(args)
-    elif args.type == 'background':
-        app = BackgroundApp(args)
-    elif args.type == 'single':
-        app = SimplePacketApp(args)
-    # elif args.type == 'test_collect':
-    #     app = TestCollectionApp(args)
-    elif args.type == 'collect':
-        app = DataCollectionApp(args)
-    else:
-        raise ValueError("Invalid application type. Choose 'bursty' or 'background'.")
+    app = DataCollectionApp(args)
+    
     app.run()
     # app.collect_and_write_metrics(f'tmp/metrics_{args.host_id}.csv')
 
