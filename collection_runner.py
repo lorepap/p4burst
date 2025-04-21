@@ -55,6 +55,7 @@ import subprocess
 
 from topology import LeafSpineTopology, DumbbellTopology
 from control_plane import ECMPControlPlane, RLDeflectionControlPlane, SimpleDeflectionControlPlane, DistPreemptiveDeflectionControlPlane, QuantilePreemptiveDeflectionControlPlane
+from utils.config_override import update_p4_consts
 # from metrics import FlowMetricsManager
 # from utils.rl_data_utils import collect_switch_logs, combine_datasets
 
@@ -70,11 +71,11 @@ p4_program_paths = {
 }
 
 p4_const_paths = {
-    'simple_deflection': 'SimpleDeflection/includes/sd_const.p4',
-    'ecmp': 'ecmp_const.p4',
-    'dist_preemptive_deflection': 'Dist_PD/includes/distpd_const.p4',
-    'quantile_preemptive_deflection': 'Quantile_PD/includes/quantilepd_const.p4',
-    'rl_deflection': 'evaluation/includes/evaluation_const.p4'
+    'simple_deflection': 'p4src/Simple_Deflection/includes/sd_consts.p4',
+    'ecmp': 'p4src/ecmp.p4',
+    'dist_preemptive_deflection': 'p4src/Dist_PD/includes/distpd_consts.p4',
+    'quantile_preemptive_deflection': 'p4src/Quantile_PD/includes/quantilepd_consts.p4',
+    'rl_deflection': 'p4src/evaluation/includes/evaluation_consts.p4'
 }
 
 p4_control_plane = {
@@ -122,6 +123,10 @@ class CollectionRunner:
         self.exp_id = args.exp_id
         self.burst_port = args.burst_port
         self.bg_port = args.bg_port
+        self.logaritmic_deflecting_margin = args.logaritmic_deflecting_margin
+        self.m_prio_num_entries = args.m_prio_num_entries
+        self.m_prio_rank_entries = args.m_prio_rank_entries
+        self.alpha = args.alpha
         
         # Initialize flow metrics if tracking enabled
         # if not args.disable_metrics:
@@ -142,9 +147,13 @@ class CollectionRunner:
             self.delay,
             p4_program_paths[self.policy]
         )
-        
-        # Create control plane - fixed to SimpleDeflection
-        self.control_plane = p4_control_plane[self.policy](self.topology, queue_rate=self.queue_rate, 
+        if self.policy == 'dist_preemptive_deflection':
+            self.control_plane = p4_control_plane[self.policy](self.topology, queue_rate=self.queue_rate,
+                                                          queue_depth=self.queue_depth, burst_port=self.burst_port, bg_port=self.bg_port, alpha=self.alpha,
+                                                          m_prio_num_entries=self.m_prio_num_entries, m_newm_num_entries=self.m_prio_num_entries,
+                                                          m_prio_rank_entries=self.m_prio_rank_entries, m_newm_rank_entries=self.m_prio_rank_entries)
+        else:    
+            self.control_plane = p4_control_plane[self.policy](self.topology, queue_rate=self.queue_rate, 
                                                           queue_depth=self.queue_depth, burst_port=self.burst_port, bg_port=self.bg_port)
         
         logger.info("Experiment setup complete")
@@ -365,6 +374,15 @@ class CollectionRunner:
         dataset = None
         try:
             # Setup and start network
+            
+            update_p4_consts(
+                p4_const_paths[self.policy],
+                self.queue_depth,
+                self.logaritmic_deflecting_margin,
+                self.alpha,
+                self.m_prio_num_entries,
+                self.m_prio_rank_entries
+            )
             self.setup_experiment()
             self.start_network()
             
@@ -479,6 +497,14 @@ def parse_args():
                     default='simple_deflection', help='P4 program to use (default: simple_deflection)')
     parser.add_argument('--burst_port', type=int, default=12346)
     parser.add_argument('--bg_port', type=int, default=12345)
+    parser.add_argument('--logaritmic_deflecting_margin', type=int, default=1,
+                        help='Deflecting margin for preemptive deflections (default: 1)')
+    parser.add_argument('--m_prio_num_entries', type=int, default=8,
+                        help='Number of entries in the m-prio table (default: 8)')
+    parser.add_argument('--m_prio_rank_entries', type=int, default=8,
+                        help='Number of entries in the m-prio rank table (default: 8)')
+    parser.add_argument('--alpha', type=float, default=0.5,
+                        help='Alpha value for preemptive deflections (default: 0.5)')
     
     return parser.parse_args()
 

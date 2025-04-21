@@ -5,6 +5,7 @@ from topology import LeafSpineTopology, DumbbellTopology  # Add this line to imp
 from collections import defaultdict
 import math
 import utils.bee_packets
+from utils.dist import compute_interval_and_midpoint, compute_new_m
 
 class BaseControlPlane(ABC):
     def __init__(self, topology, cmd_path='p4cli', queue_rate=100, queue_depth=100, burst_port=12346, bg_port=12345):
@@ -449,9 +450,9 @@ class DistPreemptiveDeflectionControlPlane(BasePreemptiveDeflectionControlPlane)
         C = self.queue_depth - 1
 
         for i in range(self.m_prio_num_entries):
-            m_start, m_end, mid_m = DistPreemptiveDeflectionControlPlane.compute_interval_and_midpoint(i)
+            m_start, m_end, mid_m = compute_interval_and_midpoint(i)
             for j in range(self.m_prio_rank_entries):
-                rank_start, rank_end, mid_rank = DistPreemptiveDeflectionControlPlane.compute_interval_and_midpoint(j)
+                rank_start, rank_end, mid_rank = compute_interval_and_midpoint(j)
                 rel_prio = math.floor(C * self.alpha * (1 - math.exp(- (mid_rank / mid_m))))
                 commands.append(
                     f"table_add SwitchIngress.get_rel_prio_table get_rel_prio_action {rank_start}->{rank_end} {m_start}->{m_end} => {rel_prio} 1"
@@ -461,10 +462,10 @@ class DistPreemptiveDeflectionControlPlane(BasePreemptiveDeflectionControlPlane)
                 )
 
         for i in range(self.m_newm_num_entries):
-            m_start, m_end, mid_m = DistPreemptiveDeflectionControlPlane.compute_interval_and_midpoint(i)
+            m_start, m_end, mid_m = compute_interval_and_midpoint(i)
             for j in range(self.m_newm_rank_entries):
-                rank_start, rank_end, mid_rank = DistPreemptiveDeflectionControlPlane.compute_interval_and_midpoint(j)
-                new_m = self.compute_new_m(mid_m, mid_rank)
+                rank_start, rank_end, mid_rank = compute_interval_and_midpoint(j)
+                new_m = compute_new_m(mid_m, mid_rank)
                 commands.append(
                     f"table_add SwitchEgress.get_newm_table get_newm_action {rank_start}->{rank_end} {m_start}->{m_end} => {new_m} 1"
                 )
@@ -475,26 +476,6 @@ class DistPreemptiveDeflectionControlPlane(BasePreemptiveDeflectionControlPlane)
     def generate_dumbbell_control_plane(self):
         raise NotImplementedError("DistPreemptiveDeflectionControlPlane is not implemented for DumbbellTopology")
 
-    '''
-    @staticmethod
-    def _compute_interval_and_midpoint(index):
-        start = (2 << index) + 1
-        end = (2 << (index + 1))
-        return start, end, (start + end) / 2.0
-        '''
-    @staticmethod
-    def compute_interval_and_midpoint(index): # diverso da practical deflection (guarda sopra), ma in questo modo gli intervalli partono da 0
-        start = (2 << index) - 2
-        end = (2 << (index + 1)) - 3
-        return start, end, (start + end) / 2.0
-    
-    @staticmethod
-    def compute_new_m(mid_m, mid_rank):
-        return math.floor((49 * mid_m + mid_rank) / 50)
-    
-    @staticmethod
-    def compute_rel_prio(mid_rank, mid_m, C, alpha):
-        return math.floor(C * alpha * (1 - math.exp(- (mid_rank / mid_m))))
     
 
         
