@@ -1,64 +1,40 @@
 import argparse
-import socket
-import time
-import random
-from abc import ABC, abstractmethod
-from client import BaseClient, BackgroundTcpClient, BurstyTcpClient
-from server import BaseServer, BackgroundTcpServer, BurstyTcpServer
+import asyncio
 import logging
 import os
-import csv
 import configparser
-import sqlite3
-import pandas as pd
-import numpy as np
+from async_tcp_clients import AsyncBackgroundTcpClient, AsyncBurstyTcpClient
+from async_tcp_servers import AsyncBackgroundTcpServer, AsyncBurstyTcpServer
 
-
-class App(ABC):
+class App:
     def __init__(self, args):
         self.mode = args.mode
         self.client = None
         self.server = None
-        self.config = self.load_config('config.ini')
+        self.config = self.load_config(args.config_file)
+        # prepare experiment directory and logging
         if not args.disable_logging:
-            if not os.path.exists(f'tmp/{args.exp_id}'):
-                os.makedirs(f'tmp/{args.exp_id}')
-            self.setup_logging(log_file=f'tmp/{args.exp_id}/app.log')
-
-    @abstractmethod
-    def run(self):
-        pass
-
-    # @staticmethod
-    # def setup_logging(log_file='tmp/app.log'):
-    #     print('setup logging...')
-    #     os.makedirs('tmp', exist_ok=True)
-    #     logging.basicConfig(level=logging.DEBUG, 
-    #                     format='%(asctime)s - %(levelname)s - %(message)s',
-    #                     handlers=[
-    #             logging.FileHandler(log_file, mode='a'),
-    #             logging.StreamHandler()  # This will also print logs to console
-    #         ])
+            exp_dir = os.path.join('tmp', args.exp_id)
+            os.makedirs(exp_dir, exist_ok=True)
+            self.setup_logging(log_file=os.path.join(exp_dir, 'app.log'))
+        self.args = args
 
     @staticmethod
     def setup_logging(log_file='tmp/app.log'):
+        os.makedirs(os.path.dirname(log_file), exist_ok=True)
         file_handler = logging.FileHandler(log_file, mode='a')
         file_handler.setLevel(logging.DEBUG)
         file_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
         file_handler.setFormatter(file_formatter)
 
-        # Create a stream (console) handler that logs only errors (ERROR and above)
         console_handler = logging.StreamHandler()
         console_handler.setLevel(logging.ERROR)
         console_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
         console_handler.setFormatter(console_formatter)
 
-        # Get the root logger and configure it
         logger = logging.getLogger()
-        logger.setLevel(logging.DEBUG)  # Overall logger level
-        # Remove any pre-existing handlers
+        logger.setLevel(logging.DEBUG)
         logger.handlers = []
-        # Add our handlers
         logger.addHandler(file_handler)
         logger.addHandler(console_handler)
 
@@ -68,117 +44,86 @@ class App(ABC):
         config.read(config_file)
         return config
 
-    def cleanup(self):
-        if self.server:
-            self.server.stop()
-
-
-class DataCollectionApp(App):
-    """
-    Client-server app that simulates mixed background and bursty traffic using TCP.
-    """
-    def __init__(self, args):
-        super().__init__(args)
-        if self.mode == 'server':
-            if args.traffic_type == 'background':
-                self.server = BackgroundTcpServer(
-                    ip=args.server_ips[0], 
-                    port=args.port, 
-                    exp_id=args.exp_id, 
-                    #log_file=args.server_csv_file,
-                    capture_pcap=not args.disable_pcap
-                )
-            elif args.traffic_type == 'burst':
-                self.server = BurstyTcpServer(
-                    ip=args.server_ips[0], 
-                    port=args.port, 
-                    exp_id=args.exp_id,
-                    burst_reply_size=args.burst_reply_size,
-                    capture_pcap=not args.disable_pcap
-                )
-            else:
-                raise ValueError(f"Invalid traffic type: {args.traffic_type}. Choose 'background' or 'burst'.")
-        elif self.mode == 'client':
-            if args.traffic_type == 'background':
-                self.client = BackgroundTcpClient(
-                    server_ips=args.server_ips, 
-                    flow_iat=args.bg_flow_iat, 
-                    flow_size=args.flow_size,
-                    exp_id=args.exp_id, 
-                    congestion_control=args.congestion_control, 
-                    #log_file=args.client_csv_file,
-                    duration=args.duration,
-                    capture_pcap=not args.disable_pcap,
-                    port=args.port,
-                )
-            elif args.traffic_type == 'burst':
-                self.client = BurstyTcpClient(
-                    server_ips=args.server_ips, 
-                    burst_interval=args.burst_interval,
-                    burst_servers=args.burst_servers,
-                    burst_reply_size=args.burst_reply_size,
-                    exp_id=args.exp_id, 
-                    congestion_control=args.congestion_control, 
-                    #log_file=args.client_csv_file,
-                    duration=args.duration,
-                    capture_pcap=not args.disable_pcap,
-                    port=args.port,
-                )
-            else:
-                raise ValueError(f"Invalid traffic type: {args.traffic_type}. Choose 'background' or 'burst'.")
-
     def run(self):
         if self.mode == 'server':
-            self.server.start()
-        elif self.mode == 'client':
-            self.client.start()
+            self.run_server()
+        else:
+            # client mode
+            asyncio.run(self.run_client())
+
+    def run_server(self):
+        if self.args.traffic_type == 'background':
+            self.server = AsyncBackgroundTcpServer(
+                ip=self.args.host_ip,
+                port=self.args.port,
+                exp_id=self.args.exp_id,
+                capture_pcap=not self.args.disable_pcap,
+                log=not self.args.disable_logging
+            )
+        else:
+            self.server = AsyncBurstyTcpServer(
+                ip=self.args.host_ip,
+                port=self.args.port,
+                exp_id=self.args.exp_id,
+                burst_reply_size=self.args.burst_reply_size,
+                capture_pcap=not self.args.disable_pcap,
+                log=not self.args.disable_logging
+            )
+        self.server.start()
+
+    async def run_client(self):
+        if self.args.traffic_type == 'background':
+            self.client = AsyncBackgroundTcpClient(
+                server_ips=self.args.server_ips,
+                port=self.args.port,
+                exp_id=self.args.exp_id,
+                congestion_control=self.args.congestion_control,
+                capture_pcap=not self.args.disable_pcap,
+                log=not self.args.disable_logging,
+                duration=self.args.duration,
+                flow_iat=self.args.bg_flow_iat,
+                flow_size=self.args.flow_size
+            )
+        else:
+            self.client = AsyncBurstyTcpClient(
+                server_ips=self.args.server_ips,
+                port=self.args.port,
+                exp_id=self.args.exp_id,
+                congestion_control=self.args.congestion_control,
+                capture_pcap=not self.args.disable_pcap,
+                log=not self.args.disable_logging,
+                duration=self.args.duration,
+                burst_interval=self.args.burst_interval,
+                burst_servers=self.args.burst_servers
+            )
+        await self.client.start()
 
 
 def main():
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(description="Mixed TCP traffic app (async)")
     parser.add_argument('--mode', choices=['server', 'client'], required=True)
-    parser.add_argument('--disable_logging', action='store_true', help="Disable logging")
-    parser.add_argument('--exp_id', required=False, type=str, help="Experiment ID")
-    parser.add_argument('--type', choices=['bursty', 'background', 'single', 'collect'], required=True,
-                      help="Type of application to run")
-    parser.add_argument('--host_ip', type=str, required=False, help="Host IP address")
-    parser.add_argument('--server_ips', required=False, nargs='+', help="List of server IPs")
-    parser.add_argument('--duration', type=int, help="Duration for client (in seconds)")
-    parser.add_argument('--congestion_control', type=str, default='cubic', help="Congestion control algorithm (for background app)")
-    parser.add_argument('--port', type=int, default=12345, help="Port (for mixed app)")
-
-    # Burst and background (with traces, for inference and testing)
-    bursty_group = parser.add_argument_group('bursty', 'Arguments for bursty application')
-    bursty_group.add_argument('--reply_size', required=False, type=int, default=40000)
-    bursty_group.add_argument('--incast_scale', required=False, type=int, help="Number of servers to send requests in a single query")
-    bursty_group.add_argument('--qps', required=False, type=int, default=4000, help="Queries per second (bursty app)")
-
-    background_group = parser.add_argument_group('background', 'Arguments for background application')
-    background_group.add_argument('--flow_ids', required=False, nargs='+', type=int, help="List of flow IDs")
-    background_group.add_argument('--flow_sizes', required=False, nargs='+', type=int, help="List of flow sizes")
-    background_group.add_argument('--iat', required=False, nargs='+', type=float, help="List of inter-arrival times")
-
-    single_group = parser.add_argument_group('single', 'Arguments for simple packet application')
-
-    # Bursty and background (collect and write metrics)
-    collect_group = parser.add_argument_group('collect', 'Arguments for traffic collection')
-    collect_group.add_argument('--bg_flow_iat', type=float, default=0.01, help="Interval between background flows")
-    collect_group.add_argument('--num_flows', type=int, default=1, help="Number of background flows")
-    collect_group.add_argument('--server_csv_file', type=str, help="Server CSV file")
-    collect_group.add_argument('--client_csv_file', type=str, help="Client CSV file")
-    collect_group.add_argument('--flow_size', type=int, default=1000, help="Flow size")
-    collect_group.add_argument('--burst_interval', type=float, default=1.0, help="Time between bursts (seconds)")
-    collect_group.add_argument('--burst_servers', type=int, default=2, help="Number of servers in each burst")
-    collect_group.add_argument('--burst_reply_size', type=int, default=40000, help="Size of burst response")
-    collect_group.add_argument('--traffic_type', choices=['background', 'burst'], help='Type of traffic to generate (background or burst)')
-    collect_group.add_argument('--disable_pcap', action='store_true', help="Disable pcap capture")
+    parser.add_argument('--exp_id', required=True, help="Experiment ID")
+    parser.add_argument('--config_file', default='config.ini', help="Path to config file")
+    parser.add_argument('--host_ip', required=True, help="This node's IP address")
+    parser.add_argument('--server_ips', nargs='+', help="List of server IPs (client mode)")
+    parser.add_argument('--traffic_type', choices=['background', 'burst'], required=True)
+    parser.add_argument('--port', type=int, default=12345)
+    parser.add_argument('--disable_logging', action='store_true')
+    parser.add_argument('--disable_pcap', action='store_true')
+    parser.add_argument('--congestion_control', default='cubic')
+    parser.add_argument('--duration', type=int, default=60)
+    # background specific
+    parser.add_argument('--bg_flow_iat', type=float, default=0.1)
+    parser.add_argument('--flow_size', type=int, default=1000000)
+    # burst specific
+    parser.add_argument('--burst_interval', type=float, default=1.0)
+    parser.add_argument('--burst_servers', type=int, default=2)
+    parser.add_argument('--burst_reply_size', type=int, default=4000)
 
     args = parser.parse_args()
 
-    app = DataCollectionApp(args)
-    
+    app = App(args)
     app.run()
-    # app.collect_and_write_metrics(f'tmp/metrics_{args.host_id}.csv')
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
