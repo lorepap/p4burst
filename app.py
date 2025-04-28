@@ -5,6 +5,34 @@ import os
 import configparser
 from async_tcp_clients import AsyncBackgroundTcpClient, AsyncBurstyTcpClient
 from async_tcp_servers import AsyncBackgroundTcpServer, AsyncBurstyTcpServer
+import sys
+
+def lower_priority(nice_level: int = 10):
+    try:
+        os.nice(nice_level)
+        logging.info(f"[init] nice level set to +{nice_level}")
+    except Exception as e:
+        logging.warning(f"[init] could not set nice level: {e}")
+
+def derive_core_from_ip(ip: str, ncores: int) -> int:
+    """
+    Deriva un core (da 1 a ncores-1) basandosi 
+    sull'ultimo ottetto dell'IP per evitare il core 0.
+    """
+    try:
+        last = int(ip.split('.')[-1])
+        # mod (ncores-1) +1 assicura core in [1, ncores-1]
+        return (last % (ncores - 1)) + 1
+    except Exception:
+        return 1
+
+def pin_to_core(core_id: int):
+    pid = os.getpid()
+    try:
+        os.sched_setaffinity(pid, {core_id})
+        logging.info(f"[init] pinned process to CPU core {core_id}")
+    except Exception as e:
+        logging.warning(f"[init] could not set CPU affinity: {e}")
 
 class App:
     def __init__(self, args):
@@ -28,7 +56,7 @@ class App:
         file_handler.setFormatter(file_formatter)
 
         console_handler = logging.StreamHandler()
-        console_handler.setLevel(logging.ERROR)
+        console_handler.setLevel(logging.INFO)
         console_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
         console_handler.setFormatter(console_formatter)
 
@@ -114,13 +142,26 @@ def main():
     parser.add_argument('--duration', type=int, default=60)
     # background specific
     parser.add_argument('--bg_flow_iat', type=float, default=0.1)
-    parser.add_argument('--flow_size', type=int, default=1000000)
+    parser.add_argument('--flow_size', type=int, default=1000)
     # burst specific
     parser.add_argument('--burst_interval', type=float, default=1.0)
     parser.add_argument('--burst_servers', type=int, default=2)
     parser.add_argument('--burst_reply_size', type=int, default=4000)
+    parser.add_argument('--core', type=int, default=1, help="CPU core ID to pin to")
+    
+    #ncores = os.cpu_count() or 1
+    #logging.info(f"[init] total CPU cores available: {ncores}")
+
+    # Deriva un core dall'IP
+    #core = derive_core_from_ip(args.host_ip, ncores)
+    #logging.info(f"[init] derived CPU core from IP {args.host_ip}: {core}")
+
+    # Fissa affinità
+    #pin_to_core(core)
+    #lower_priority(15)
 
     args = parser.parse_args()
+    pin_to_core(args.core)
 
     app = App(args)
     app.run()

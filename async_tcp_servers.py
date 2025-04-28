@@ -23,7 +23,8 @@ class AsyncBaseServer(ABC):
         self.capture_pcap = capture_pcap
         self.backlog = backlog
         self.tcpdump_process = None
-        self.shutdown_event = asyncio.Event()
+        # spostiamo la creazione dell'Event nel loop corretto
+        self.shutdown_event = None
 
     def _signal_handler(self):
         if self.log:
@@ -37,6 +38,9 @@ class AsyncBaseServer(ABC):
         asyncio.run(self._run_server())
 
     async def _run_server(self):
+        # creare l'Event sul loop corrente
+        self.shutdown_event = asyncio.Event()
+
         # Setup packet capture
         if self.capture_pcap:
             self.start_packet_capture()
@@ -48,6 +52,7 @@ class AsyncBaseServer(ABC):
                              self.congestion_control.encode())
         srv_sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 256 * 1024)
         srv_sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_QUICKACK, 1)
+        srv_sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_MAXSEG, 1460)
         srv_sock.bind(('0.0.0.0', self.port))
         srv_sock.listen(self.backlog)
         srv_sock.setblocking(False)
@@ -57,9 +62,17 @@ class AsyncBaseServer(ABC):
         for sig in (signal.SIGINT, signal.SIGTERM):
             loop.add_signal_handler(sig, self._signal_handler)
 
+        '''
         server = await loop.create_server(
             lambda: AsyncConnectionHandler(self),
             sock=srv_sock)
+        '''
+        
+        server = await asyncio.start_server(
+            self.handle_request,
+            sock=srv_sock,
+            #backlog=self.backlog,
+        )
 
         if self.log:
             logging.info(f"[{self.ip}]: Async server listening on port {self.port} "
@@ -74,6 +87,7 @@ class AsyncBaseServer(ABC):
         if self.log:
             logging.info(f"[{self.ip}]: Server shut down")
 
+    @abstractmethod
     async def handle_request(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
         """Override in subclasses to handle a single connection."""
         pass
@@ -160,12 +174,6 @@ class AsyncBackgroundTcpServer(AsyncBaseServer):
                 if not chunk:
                     break
                 total_bytes += len(chunk)
-            # Log to CSV
-            log_file = f"tmp/{self.exp_id}/background_{self.ip}_{self.port}.csv"
-            os.makedirs(os.path.dirname(log_file), exist_ok=True)
-            with open(log_file, 'a', newline='') as f:
-                writer_csv = csv.writer(f)
-                writer_csv.writerow([arrival, src_ip, self.ip, self.port, total_bytes])
             if self.log:
                 logging.debug(f"[{self.ip}]: Background from {src_ip}: {total_bytes} bytes")
         except Exception as e:

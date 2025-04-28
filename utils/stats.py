@@ -23,9 +23,9 @@ def calculate_fct(data_dir, output_dir):
         with open(csv_file, "r", newline="", encoding="utf-8") as fin:
             reader = csv.DictReader(fin)
             for row in reader:
-                if "flow_completion_time" in row:
+                if "fct" in row:
                     try:
-                        all_fct.append(float(row["flow_completion_time"]))
+                        all_fct.append(float(row["fct"]))
                     except ValueError:
                         # Se il valore non è numerico, lo ignora
                         pass
