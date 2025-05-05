@@ -4,19 +4,21 @@
 set -e
 
 # Default values
-DURATION=20
+DURATION=60
 FLOW_SIZE=10000
 FLOW_IAT=0.001
 QUEUE_RATE=1000
 QUEUE_DEPTH=64
-N_CLIENTS=1
-N_SERVERS=1
-N_HOSTS=4
+N_CLIENTS=5
+N_SERVERS=5
+N_HOSTS=14
 N_LEAF=2
 N_SPINE=2
 BW=10
-BURST_SERVERS=0
-BURST_CLIENTS=0
+BURST_SERVERS=2
+BURST_CLIENTS=2
+BURST_INTERVAL=0.2
+BURST_REPLY_SIZE=4000
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -73,6 +75,14 @@ while [[ $# -gt 0 ]]; do
       BURST_CLIENTS="$2"
       shift 2
       ;;
+    --burst_interval)
+      BURST_INTERVAL="$2"
+      shift 2
+      ;;
+    --burst_reply_size)
+      BURST_REPLY_SIZE="$2"
+      shift 2
+      ;;
     --exp_id)
       EXP_ID="$2"
       shift 2
@@ -94,6 +104,8 @@ mkdir -p "$OUTPUT_DIR"
 mkdir -p "$OUTPUT_DIR/fct_stats"
 mkdir -p "$OUTPUT_DIR/fct_stats/plots"
 mkdir -p "$OUTPUT_DIR/utilization"
+mkdir -p "$OUTPUT_DIR/qct_stats"
+mkdir -p "$OUTPUT_DIR/qct_stats/plots"
 
 echo "Starting experiment $EXP_ID with settings:"
 echo "  Duration: $DURATION seconds"
@@ -107,6 +119,8 @@ echo "  Hosts: $N_HOSTS"
 echo "  Leaf switches: $N_LEAF"
 echo "  Spine switches: $N_SPINE"
 echo "  Bandwidth: $BW Mbps"
+echo "  Burst interval: $BURST_INTERVAL seconds"
+echo "  Burst reply size: $BURST_REPLY_SIZE bytes"
 echo "  Output directory: $OUTPUT_DIR"
 
 # Run the collection_runner.py script
@@ -121,6 +135,8 @@ sudo -E python3 collection_runner.py \
   --n_servers "$N_SERVERS" \
   --flow_iat "$FLOW_IAT" \
   --flow_size "$FLOW_SIZE" \
+  --burst_interval "$BURST_INTERVAL" \
+  --bursty_reply_size "$BURST_REPLY_SIZE" \
   --burst_servers "$BURST_SERVERS" \
   --burst_clients "$BURST_CLIENTS" \
   --queue_rate "$QUEUE_RATE" \
@@ -133,14 +149,17 @@ echo "Experiment completed. Processing pcap files..."
 # Create directories for client and server analysis
 CLIENT_DIR="$OUTPUT_DIR/bg_clients"
 SERVER_DIR="$OUTPUT_DIR/bg_servers"
+BURSTY_DIR="$OUTPUT_DIR/bursty_clients"
 
 mkdir -p "$CLIENT_DIR"
 mkdir -p "$SERVER_DIR"
+mkdir -p "$BURSTY_DIR"
 
 # Move client and server pcap files to their respective directories
 echo "Organizing pcap files..."
 find "$OUTPUT_DIR" -name "bg_client_*.pcap" -exec cp {} "$CLIENT_DIR/" \;
 find "$OUTPUT_DIR" -name "bg_server_*.pcap" -exec cp {} "$SERVER_DIR/" \;
+find "$OUTPUT_DIR" -name "bursty_client_*.pcap" -exec cp {} "$BURSTY_DIR/" \;
 
 # Function to check if pcap contains valid TCP flows
 check_pcap_has_flows() {
@@ -225,6 +244,52 @@ for SERVER_PCAP in "$SERVER_DIR"/*.pcap; do
   fi
 done
 
+# Process bursty client pcap files for QCT analysis
+echo "Analyzing bursty client pcap files for QCT..."
+BURSTY_CLIENT_COUNT=0
+for BURSTY_PCAP in "$BURSTY_DIR"/*.pcap; do
+  if [ -f "$BURSTY_PCAP" ]; then
+    BURSTY_NAME=$(basename "$BURSTY_PCAP" .pcap)
+    CLIENT_IP=$(echo "$BURSTY_NAME" | grep -oE '([0-9]{1,3}\.){3}[0-9]{1,3}' | head -1)
+    
+    # Check if this client has any flows
+    if check_pcap_has_flows "$BURSTY_PCAP"; then
+      BURSTY_CLIENT_COUNT=$((BURSTY_CLIENT_COUNT + 1))
+      echo "Processing bursty client: $BURSTY_NAME with IP $CLIENT_IP"
+      
+      # Run the QCT analysis script with client IP explicitly specified
+      python3 compute_qct.py "$BURSTY_PCAP" -o "$OUTPUT_DIR/qct_stats/${BURSTY_NAME}_stats.csv" -f "$OUTPUT_DIR/qct_stats/${BURSTY_NAME}_flows.csv" -c "$CLIENT_IP" 2>&1 | grep -v "No flows found"
+      
+      echo "QCT statistics for $BURSTY_NAME written to $OUTPUT_DIR/qct_stats/"
+    else
+      echo "Skipping bursty client $BURSTY_NAME (no TCP flows found)"
+    fi
+  fi
+done
+
+# If no bursty client pcap files were found, display a message
+if [ "$BURSTY_CLIENT_COUNT" -eq 0 ]; then
+  echo "No bursty client pcap files with valid flows found in $BURSTY_DIR"
+else
+  echo "Successfully analyzed $BURSTY_CLIENT_COUNT bursty clients for QCT"
+  
+  # Combine QCT statistics from all bursty clients
+  if [ -d "$OUTPUT_DIR/qct_stats" ] && [ "$(ls -A "$OUTPUT_DIR/qct_stats" 2>/dev/null)" ]; then
+    echo "Combining QCT statistics and generating visualizations..."
+    ./combine_qct_stats.py "$OUTPUT_DIR/qct_stats" -o "$OUTPUT_DIR/qct_stats"
+    if [ $? -eq 0 ]; then
+      echo "QCT Visualizations generated successfully:"
+      echo "  - Histogram: $OUTPUT_DIR/qct_stats/plots/qct_histogram.png"
+      echo "  - CDF: $OUTPUT_DIR/qct_stats/plots/qct_cdf.png"
+      echo "  - Boxplot: $OUTPUT_DIR/qct_stats/plots/qct_boxplot.png"
+      echo "  - Combined stats: $OUTPUT_DIR/qct_stats/combined_qct_stats.csv"
+      echo "  - Flow stats: $OUTPUT_DIR/qct_stats/combined_flow_stats.csv"
+    else
+      echo "Warning: Could not generate combined QCT visualizations"
+    fi
+  fi
+fi
+
 # Also extract the switch pcap files if they exist
 echo "Analyzing switch pcap files..."
 for PCAP in pcap/*.pcap; do
@@ -273,6 +338,23 @@ if [ -f "$OUTPUT_DIR/link_utilization_report.txt" ]; then
   grep -A 100 "Per-Client Statistics" "$OUTPUT_DIR/link_utilization_report.txt" >> "$OUTPUT_DIR/summary.txt"
 fi
 
+# Add QCT information to summary if available
+if [ "$BURSTY_CLIENT_COUNT" -gt 0 ]; then
+  echo -e "\nBursty Traffic Statistics:" >> "$OUTPUT_DIR/summary.txt"
+  echo "  Bursty clients analyzed: $BURSTY_CLIENT_COUNT" >> "$OUTPUT_DIR/summary.txt"
+  
+  # Add average QCT if available
+  if [ -f "$OUTPUT_DIR/qct_stats/combined_qct_stats.csv" ]; then
+    # Extract average QCT from the combined stats using Python
+    AVG_QCT=$(python3 -c "import pandas as pd; df = pd.read_csv('$OUTPUT_DIR/qct_stats/combined_qct_stats.csv'); print(f'{df[\"qct\"].mean()*1000:.2f}')")
+    echo "  Average QCT: ${AVG_QCT} ms" >> "$OUTPUT_DIR/summary.txt"
+    
+    # Extract number of servers from the combined stats
+    AVG_SERVERS=$(python3 -c "import pandas as pd; df = pd.read_csv('$OUTPUT_DIR/qct_stats/combined_qct_stats.csv'); print(f'{df[\"num_servers\"].mean():.2f}') if 'num_servers' in df.columns else print('N/A')")
+    echo "  Average servers per query: ${AVG_SERVERS}" >> "$OUTPUT_DIR/summary.txt"
+  fi
+fi
+
 # Combine FCT and RTT statistics from all clients and generate visualizations
 echo "Combining FCT and RTT statistics and generating visualizations..."
 ./combine_fct_stats.py "$OUTPUT_DIR/fct_stats" -o "$OUTPUT_DIR/fct_stats"
@@ -314,6 +396,13 @@ echo "  - FCT and RTT visualizations: $OUTPUT_DIR/fct_stats/plots/"
 echo "  - Link utilization: $OUTPUT_DIR/utilization/"
 echo "  - Link utilization report: $OUTPUT_DIR/link_utilization_report.txt"
 echo "  - Link utilization plots: $OUTPUT_DIR/plots/"
+
+# Add QCT info to final message if available
+if [ "$BURSTY_CLIENT_COUNT" -gt 0 ]; then
+  echo "  - Combined QCT statistics: $OUTPUT_DIR/qct_stats/combined_qct_stats.csv"
+  echo "  - QCT visualizations: $OUTPUT_DIR/qct_stats/plots/"
+fi
+
 echo "  - Switch data: $OUTPUT_DIR/switch_*.csv"
 echo "  - Application logs: $OUTPUT_DIR/app.log"
 echo "  - All data saved in: $OUTPUT_DIR/" 

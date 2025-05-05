@@ -458,7 +458,9 @@ class CollectionRunner:
             burst_clients = random.sample(clients, self.burst_clients)
             for client_host in burst_clients:       
                 # Select self.burst_servers to be queried by the burst client
-                burst_server_ips = ' '.join([server.IP() for server in burst_servers])
+                # Don't include the client itself as a server
+                available_burst_servers = [server for server in burst_servers if server != client_host]
+                burst_server_ips = ' '.join([server.IP() for server in available_burst_servers])
                 burst_client_file = f"{self.exp_dir}/burst_client_{client_host.name}_log.csv"
                 client_csv_files.append(burst_client_file)
                 

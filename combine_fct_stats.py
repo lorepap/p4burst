@@ -15,6 +15,9 @@ import re
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
+# Global configuration
+USE_LEGACY_FILENAMES = False
+
 def extract_client_ip(filename):
     """Extract client IP from the filename."""
     match = re.search(r'bg_client_(\d+\.\d+\.\d+\.\d+)', os.path.basename(filename))
@@ -206,17 +209,20 @@ def plot_rtt_visualizations(df, output_dir):
     if 'send_time' in df.columns and 'ack_time' in df.columns:
         plt.figure(figsize=(12, 6))
         plt.scatter(df['send_time'], rtt_ms, alpha=0.5, s=5)
-        plt.title('RTT Over Time')
+        plt.title('TCP-Level RTT Over Time')
         plt.xlabel('Send Time (s)')
         plt.ylabel('RTT (ms)')
         plt.grid(True, alpha=0.3)
         
         # Save the time series plot
-        output_file_time = os.path.join(plots_dir, 'rtt_over_time.png')
+        if USE_LEGACY_FILENAMES:
+            output_file_time = os.path.join(plots_dir, 'rtt_over_time.png')
+        else:
+            output_file_time = os.path.join(plots_dir, 'tcp_packet_rtt_over_time.png')
         plt.savefig(output_file_time, dpi=100)
         plt.close()
         
-        logging.info(f"RTT over time plot saved to {output_file_time}")
+        logging.info(f"TCP-level RTT over time plot saved to {output_file_time}")
         
         # Create a client-only version of the RTT over time plot if endpoint_type is available
         if 'endpoint_type' in df.columns:
@@ -224,17 +230,20 @@ def plot_rtt_visualizations(df, output_dir):
             if not client_df.empty:
                 plt.figure(figsize=(12, 6))
                 plt.scatter(client_df['send_time'], client_df['rtt_ms'], alpha=0.5, s=5)
-                plt.title('Client RTT Over Time')
+                plt.title('Application-Level RTT Over Time (Client Requests)')
                 plt.xlabel('Send Time (s)')
                 plt.ylabel('RTT (ms)')
                 plt.grid(True, alpha=0.3)
                 
                 # Save the client-only time series plot
-                output_file_client_time = os.path.join(plots_dir, 'client_rtt_over_time.png')
+                if USE_LEGACY_FILENAMES:
+                    output_file_client_time = os.path.join(plots_dir, 'client_rtt_over_time.png')
+                else:
+                    output_file_client_time = os.path.join(plots_dir, 'application_request_rtt_over_time.png')
                 plt.savefig(output_file_client_time, dpi=100)
                 plt.close()
                 
-                logging.info(f"Client RTT over time plot saved to {output_file_client_time}")
+                logging.info(f"Application-level RTT over time plot saved to {output_file_client_time}")
     
     # If we have endpoint IPs, generate a comparison
     if 'endpoint_ip' in df.columns and 'source_file' in df.columns:
@@ -475,8 +484,16 @@ def main():
     parser = argparse.ArgumentParser(description='Combine FCT statistics from multiple clients and generate visualizations')
     parser.add_argument('input_dir', help='Directory containing FCT statistics files')
     parser.add_argument('-o', '--output-dir', help='Directory to save combined stats and visualizations (defaults to input directory)')
+    parser.add_argument('--legacy-filenames', action='store_true', help='Use legacy filenames for RTT plots (rtt_over_time.png and client_rtt_over_time.png)')
     
     args = parser.parse_args()
+    
+    # Support legacy filenames if requested
+    if args.legacy_filenames:
+        # Add global variables to be accessed in plot_rtt_visualizations 
+        global USE_LEGACY_FILENAMES
+        USE_LEGACY_FILENAMES = True
+        logging.info("Using legacy filenames for RTT plots")
     
     # Set default output directory if not specified
     output_dir = args.output_dir or args.input_dir

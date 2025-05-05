@@ -632,7 +632,62 @@ class BurstyTcpServer(BaseServer):
         self.burst_reply_size = burst_reply_size
         self.capture_pcap = capture_pcap
         
-        logging.info(f"[{self.ip}]: Bursty TCP Server initialized with reply size: {self.burst_reply_size}")
+        # Add connection tracking
+        self.connection_log = {}
+        
+        logging.info(f"[{self.ip}] Bursty TCP Server initialized with reply size: {self.burst_reply_size}")
+        
+        # Use SO_REUSEADDR to avoid issues with TIME_WAIT state
+        self._check_server_socket_state()
+    
+    def _check_server_socket_state(self):
+        """Check the server socket state and TCP connection table."""
+        try:
+            import subprocess
+            # Check for existing connections on our port
+            cmd = f"netstat -an | grep :{self.port}"
+            try:
+                result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+                if result.stdout:
+                    logging.warning(f"[{self.ip}] Found existing connections on port {self.port}:")
+                    for line in result.stdout.strip().split('\n'):
+                        logging.warning(f"[{self.ip}] {line}")
+                else:
+                    logging.info(f"[{self.ip}] No existing connections found on port {self.port}")
+            except Exception as e:
+                logging.error(f"[{self.ip}] Error checking connections: {e}")
+        except Exception as e:
+            logging.error(f"[{self.ip}] Error in _check_server_socket_state: {e}")
+    
+    def _inspect_connection(self, conn, src_ip, src_port):
+        """Inspect a client connection for potential issues."""
+        try:
+            # Log connection state
+            conn_key = f"{src_ip}:{src_port}"
+            self.connection_log[conn_key] = {
+                'time': time.time(),
+                'status': 'new'
+            }
+            
+            # Try to get socket options
+            try:
+                error_code = conn.getsockopt(socket.SOL_SOCKET, socket.SO_ERROR)
+                if error_code != 0:
+                    logging.error(f"[{self.ip}] Connection from {src_ip}:{src_port} has error code: {error_code}")
+                    self.connection_log[conn_key]['status'] = f'error:{error_code}'
+                else:
+                    logging.info(f"[{self.ip}] Connection from {src_ip}:{src_port} appears healthy (error code 0)")
+                    self.connection_log[conn_key]['status'] = 'healthy'
+            except Exception as e:
+                logging.error(f"[{self.ip}] Error getting socket options for {src_ip}:{src_port}: {e}")
+                self.connection_log[conn_key]['status'] = f'option_error:{str(e)}'
+                
+            # Check if this is coming from port 50000 (special monitoring)
+            if src_port >= 50000 and src_port < 50100:
+                logging.info(f"[{self.ip}] Special monitoring for 50000-range port: {src_port}")
+            
+        except Exception as e:
+            logging.error(f"[{self.ip}] Error inspecting connection from {src_ip}:{src_port}: {e}")
     
     def start(self):
         """Start the TCP server for bursty request/response traffic."""
@@ -643,7 +698,9 @@ class BurstyTcpServer(BaseServer):
                 self.start_packet_capture(pcap_file)
             
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                # Allow socket address reuse
                 s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                
                 # Enable TCP_NODELAY to prevent buffering
                 s.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
                 
@@ -656,24 +713,29 @@ class BurstyTcpServer(BaseServer):
                 # Disable delayed ACKs
                 s.setsockopt(socket.IPPROTO_TCP, socket.TCP_QUICKACK, 1)
                 
+                # Set linger to ensure clean socket shutdown
+                l_onoff = 1
+                l_linger = 0
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, 
+                             struct.pack('ii', l_onoff, l_linger))
+                
                 s.bind(('0.0.0.0', self.port))
                 s.listen(1024)
-                logging.info(f"[{self.ip}]: Bursty TCP server listening on port {self.port}")
+                logging.info(f"[{self.ip}] Bursty TCP server listening on port {self.port}")
                 
                 while self.running:
                     try:
                         conn, addr = s.accept()
-                        # Enable TCP_NODELAY for the connection
+                        
+                        # Set socket options for the client connection
+                        conn.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
                         conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-                        
-                        # Set MSS for this connection
                         conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_MAXSEG, 1460)
-                        
-                        # Set send buffer size for this connection
                         conn.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 16384)
-                        
-                        # Disable delayed ACKs for this connection
                         conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_QUICKACK, 1)
+                        
+                        # Set timeout to avoid hung connections
+                        conn.settimeout(5.0)  # 5 second timeout
                         
                         # Handle each connection in a separate thread
                         client_thread = threading.Thread(
@@ -697,31 +759,49 @@ class BurstyTcpServer(BaseServer):
     
     def handle_burst_request(self, conn, addr):
         """Handle a burst request - send large response and let TCP handle segmentation."""
+        src_ip = addr[0]
+        src_port = addr[1]
         try:
+            logging.info(f"[{self.ip}] Received connection from {src_ip}:{src_port}")
+            
+            # Inspect connection
+            self._inspect_connection(conn, src_ip, src_port)
 
-            # conn.settimeout(5.0)  # 5 second timeout
+            # Inspect connection state
+            try:
+                socket_info = conn.getsockopt(socket.SOL_TCP, socket.TCP_INFO, 0)
+                if socket_info:
+                    logging.info(f"[{self.ip}] Connection from {src_ip}:{src_port} is established")
+            except:
+                logging.warning(f"[{self.ip}] Could not get TCP_INFO for connection from {src_ip}:{src_port}")
 
             # Receive any request data (but don't need it)
+            logging.info(f"[{self.ip}] Waiting to receive data from {src_ip}:{src_port}")
             data = conn.recv(4096)
             if not data:
-                logging.error(f"[{self.ip}] No data received from {addr[0]}")
+                logging.error(f"[{self.ip}] No data received from {src_ip}:{src_port}, client closed connection")
                 return
+            
+            logging.info(f"[{self.ip}] Received {len(data)} bytes from {src_ip}:{src_port}, data: {data[:20]}")
 
             # Send burst response - TCP will automatically segment based on network parameters
             response = b'B' * self.burst_reply_size
-            sent = conn.sendall(response)
-            if sent == 0:
-                logging.warning(f"[{self.ip}] Connection closed by client")
+            logging.info(f"[{self.ip}] Sending {self.burst_reply_size} bytes to {src_ip}:{src_port}")
+            try:
+                conn.sendall(response)
+                logging.info(f"[{self.ip}] Successfully sent {self.burst_reply_size} bytes to {src_ip}:{src_port}")
+            except Exception as e:
+                logging.error(f"[{self.ip}] Failed to send data to {src_ip}:{src_port}: {e}")
+                return
             
-            logging.debug(f"[{self.ip}] Sent burst response of {self.burst_reply_size} bytes to {addr[0]}")
+            logging.info(f"[{self.ip}] Completed request from {src_ip}:{src_port}")
 
-        # except socket.timeout:
-        #     logging.error(f"[{self.ip}] Timeout handling burst request from {addr[0]}")
         except ConnectionResetError:
-            logging.error(f"[{self.ip}] Connection reset by client")
+            logging.error(f"[{self.ip}] Connection reset by client {src_ip}:{src_port}")
         except Exception as e:
-            logging.error(f"[{self.ip}]: Error handling burst request from {addr[0]}: {e}")
+            logging.error(f"[{self.ip}] Error handling burst request from {src_ip}:{src_port}: {e}")
             logging.error(traceback.format_exc())
         finally:
+            logging.info(f"[{self.ip}] Closing connection to {src_ip}:{src_port}")
             time.sleep(0.05)
             conn.close()
