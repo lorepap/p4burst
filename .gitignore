@@ -44,3 +44,14 @@ data/
 
 # Logs
 *.log
+
+# pcap files
+*.pcap
+
+# Configuration files
+topology.json
+launch.json
+
+# p4 program
+sd.json
+sd_consts.p4
