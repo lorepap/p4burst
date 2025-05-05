@@ -89,7 +89,7 @@ class BaseServer(ABC):
         if not capture_file and self.exp_id:
             # Generate a descriptive filename if not provided
             server_type = self.__class__.__name__.lower()
-            capture_file = f"tmp/{self.exp_id}/{server_type}_{self.ip}_{self.port}.pcap"
+            capture_file = f"tmp/{self.exp_id}/bg_servers/{server_type}_{self.ip}_{self.port}.pcap"
         
         if capture_file:
             try:
@@ -537,7 +537,7 @@ class BackgroundTcpServer(BaseServer):
         try:
             # Start packet capture if enabled
             if self.capture_pcap and self.exp_id:
-                pcap_file = f"tmp/{self.exp_id}/bg_server_{self.ip}_{self.port}.pcap"
+                pcap_file = f"tmp/{self.exp_id}/bg_servers/bg_server_{self.ip}_{self.port}.pcap"
                 self.start_packet_capture(pcap_file)
             
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -568,7 +568,7 @@ class BackgroundTcpServer(BaseServer):
                         conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_MAXSEG, 1460)
                         
                         # Set send buffer size for this connection
-                        conn.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 16384)
+                        conn.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 116384)
                         
                         # Disable delayed ACKs for this connection
                         conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_QUICKACK, 1)
@@ -617,7 +617,7 @@ class BackgroundTcpServer(BaseServer):
                 writer = csv.writer(csvfile)
                 writer.writerow([arrival_time, src_ip, dst_ip, port, total_bytes])
                 
-            logging.debug(f"Completed background TCP connection from {src_ip}: {total_bytes} bytes")
+            logging.debug(f"[{self.ip}] Completed background TCP connection from {src_ip}: {total_bytes} bytes")
                 
         except Exception as e:
             logging.error(f"[{self.ip}]: Error handling connection from {src_ip}: {e}")
@@ -639,7 +639,7 @@ class BurstyTcpServer(BaseServer):
         try:
             # Start packet capture if enabled
             if self.capture_pcap and self.exp_id:
-                pcap_file = f"tmp/{self.exp_id}/bursty_server_{self.ip}_{self.port}.pcap"
+                pcap_file = f"tmp/{self.exp_id}/bg_servers/bursty_server_{self.ip}_{self.port}.pcap"
                 self.start_packet_capture(pcap_file)
             
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -698,16 +698,30 @@ class BurstyTcpServer(BaseServer):
     def handle_burst_request(self, conn, addr):
         """Handle a burst request - send large response and let TCP handle segmentation."""
         try:
+
+            # conn.settimeout(5.0)  # 5 second timeout
+
             # Receive any request data (but don't need it)
-            conn.recv(1024)
+            data = conn.recv(4096)
+            if not data:
+                logging.error(f"[{self.ip}] No data received from {addr[0]}")
+                return
 
             # Send burst response - TCP will automatically segment based on network parameters
             response = b'B' * self.burst_reply_size
-            conn.sendall(response)
+            sent = conn.sendall(response)
+            if sent == 0:
+                logging.warning(f"[{self.ip}] Connection closed by client")
             
-            logging.debug(f"Sent burst response of {self.burst_reply_size} bytes to {addr[0]}")
-            
+            logging.debug(f"[{self.ip}] Sent burst response of {self.burst_reply_size} bytes to {addr[0]}")
+
+        # except socket.timeout:
+        #     logging.error(f"[{self.ip}] Timeout handling burst request from {addr[0]}")
+        except ConnectionResetError:
+            logging.error(f"[{self.ip}] Connection reset by client")
         except Exception as e:
             logging.error(f"[{self.ip}]: Error handling burst request from {addr[0]}: {e}")
+            logging.error(traceback.format_exc())
         finally:
+            time.sleep(0.05)
             conn.close()

@@ -37,7 +37,16 @@ class BaseClient(ABC):
         if not capture_file and self.exp_id:
             # Generate a descriptive filename if not provided
             client_type = self.__class__.__name__.lower()
-            capture_file = f"tmp/{self.exp_id}/{client_type}_{self.ip}_{port}.pcap"
+            
+            # Determine subdirectory based on client type
+            if "background" in client_type:
+                subdir = "bg_clients"
+            elif "bursty" in client_type:
+                subdir = "bursty_clients"
+            else:
+                subdir = "bg_clients"
+                
+            capture_file = f"tmp/{self.exp_id}/{subdir}/{client_type}_{self.ip}_{port}.pcap"
         
         if capture_file:
             try:
@@ -578,8 +587,10 @@ class BackgroundTcpClient(BaseClient):
             # Initialize CSV file with headers
             with open(self.log_file, 'w', newline='', buffering=8192) as csvfile:
                 writer = csv.writer(csvfile)
-                writer.writerow(["flow_id", "start_time", "end_time", "flow_completion_time", 
-                                "src_ip", "dst_ip", "src_port", "dst_port", "flow_size", "congestion_control"])
+                writer.writerow([
+                    "flow_id", "src_ip", "dst_ip", "src_port", "dst_port", 
+                    "start_time", "flow_size", "congestion_control"
+                ])
             
             # Start background logging thread
             self.log_thread_running = True
@@ -623,37 +634,38 @@ class BackgroundTcpClient(BaseClient):
                 s.setsockopt(socket.IPPROTO_TCP, socket.TCP_QUICKACK, 1)
                 
                 # Connect to server
+                connection_start_time = time.time()
                 s.connect((target_server, dst_port))
+                connection_end_time = time.time()
+                connection_time = connection_end_time - connection_start_time
+                logging.debug(f"[{self.ip}] Connection time to {target_server}: {connection_time:.3f}s")
+                
+                # Log flow start information before sending data
+                if hasattr(self, 'log_queue'):
+                    self.log_queue.put([
+                        flow_id, 
+                        self.ip, 
+                        target_server, 
+                        src_port, 
+                        dst_port, 
+                        start_time,
+                        self.flow_size,
+                        self.congestion_control
+                    ])
                 
                 # Send data in one go - let TCP handle segmentation
                 s.sendall(b'X' * self.flow_size)
             
-            # We compute the FCT considering the TCP handshake as packets RTT will be computed using TCP timestamps
-            end_time = time.time()
-            flow_completion_time = end_time - start_time
-            # Add flow details to log queue
-            if hasattr(self, 'log_queue'):
-                self.log_queue.put([
-                    flow_id, 
-                    start_time, 
-                    end_time,
-                    flow_completion_time,
-                    self.ip, 
-                    target_server, 
-                    src_port, 
-                    dst_port, 
-                    self.flow_size,
-                    self.congestion_control
-                ])
+            # Note: We don't calculate FCT here anymore - it will be calculated 
+            # from the pcap file by the compute_fct.py script
+            logging.debug(f"Flow {flow_id}: {self.flow_size} bytes sent to {target_server}:{dst_port}")
             
-            logging.debug(f"Flow {flow_id}: {self.flow_size} bytes, FCT: {flow_completion_time:.3f}s")
-            
-            return flow_completion_time
+            return True
             
         except Exception as e:
             logging.error(f"[{self.ip}] Error in background flow {flow_id}: {e}")
             logging.error(traceback.format_exc())
-            return None
+            return False
     
     def _log_worker(self):
         """Background thread for asynchronous logging with buffering."""
@@ -688,10 +700,10 @@ class BackgroundTcpClient(BaseClient):
                     log_buffer = []
                     last_flush_time = current_time
                     
-                    logging.debug(f"Flushed {buffer_size} log entries to disk")
+                    logging.debug(f"[{self.ip}] Flushed {buffer_size} log entries to disk")
             
             except Exception as e:
-                logging.error(f"Error in log worker: {e}")
+                logging.error(f"[{self.ip}] Error in log worker: {e}")
                 logging.error(traceback.format_exc())
         
         # Final flush when thread is shutting down
@@ -700,9 +712,9 @@ class BackgroundTcpClient(BaseClient):
                 with open(self.log_file, 'a', newline='', buffering=8192) as csvfile:
                     writer = csv.writer(csvfile)
                     writer.writerows(log_buffer)
-                logging.debug(f"Final flush: Wrote {len(log_buffer)} log entries to disk")
+                logging.debug(f"[{self.ip}] Final flush: Wrote {len(log_buffer)} log entries to disk")
             except Exception as e:
-                logging.error(f"Error in final log flush: {e}")
+                logging.error(f"[{self.ip}] Error in final log flush: {e}")
     
     def _background_flow_worker(self):
         """Worker thread to continuously send background flows."""
@@ -713,9 +725,9 @@ class BackgroundTcpClient(BaseClient):
         while self.background_flow_running:
             # Select random server for this flow
             target_server = random.choice(self.server_ips)
-            fct = self._send_background_flow(target_server)
+            success = self._send_background_flow(target_server)
             
-            if fct is not None:
+            if success:
                 flow_count += 1
             
             # Check if duration reached
@@ -756,7 +768,13 @@ class BackgroundTcpClient(BaseClient):
                 # Wait a short time for final flush
                 self.log_thread.join(timeout=2)
             
+            # Stop packet capture
             self.stop_packet_capture()
+            
+            # Note about FCT calculation
+            if self.capture_pcap and self.exp_id:
+                logging.info(f"[{self.ip}] Packet capture completed. To calculate FCT, run:")
+                logging.info(f"    python3 compute_fct.py tmp/{self.exp_id}/bg_client_{self.ip}_12345.pcap -o tmp/{self.exp_id}/fct_stats_{self.ip}.csv")
 
 
 class BurstyTcpClient(BaseClient):
@@ -834,16 +852,16 @@ class BurstyTcpClient(BaseClient):
                 s.sendall(b'REQUEST')
                 
                 # Receive burst response in chunks
-                while True:
+                while total_bytes < self.burst_reply_size:
                     data = s.recv(4096)  # Receive in chunks
                     if not data:
-                        break
+                        break  # Server closed connection before sending all data
                     total_bytes += len(data)
             
             end_time = time.time()
             response_time = end_time - start_time
             
-            logging.debug(f"Completed burst request {burst_id} to {server_ip}: {total_bytes} bytes in {response_time:.3f}s")
+            logging.debug(f"[{self.ip}] Completed burst request {burst_id} to {server_ip}: {total_bytes} bytes in {response_time:.3f}s")
             
             return {
                 'server_ip': server_ip,
@@ -865,8 +883,8 @@ class BurstyTcpClient(BaseClient):
         
         # Select random servers for this burst
         target_servers = self.burst_server_ips
-        logging.info(f"Sending burst {burst_id} to {len(target_servers)} servers starting from source port {base_src_port}")
-        logging.info(f"Target servers: {target_servers}")
+        logging.info(f"[{self.ip}] Sending burst {burst_id} to {len(target_servers)} servers starting from source port {base_src_port}")
+        logging.info(f"[{self.ip}] Target servers: {target_servers}")
         
         # Record burst start time
         burst_start_time = time.time()
@@ -913,7 +931,7 @@ class BurstyTcpClient(BaseClient):
                 self.ip                     # Client IP
             ])
         
-        logging.info(f"Completed burst {burst_id}: QCT={qct:.3f}s, {len(responses)}/{len(target_servers)} servers responded")
+        logging.info(f"[{self.ip}] Completed burst {burst_id}: QCT={qct:.3f}s, {len(responses)}/{len(target_servers)} servers responded")
         return qct
     
     def _burst_worker(self):
@@ -946,8 +964,8 @@ class BurstyTcpClient(BaseClient):
         
         self.burst_running = False
         elapsed_time = time.time() - self.start_time
-        logging.info(f"Burst worker completed {burst_count} bursts in {elapsed_time:.2f}s")
-        logging.info(f"Average QCT: {elapsed_time/max(1, burst_count):.3f}s")
+        logging.info(f"[{self.ip}] Burst worker completed {burst_count} bursts in {elapsed_time:.2f}s")
+        logging.info(f"[{self.ip}] Average QCT: {elapsed_time/max(1, burst_count):.3f}s")
     
     def _log_worker(self):
         """Background thread for asynchronous logging with buffering."""
@@ -982,10 +1000,10 @@ class BurstyTcpClient(BaseClient):
                     log_buffer = []
                     last_flush_time = current_time
                     
-                    logging.debug(f"Flushed {buffer_size} log entries to disk")
+                    logging.debug(f"[{self.ip}] Flushed {buffer_size} log entries to disk")
             
             except Exception as e:
-                logging.error(f"Error in log worker: {e}")
+                logging.error(f"[{self.ip}] Error in log worker: {e}")
                 logging.error(traceback.format_exc())
         
         # Final flush when thread is shutting down
@@ -994,13 +1012,13 @@ class BurstyTcpClient(BaseClient):
                 with open(self.log_file, 'a', newline='', buffering=8192) as csvfile:
                     writer = csv.writer(csvfile)
                     writer.writerows(log_buffer)
-                logging.debug(f"Final flush: Wrote {len(log_buffer)} log entries to disk")
+                logging.debug(f"[{self.ip}] Final flush: Wrote {len(log_buffer)} log entries to disk")
             except Exception as e:
-                logging.error(f"Error in final log flush: {e}")
+                logging.error(f"[{self.ip}] Error in final log flush: {e}")
     
     def start(self):
         """Start sending bursty TCP traffic."""
-        logging.info(f"Starting bursty TCP traffic with {self.burst_interval}s interval for {self.duration}s")
+        logging.info(f"[{self.ip}] Starting bursty TCP traffic with {self.burst_interval}s interval for {self.duration}s")
         
         # Start packet capture if enabled
         if self.capture_pcap and self.exp_id:

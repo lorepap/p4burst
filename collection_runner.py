@@ -123,6 +123,9 @@ def setup_logging(exp_id):
 exp_id = args.exp_id if args.exp_id else datetime.now().strftime("%Y%m%d_%H%M%S")
 exp_dir = f'tmp/{exp_id}'
 os.makedirs(exp_dir, exist_ok=True)
+# Create subdirectories for client and server pcaps
+os.makedirs(f'{exp_dir}/bg_clients', exist_ok=True)
+os.makedirs(f'{exp_dir}/bg_servers', exist_ok=True)
 logger = setup_logging(exp_id)
 
 # Rest of your imports
@@ -202,15 +205,15 @@ class CollectionRunner:
             "p4_program": self.p4_program,
             "queue_rate": self.queue_rate,
             "queue_depth": self.queue_depth,
-            "n_clients": self.n_clients,
-            "n_servers": self.n_servers,
+            "n_clients": self.n_clients, # background clients
+            "n_servers": self.n_servers, # background servers
             "flow_iat": self.flow_iat,
             "flow_size": self.flow_size,
             "congestion_control": self.congestion_control,
             "burst_reply_size": self.burst_reply_size,
             "burst_interval": self.burst_interval,
-            "burst_servers": self.burst_servers,
-            "burst_clients": self.burst_clients,
+            "burst_servers": self.burst_servers, # burst servers
+            "burst_clients": self.burst_clients, # burst clients
             "threshold": self.threshold,
             "command_line_args": args_dict
         }
@@ -366,29 +369,24 @@ class CollectionRunner:
         # servers = random.sample(hosts, self.n_servers)
         if self.burst_servers == self.n_hosts:
             raise ValueError("Burst servers cannot be the same as the number of hosts")
+        if self.n_servers - self.burst_servers > self.n_hosts:
+            raise ValueError("Number of background servers and burst servers cannot be greater than the number of hosts")
         #burst_servers = random.sample(hosts, self.burst_servers)
 
         # Random clients
         clients = random.sample(hosts, self.n_clients) # check this (now all hosts can be clients and servers at the same time)
         
         # Start all servers - both background and burst
-        for i, server_host in enumerate(hosts):
-            logger.info(f"Starting background TCP server on {server_host.name} ({server_host.IP()})...")
-            bg_server_cmd = (
-                'python3 -m app --mode server '
-                f'--exp_id {self.exp_id} '
-                '--type collect '
-                '--traffic_type background '
-                '--port 12345 '
-                f'--server_ips {server_host.IP()} '
-                f'{"--disable_pcap" if self.args.disable_pcap else ""} '
-                f'> {self.exp_dir}/bg_server_{server_host.name}_out.log 2>&1 &'
-            )
-            server_host.cmd(bg_server_cmd)
-            
-        # for server_host in burst_servers:
-        # EDIT: now all hosts can be burst servers - only a few will be used
-        for i, server_host in enumerate(hosts):
+        # EDIT: burst servers are selected among hosts that are not background servers
+        # For this reason, servers can't be both background and burst servers
+        # Also, no. of background servers should be n_hosts - burst_servers
+
+        # if self.burst_servers is 0, then all servers are background servers
+        if self.burst_servers == 0:
+            burst_servers = []
+        else:
+            burst_servers = random.sample(hosts, self.burst_servers)
+        for i, server_host in enumerate(burst_servers):
             logger.info(f"Starting burst TCP server on {server_host.name} ({server_host.IP()})...")
             burst_server_cmd = (
                 'python3 -m app --mode server '
@@ -402,17 +400,28 @@ class CollectionRunner:
                 f'> {self.exp_dir}/burst_server_{server_host.name}_out.log 2>&1 &'
             )
             server_host.cmd(burst_server_cmd)
-        
+
+        # All the remaining hosts are background servers    
+        background_servers = [host for host in hosts if host not in burst_servers]
+        for i, server_host in enumerate(background_servers):
+            logger.info(f"Starting background TCP server on {server_host.name} ({server_host.IP()})...")
+            bg_server_cmd = (
+                'python3 -m app --mode server '
+                f'--exp_id {self.exp_id} '
+                '--type collect '
+                '--traffic_type background '
+                '--port 12345 '
+                f'--server_ips {server_host.IP()} '
+                f'{"--disable_pcap" if self.args.disable_pcap else ""} '
+                f'> {self.exp_dir}/bg_server_{server_host.name}_out.log 2>&1 &'
+            )
+            server_host.cmd(bg_server_cmd)
+            
         # Give servers time to initialize
         time.sleep(2)
 
         # Start clients - ALL clients run background traffic, but only a subset runs bursty traffic
         client_csv_files = []
-        
-        # Select a random subset of clients to run bursty traffic that is not among the bursty servers
-        # clients_pool = [client for client in clients if client not in burst_servers]
-        # bursty_clients = random.sample(clients_pool, self.burst_clients) 
-        # logger.info(f"Selected {self.burst_clients}/{self.n_clients} clients to generate bursty traffic")
         
         for i, client_host in enumerate(clients):
             # Background TCP client - ALL clients run this
@@ -421,8 +430,9 @@ class CollectionRunner:
             
             logger.info(f"Starting background TCP client on {client_host.name} ({client_host.IP()})...")
             
-            # All servers but client host
-            server_pool_all = [server for server in hosts if server != client_host]
+            # Background clients connect to background servers
+            # Do not select the client itself as a server
+            server_pool_all = [server for server in background_servers if server != client_host]
             server_pool = random.sample(server_pool_all, self.n_servers)
             server_ips = ' '.join([server.IP() for server in server_pool])
             
@@ -444,37 +454,35 @@ class CollectionRunner:
             self.processes.append(proc)
             
         # Burst TCP client - ONLY a subset of clients run this
-        burst_clients = random.sample(clients, self.burst_clients)
-        for client_host in burst_clients:
-            #burst_server_ips = ' '.join([server.IP() for server in burst_servers])
-            
-            # Select self.burst_servers to be queried by the burst client
-            burst_server_pool = [server for server in hosts if server != client_host]
-            burst_servers = random.sample(burst_server_pool, self.burst_servers)
-            burst_server_ips = ' '.join([server.IP() for server in burst_servers])
-
-            burst_client_file = f"{self.exp_dir}/burst_client_{client_host.name}_log.csv"
-            client_csv_files.append(burst_client_file)
-            
-            logger.info(f"Starting burst TCP client on {client_host.name} ({client_host.IP()})...")
-            
-            burst_client_cmd = (
-                'python3 -m app '
-                '--mode client '
-                f'--exp_id {self.exp_id} '
-                '--type collect '
-                '--traffic_type burst '
-                f'--server_ips {burst_server_ips} '
-                f'--burst_interval {self.burst_interval} '
-                f'--burst_reply_size {self.burst_reply_size} '
-                f'--duration {self.args.duration} '
-                f'--client_csv_file {burst_client_file} '
-                f'{"--disable_pcap" if self.args.disable_pcap else ""} '
-                f'> {self.exp_dir}/burst_client_{client_host.name}_out.log 2>&1 &'
-            )
-            proc = client_host.popen(burst_client_cmd, shell=True)
-            self.processes.append(proc)
+        if self.burst_clients > 0:
+            burst_clients = random.sample(clients, self.burst_clients)
+            for client_host in burst_clients:       
+                # Select self.burst_servers to be queried by the burst client
+                burst_server_ips = ' '.join([server.IP() for server in burst_servers])
+                burst_client_file = f"{self.exp_dir}/burst_client_{client_host.name}_log.csv"
+                client_csv_files.append(burst_client_file)
                 
+                logger.info(f"Starting burst TCP client on {client_host.name} ({client_host.IP()})...")
+                
+                burst_client_cmd = (
+                    'python3 -m app '
+                    '--mode client '
+                    f'--exp_id {self.exp_id} '
+                    '--type collect '
+                    '--traffic_type burst '
+                    f'--server_ips {burst_server_ips} '
+                    f'--burst_interval {self.burst_interval} '
+                    f'--burst_reply_size {self.burst_reply_size} '
+                    f'--duration {self.args.duration} '
+                    f'--client_csv_file {burst_client_file} '
+                    f'{"--disable_pcap" if self.args.disable_pcap else ""} '
+                    f'> {self.exp_dir}/burst_client_{client_host.name}_out.log 2>&1 &'
+                )
+                proc = client_host.popen(burst_client_cmd, shell=True)
+                self.processes.append(proc)
+
+                time.sleep(0.1) # wait between starting bursty clients
+                    
         # Wait for the experiment to finish
         logger.info(f"Waiting for TCP traffic experiment to complete (duration: {self.args.duration}s)...")
         time.sleep(self.args.duration + 2)
@@ -513,9 +521,9 @@ class CollectionRunner:
             time.sleep(5)
             
             # Process data and compute statistics
-            logger.info("Processing collected data...")
-            final_datasets = datalib.process_and_merge_all_data(self.topology, exp_dir)
-            datalib.compute_experiment_stats(final_datasets, exp_dir)
+            #logger.info("Processing collected data...")
+            #final_datasets = datalib.process_and_merge_all_data(self.topology, exp_dir)
+            #datalib.compute_experiment_stats(final_datasets, exp_dir)
 
         except Exception as e:
             logger.error(f"Error in experiment: {e}") 

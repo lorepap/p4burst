@@ -124,6 +124,7 @@ def parse_switch_log(log_file, output_csv):
     # Data storage for events
     events = []
     pkt_cnt = 0
+    drop_cnt = 0  # Counter for dropped packets
     with open(log_file, 'r') as log:
         for line in log:
             parts = line.split()
@@ -154,6 +155,12 @@ def parse_switch_log(log_file, output_csv):
             elif normal_match := normal_pattern.search(line):
                 event['type'] = 'normal'
                 event['port'] = int(normal_match.group(1))
+            elif drop_match := drop_pattern.search(line):
+                event['type'] = 'drop'
+                event['original_port'] = int(drop_match.group(1))
+                event['deflected_to'] = int(drop_match.group(2))
+                event['fw_port_depth'] = int(drop_match.group(3))
+                drop_cnt += 1
             elif fw_port_depth_match := fw_port_depth_pattern.search(line):
                 event['type'] = 'fw_port_depth'
                 event['port'] = int(fw_port_depth_match.group(1))
@@ -173,7 +180,12 @@ def parse_switch_log(log_file, output_csv):
             if 'type' in event:
                 events.append(event)
 
-    print(f"Found {pkt_cnt} packets in the log")
+    print(f"Found {pkt_cnt} packets in the log, with {drop_cnt} dropped packets")
+    
+    # Store drop count in a metadata file next to the dataset
+    metadata_file = output_csv.replace('.csv', '_metadata.json')
+    with open(metadata_file, 'w') as f:
+        json.dump({'drop_count': drop_cnt}, f)
     
     # Sort events by timestamp
     events.sort(key=lambda x: parse_timestamp(x.get('timestamp_str', "[00:00:00.000]")))
@@ -222,6 +234,8 @@ def parse_switch_log(log_file, output_csv):
             # Store the fw_port_depth for the port
             fw_port_depths[event['port']] = event['depth']
         
+        # Only include normal and deflection events in the dataset
+        # Drop events are counted but not included in the final dataset
         if event['type'] in ['deflection', 'normal']:
             # First create a record with just the state features and action
             # Reward will be computed after merging with receiver logs
@@ -1541,7 +1555,8 @@ def extract_response_rtt_from_pcap(pcap_file, output_csv=None):
 def cleanup_intermediate_files(exp_dir):
     """
     Clean up intermediate CSV files and logs in the experiment directory.
-    Preserves important files like queue logger files, app.log, collection_runner.log, and final switch datasets.
+    Preserves important files like queue logger files, app.log, collection_runner.log, 
+    final switch datasets, and metadata files.
     
     Args:
         exp_dir: Path to the experiment directory
@@ -1550,10 +1565,11 @@ def cleanup_intermediate_files(exp_dir):
     
     # Files to preserve
     preserve_patterns = [
-        'queue_logger',  # Queue logger files
-        'app.log',      # Application log
+        'queue_logger',      # Queue logger files
+        'app.log',           # Application log
         'collection_runner.log',  # Collection runner log
-        's\d+_final_dataset.csv'  # Final switch datasets
+        's\d+_final_dataset.csv', # Final switch datasets
+        's\d+_rl_dataset_metadata.json'  # Metadata files containing drop counts
     ]
     
     # Files to remove
@@ -1726,7 +1742,7 @@ def process_and_merge_all_data(topology, exp_dir):
     final_datasets = create_final_datasets(oo_datasets, rtt_datasets, exp_dir)
     
     # Step 7: Clean up intermediate files
-    cleanup_intermediate_files(exp_dir)
+    #cleanup_intermediate_files(exp_dir)
     
     # Print summary of created files
     print("\nSummary of created files:")
@@ -1756,7 +1772,7 @@ def compute_experiment_stats(final_datasets, exp_dir):
         'out_of_order_packets': 0,
         'total_packets': 0,
         'deflections': 0,
-        'drops': 0,
+        'drops': 0,  # This will store the drop count
         'total_actions': 0,
         'avg_total_queue': 0,
         'p99_total_queue': 0,
@@ -1765,6 +1781,22 @@ def compute_experiment_stats(final_datasets, exp_dir):
         'avg_rtt': 0,
         'p99_rtt': 0
     }
+    
+    # Read drop count from metadata files
+    for dataset_file in final_datasets:
+        # Extract switch ID from the dataset filename
+        switch_id = os.path.basename(dataset_file).split('_')[0]
+        # Calculate the path to the original dataset metadata file
+        rl_dataset_metadata = os.path.join(exp_dir, f"{switch_id}_rl_dataset_metadata.json")
+        if os.path.exists(rl_dataset_metadata):
+            try:
+                with open(rl_dataset_metadata, 'r') as f:
+                    metadata = json.load(f)
+                    if 'drop_count' in metadata:
+                        stats['drops'] += metadata['drop_count']
+                        print(f"Found {metadata['drop_count']} drops in {switch_id}")
+            except Exception as e:
+                print(f"Error reading metadata file {rl_dataset_metadata}: {e}")
     
     # Process FCT from background client files
     fct_values = []
@@ -1830,10 +1862,6 @@ def compute_experiment_stats(final_datasets, exp_dir):
             if 'action' in df.columns:
                 stats['deflections'] += int(df['action'].sum())
                 stats['total_actions'] += int(len(df))
-
-            # # Count drops
-            # if 'drop' in df.columns:
-            #     stats['drops'] += int(df['drop'].sum())
             
             stats['total_packets'] += int(len(df))
             
@@ -1864,6 +1892,12 @@ def compute_experiment_stats(final_datasets, exp_dir):
     if stats['total_packets'] > 0:
         stats['out_of_order_percentage'] = float((stats['out_of_order_packets'] / stats['total_packets']) * 100)
         stats['deflection_percentage'] = float((stats['deflections'] / stats['total_actions']) * 100)
+        if stats['drops'] > 0:
+            # Calculate drops as a percentage of total packets + drops (since drops aren't in the final dataset)
+            total_with_drops = stats['total_packets'] + stats['drops']
+            stats['drop_percentage'] = float((stats['drops'] / total_with_drops) * 100)
+        else:
+            stats['drop_percentage'] = 0.0
     
     # Convert all values to Python native types
     stats = {k: float(v) if isinstance(v, (int, float)) else v for k, v in stats.items()}
@@ -1887,6 +1921,7 @@ def compute_experiment_stats(final_datasets, exp_dir):
     print(f"P99 RTT: {stats['p99_rtt']:.2f} s")
     print(f"Out-of-order packets: {stats['out_of_order_packets']} ({stats['out_of_order_percentage']:.2f}%)")
     print(f"Deflections: {stats['deflections']} ({stats['deflection_percentage']:.2f}%)")
+    print(f"Drops: {stats['drops']} ({stats['drop_percentage']:.2f}%)")
     print(f"Total packets processed: {stats['total_packets']}")
     
     return stats
