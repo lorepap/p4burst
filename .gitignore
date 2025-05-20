@@ -44,3 +44,12 @@ data/
 
 # Logs
 *.log
+
+.history/
+.vscode-history/
+
+results/
+
+*.pcap
+
+*.p4i

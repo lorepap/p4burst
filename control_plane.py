@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from p4utils.mininetlib.network_API import NetworkAPI
 import itertools
-from topology import LeafSpineTopology, DumbbellTopology  # Add this line to import topology classes
+from topology import LeafSpineTopology  # Add this line to import topology classes
 from collections import defaultdict
 import math
 import utils.bee_packets
@@ -61,7 +61,6 @@ class ECMPControlPlane(BaseControlPlane):
     def _generate_leaf_commands(self, switch):
         commands = [f"set_queue_rate {self.queue_rate}", f"set_queue_depth {self.queue_depth}"]  # Inizializza la lista di comandi
         commands.append("table_set_default ipv4_lpm drop")
-        commands.append("table_set_default ecmp_group drop")
         commands.append("table_set_default ecmp_nhop drop")
 
         # Handle local hosts
@@ -77,7 +76,7 @@ class ECMPControlPlane(BaseControlPlane):
         # Handle remote hosts (ECMP to spine switches)
         spine_switches = self.topology.get_spine_switches()
         num_spine = len(spine_switches)
-        commands.append(f"table_add ecmp_group set_ecmp_select 0.0.0.0/0 => 1 {num_spine}")
+        commands.append(f"table_add ipv4_lpm set_ecmp_select 0.0.0.0/0 => 1 {num_spine}")
         
         for i, spine_switch in enumerate(spine_switches):
             for port, nodes in self.net_api.node_ports()[switch].items():
@@ -140,8 +139,6 @@ class BaseDeflectionControlPlane(BaseControlPlane):
         if isinstance(self.topology, LeafSpineTopology):
             self.generate_leaf_spine_control_plane()
         # TODO - we need to refactor the topology - control plane interaction
-        elif isinstance(self.topology, DumbbellTopology):
-            self.generate_dumbbell_control_plane()
     
     @abstractmethod
     def generate_leaf_spine_control_plane(self):
@@ -220,10 +217,6 @@ class BaseDeflectionControlPlane(BaseControlPlane):
             commands = spine_defaults + list(switch_commands[spine])
             self.save_commands(spine[1:], commands)
     
-
-    @abstractmethod
-    def generate_dumbbell_control_plane(self):
-        pass
             
 
 class SimpleDeflectionControlPlane(BaseDeflectionControlPlane):
@@ -407,8 +400,6 @@ class QuantilePreemptiveDeflectionControlPlane(BasePreemptiveDeflectionControlPl
     def generate_leaf_spine_control_plane(self):
         super().generate_leaf_spine_control_plane()
 
-    def generate_dumbbell_control_plane(self):
-        raise NotImplementedError("QuantilePreemptiveDeflectionControlPlane is not implemented for DumbbellTopology")
     
 class DistPreemptiveDeflectionControlPlane(BasePreemptiveDeflectionControlPlane):
     
@@ -472,91 +463,9 @@ class DistPreemptiveDeflectionControlPlane(BasePreemptiveDeflectionControlPlane)
         
         for leaf in self.leaf_switches:
             self.save_commands(leaf[1:], commands, mode='a')
-    
-    def generate_dumbbell_control_plane(self):
-        raise NotImplementedError("DistPreemptiveDeflectionControlPlane is not implemented for DumbbellTopology")
+
 
     
-
-        
-
-class TestControlPlane(BaseControlPlane):
-    """
-    Works only for dumbbell topology
-    For testing purposes
-    updates:
-    - 
-    """
-    def __init__(self, topology, deflection_switch='s1'):
-        super().__init__(topology)
-        self.deflection_switch = deflection_switch
-
-    def generate_control_plane(self):
-        if not isinstance(self.topology, DumbbellTopology):
-            raise ValueError("TestControlPlane can only be used with DumbbellTopology")
-
-        for switch in self.net_api.switches():
-            commands = []
-            if switch == self.deflection_switch:
-                # Use deflection routing on deflection_switch
-                commands.append("table_set_default MyIngress.get_fw_port_idx_table drop")
-                commands.append("table_set_default MyIngress.fw_l2_table broadcast")
-            else:
-                # Use simple L3 forwarding on other switch
-                commands.append("table_set_default MyIngress.ipv4_lpm drop")
-
-            # Get the other switch and inter-switch port
-            other_switch = [sw for sw in self.net_api.switches() if sw != switch][0]
-            interswitch_port = None
-            for port, nodes in self.net_api.node_ports()[switch].items():
-                if other_switch in nodes:
-                    interswitch_port = port
-                    break
-
-            # Process all hosts
-            for host in self.net_api.hosts():
-                host_ip = self.topology.get_host_ip(host).split('/')[0]
-                host_mac = self.topology.get_host_mac(host)
-                is_local = False
-                local_port = None
-
-                # Find if host is local to this switch
-                for port, nodes in self.net_api.node_ports()[switch].items():
-                    if host in nodes:
-                        is_local = True
-                        local_port = port
-                        break
-
-                if is_local:
-                    if switch == self.deflection_switch:
-                        # Local host on deflection switch - use deflection tables
-                        commands.append(
-                            f"table_add MyIngress.get_fw_port_idx_table get_fw_port_idx_action {host_ip}/32 => {local_port} {local_port}"
-                        )
-                        commands.append(
-                            f"table_add MyIngress.fw_l2_table fw_l2_action {host_mac} => {local_port}"
-                        )
-                    else:
-                        # Local host on L3 switch - use L3 forwarding
-                        commands.append(
-                            f"table_add MyIngress.ipv4_lpm ipv4_forward {host_ip}/32 => {host_mac} {local_port}"
-                        )
-                else:
-                    # Remote hosts
-                    subnet = '.'.join(host_ip.split('.')[:3]) + ".0/24"
-                    if switch == self.deflection_switch:
-                        # Remote on deflection switch - use deflection with interswitch port
-                        commands.append(
-                            f"table_add MyIngress.get_fw_port_idx_table get_fw_port_idx_action {subnet} => {interswitch_port} {interswitch_port}"
-                        )
-                    else:
-                        # Remote on L3 switch - use simple forwarding through interswitch port
-                        commands.append(
-                            f"table_add MyIngress.ipv4_lpm ipv4_forward {subnet} => 00:00:00:00:00:00 {interswitch_port}"
-                        )
-
-            self.save_commands(switch[1:], commands)
-
 class RLDeflectionControlPlane(BaseControlPlane):
     def __init__(self, topology, cmd_path='p4cli', queue_rate=100, queue_depth=100):
         super().__init__(topology, cmd_path)

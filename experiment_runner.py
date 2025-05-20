@@ -9,8 +9,9 @@ import random
 import traceback
 import argparse
 import subprocess
+import csv
 
-from topology import LeafSpineTopology, DumbbellTopology
+from topology import LeafSpineTopology
 from control_plane import (
     ECMPControlPlane,
     RLDeflectionControlPlane,
@@ -20,6 +21,7 @@ from control_plane import (
 )
 from utils.config_override import update_p4_consts
 from utils.stats import calculate_fct, calculate_qct
+from p4utils.utils.sswitch_thrift_API import SimpleSwitchThriftAPI
 
 # Set up root logger first thing
 def setup_logging(exp_id, exp_dir):
@@ -253,6 +255,251 @@ class CollectionRunner:
         time.sleep(self.duration + 2)
         self.logger.info("TCP traffic experiment completed")
 
+    def collect_counters(self):
+        """Collect packet counters from each switch and write to CSV."""
+        self.logger.info("Collecting packet counters from switches...")
+        results = {}
+        csv_file = os.path.join(self.exp_dir, "switch_counters.csv")
+        
+        total_reg_sum = 0
+        total_ing_reg_sum = 0
+        total_egr_reg_sum = 0
+        total_egress_packets = 0
+        total_ingress_packets = 0  # Per i pacchetti che completano l'ingress
+        total_implicit_drops = 0  # Nuovo contatore per il totale dei pacchetti droppati implicitamente
+        max_process_time = 0  # Per tenere traccia del tempo massimo globale
+        max_ing_process_time = 0
+        max_egr_process_time = 0
+        
+        for switch in self.topology.get_leaf_switches():
+            results[switch] = {}
+            switch_id = int(switch[1:]) - 1
+            thrift_port = 9090 + switch_id
+            self.logger.info(f"⇒ Connecting to {switch} on Thrift port {thrift_port}")
+
+            api = SimpleSwitchThriftAPI(thrift_port=thrift_port)
+            
+            # Try a test read to force an exception in case of failure
+            try:
+                test = api.counter_read("packet_counter", 0)
+            except Exception as e:
+                self.logger.error(f"Failed test read from {switch}: {e}")
+                results[switch]['total'] = -1
+                results[switch]['ingress_total'] = -1  # Nuovo campo per conteggio pacchetti ingress
+                results[switch]['deflection'] = -1
+                results[switch]['drop'] = -1
+                results[switch]['implicit_drop'] = -1  # Nuovo campo per il contatore
+                results[switch]['egress'] = -1
+                results[switch]['reg_sum'] = -1
+                results[switch]['ing_reg_sum'] = -1
+                results[switch]['egr_reg_sum'] = -1
+                results[switch]['avg_traversal'] = -1
+                results[switch]['max_traversal'] = -1
+                results[switch]['avg_ing_traversal'] = -1
+                results[switch]['max_ing_traversal'] = -1
+                results[switch]['avg_egr_traversal'] = -1
+                results[switch]['max_egr_traversal'] = -1
+                continue
+
+            # Read the actual counters
+            packet_count = api.counter_read("packet_counter", 0)
+            if packet_count is None:
+                self.logger.error(f"{switch}: counter_read('packet_counter') returned None")
+                results[switch]['total'] = -1
+            else:
+                results[switch]['total'] = packet_count[1]  # Get the count value
+                
+            # Leggi il contatore ingress_packet_counter
+            ingress_packet_count = api.counter_read("ingress_packet_counter", 0)
+            if ingress_packet_count is None:
+                self.logger.error(f"{switch}: counter_read('ingress_packet_counter') returned None")
+                results[switch]['ingress_total'] = -1
+            else:
+                results[switch]['ingress_total'] = ingress_packet_count[1]
+                total_ingress_packets += ingress_packet_count[1]  # Aggiungi al totale
+
+            deflection_count = api.counter_read("deflect_counter", 0)
+            if deflection_count is None:
+                self.logger.error(f"{switch}: counter_read('deflect_counter') returned None")
+                results[switch]['deflection'] = -1
+            else:
+                results[switch]['deflection'] = deflection_count[1]  # Get the count value
+
+            drop_count = api.counter_read("drop_counter", 0)
+            if drop_count is None:
+                self.logger.error(f"{switch}: counter_read('drop_counter') returned None")
+                results[switch]['drop'] = -1
+            else:
+                results[switch]['drop'] = drop_count[1]  # Get the count value
+                
+            # Leggi il contatore implicitely_dropped
+            implicit_drop_count = api.counter_read("implicitely_dropped", 0)
+            if implicit_drop_count is None:
+                self.logger.error(f"{switch}: counter_read('implicitely_dropped') returned None")
+                results[switch]['implicit_drop'] = -1
+            else:
+                results[switch]['implicit_drop'] = implicit_drop_count[1]
+                total_implicit_drops += implicit_drop_count[1]  # Aggiungi al totale
+                
+            # Read egress packet counter
+            egress_packet_count = api.counter_read("egress_packet_counter", 0)
+            if egress_packet_count is None:
+                self.logger.error(f"{switch}: counter_read('egress_packet_counter') returned None")
+                results[switch]['egress'] = -1
+                results[switch]['avg_traversal'] = -1
+            else:
+                results[switch]['egress'] = egress_packet_count[1]  # Get the count value
+                total_egress_packets += egress_packet_count[1]
+                
+            # Read reg_sum register (total processing time)
+            reg_sum = api.register_read("reg_sum", 0)
+            if reg_sum is None:
+                self.logger.error(f"{switch}: register_read('reg_sum') returned None")
+                results[switch]['reg_sum'] = -1
+                results[switch]['avg_traversal'] = -1
+            else:
+                results[switch]['reg_sum'] = reg_sum
+                total_reg_sum += reg_sum
+                
+                # Calculate average traversal time per switch
+                if results[switch]['egress'] > 0:
+                    results[switch]['avg_traversal'] = reg_sum / results[switch]['egress']
+                else:
+                    results[switch]['avg_traversal'] = -1
+                
+            # Read ingress processing time registers
+            ing_reg_sum = api.register_read("reg_ing_sum", 0)
+            if ing_reg_sum is None:
+                self.logger.error(f"{switch}: register_read('reg_ing_sum') returned None")
+                results[switch]['ing_reg_sum'] = -1
+                results[switch]['avg_ing_traversal'] = -1
+            else:
+                results[switch]['ing_reg_sum'] = ing_reg_sum
+                total_ing_reg_sum += ing_reg_sum
+                
+                # Calculate average ingress traversal time per switch using the new counter
+                if results[switch]['ingress_total'] > 0:
+                    results[switch]['avg_ing_traversal'] = ing_reg_sum / results[switch]['ingress_total']
+                else:
+                    results[switch]['avg_ing_traversal'] = -1
+            
+            # Read egress processing time registers
+            egr_reg_sum = api.register_read("reg_egr_sum", 0)
+            if egr_reg_sum is None:
+                self.logger.error(f"{switch}: register_read('reg_egr_sum') returned None")
+                results[switch]['egr_reg_sum'] = -1
+                results[switch]['avg_egr_traversal'] = -1
+            else:
+                results[switch]['egr_reg_sum'] = egr_reg_sum
+                total_egr_reg_sum += egr_reg_sum
+                
+                # Calculate average egress traversal time per switch
+                if results[switch]['egress'] > 0:
+                    results[switch]['avg_egr_traversal'] = egr_reg_sum / results[switch]['egress']
+                else:
+                    results[switch]['avg_egr_traversal'] = -1
+        
+            # Leggi il registro del tempo massimo di processamento totale
+            reg_max_time = api.register_read("reg_max_time", 0)
+            if reg_max_time is None:
+                self.logger.error(f"{switch}: register_read('reg_max_time') returned None")
+                results[switch]['max_traversal'] = -1
+            else:
+                results[switch]['max_traversal'] = reg_max_time
+                # Aggiorna il massimo globale se necessario
+                if reg_max_time > max_process_time:
+                    max_process_time = reg_max_time
+                    
+            # Leggi il registro del tempo massimo di processamento ingress
+            ing_max_time = api.register_read("reg_ing_max_time", 0)
+            if ing_max_time is None:
+                self.logger.error(f"{switch}: register_read('reg_ing_max_time') returned None")
+                results[switch]['max_ing_traversal'] = -1
+            else:
+                results[switch]['max_ing_traversal'] = ing_max_time
+                # Aggiorna il massimo globale se necessario
+                if ing_max_time > max_ing_process_time:
+                    max_ing_process_time = ing_max_time
+                    
+            # Leggi il registro del tempo massimo di processamento egress
+            egr_max_time = api.register_read("reg_egr_max_time", 0)
+            if egr_max_time is None:
+                self.logger.error(f"{switch}: register_read('reg_egr_max_time') returned None")
+                results[switch]['max_egr_traversal'] = -1
+            else:
+                results[switch]['max_egr_traversal'] = egr_max_time
+                # Aggiorna il massimo globale se necessario
+                if egr_max_time > max_egr_process_time:
+                    max_egr_process_time = egr_max_time
+
+        # Calculate average traversal time if we have valid data
+        avg_traversal_time = 0
+        avg_ing_traversal_time = 0
+        avg_egr_traversal_time = 0
+        
+        if total_egress_packets > 0:
+            avg_traversal_time = total_reg_sum / total_egress_packets
+            avg_egr_traversal_time = total_egr_reg_sum / total_egress_packets
+            
+            self.logger.info(f"Global average packet traversal time: {avg_traversal_time} ns")
+            self.logger.info(f"Global average egress traversal time: {avg_egr_traversal_time} ns")
+        
+        # Calcola il tempo medio di ingress usando il nuovo contatore
+        if total_ingress_packets > 0:
+            avg_ing_traversal_time = total_ing_reg_sum / total_ingress_packets
+            self.logger.info(f"Global average ingress traversal time: {avg_ing_traversal_time} ns")
+            
+        self.logger.info(f"Global maximum packet traversal time: {max_process_time} ns")
+        self.logger.info(f"Global maximum ingress traversal time: {max_ing_process_time} ns")
+        self.logger.info(f"Global maximum egress traversal time: {max_egr_process_time} ns")
+        self.logger.info(f"Total implicitly dropped packets: {total_implicit_drops}")
+
+        # Write results to CSV
+        with open(csv_file, 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow(['switch_id', 'total', 'ingress_total', 'deflected', 'dropped', 'implicitly_dropped', 'egress', 
+                            'reg_sum', 'ing_reg_sum', 'egr_reg_sum', 
+                            'avg_traversal', 'avg_ing_traversal', 'avg_egr_traversal',
+                            'max_traversal', 'max_ing_traversal', 'max_egr_traversal'])
+            for switch, counts in results.items():
+                writer.writerow([
+                    switch, 
+                    counts['total'],
+                    counts['ingress_total'],  # Nuovo campo
+                    counts['deflection'],
+                    counts['drop'],
+                    counts['implicit_drop'],
+                    counts['egress'],
+                    counts['reg_sum'],
+                    counts['ing_reg_sum'],
+                    counts['egr_reg_sum'],
+                    counts['avg_traversal'],
+                    counts['avg_ing_traversal'],
+                    counts['avg_egr_traversal'],
+                    counts['max_traversal'],
+                    counts['max_ing_traversal'],
+                    counts['max_egr_traversal']
+                ])
+        
+        # Write summary data to a separate file
+        summary_file = os.path.join(self.exp_dir, "traversal_summary.csv")
+        with open(summary_file, 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow(['total_egress_packets', 'total_ingress_packets', 'total_reg_sum', 'total_ing_reg_sum', 'total_egr_reg_sum',
+                            'global_avg_traversal_time_ns', 'global_avg_ing_traversal_time_ns', 'global_avg_egr_traversal_time_ns',
+                            'global_max_traversal_time_ns', 'global_max_ing_traversal_time_ns', 'global_max_egr_traversal_time_ns',
+                            'total_implicit_drops'])
+            writer.writerow([total_egress_packets,
+                            total_ingress_packets,  # Nuovo campo
+                            total_reg_sum, total_ing_reg_sum, total_egr_reg_sum,
+                            avg_traversal_time, avg_ing_traversal_time, avg_egr_traversal_time,
+                            max_process_time, max_ing_process_time, max_egr_process_time, 
+                            total_implicit_drops])
+        
+        self.logger.info(f"Counter data written to {csv_file}")
+        self.logger.info(f"Traversal summary written to {summary_file}")
+        return results
+
     def run_experiment(self):
         """Run the complete experiment."""
         try:
@@ -296,6 +543,9 @@ class CollectionRunner:
                     proc.terminate()
 
             time.sleep(5)
+            
+            # Collect packet counters before stopping the network
+            self.collect_counters()
             
             _, fct_avg = calculate_fct(self.exp_dir, self.exp_dir)
             _, qct_avg = calculate_qct(self.exp_dir, self.exp_dir)
@@ -393,3 +643,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

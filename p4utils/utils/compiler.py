@@ -91,10 +91,17 @@ class P4C:
         cmd = self.p4c_bin + ' '
         cmd += '"{}" '.format(self.p4_src)
         cmd += self.opts + ' '
-        cmd += '-o "{}" '.format(self.outdir)
+        if 'p4c-bm2-ss' in self.p4c_bin and '--emit-externs' in self.opts:
+            # Per p4c-bm2-ss con --emit-externs specifica il nome file completo
+            cmd += '-o "{}" '.format(self.json_out)
+        else:
+        # Per altri casi, specifica solo la directory
+            cmd += '-o "{}" '.format(self.outdir)
 
         if self.p4rt:
             cmd += '--p4runtime-files "{}" '.format(self.p4rt_out)
+            
+        print('cmd: {}'.format(cmd))
 
         debug(cmd + '\n')
 

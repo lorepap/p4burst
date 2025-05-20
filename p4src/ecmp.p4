@@ -1,5 +1,6 @@
 #include <core.p4>
 #include <v1model.p4>
+#include "/home/ubuntu/extern_lib/declaration.p4"
 
 const bit<16> TYPE_IPV4 = 0x800;
 const bit<8>  TYPE_TCP  = 6;
@@ -53,6 +54,11 @@ header udp_t {
 struct metadata {
     bit<14> ecmp_hash;
     bit<14> ecmp_group_id;
+    
+    bit<64> t1;          // Ingresso pacchetto ingress
+    bit<64> t_ing_end;   // Uscita pacchetto ingress
+    bit<64> t_egr_start; // Ingresso pacchetto egress
+    bit<64> t2;          // Uscita pacchetto egress
 }
 
 struct headers {
@@ -105,11 +111,31 @@ control MyVerifyChecksum(inout headers hdr, inout metadata meta) {
 control MyIngress(inout headers hdr,
                   inout metadata meta,
                   inout standard_metadata_t standard_metadata) {
+    
+    // Aggiunta Time extern e counter
+    Time() timer;
+    counter(1, CounterType.packets) packet_counter;
+    counter(1, CounterType.packets) implicitely_dropped;
+
+    // Counter per i pacchetti processati completamente dall'ingress
+    counter(1, CounterType.packets) ingress_packet_counter;
+
+    // Registro per tempistica ingress
+    register<bit<64>>(1) reg_ing_sum;
+    register<bit<64>>(1) reg_ing_max_time;
+    
     action drop() {
+        /*log_msg("dropped --- dst={}.{}.{}.{}",
+            {(bit<32>)(hdr.ipv4.dstAddr >> 24), 
+             (bit<32>)(hdr.ipv4.dstAddr >> 16 & 0xFF),
+             (bit<32>)(hdr.ipv4.dstAddr >> 8 & 0xFF),
+             (bit<32>)(hdr.ipv4.dstAddr & 0xFF)});*/
+        implicitely_dropped.count(0);
         mark_to_drop(standard_metadata);
     }
 
     action set_ecmp_select(bit<14> ecmp_group_id, bit<16> num_nhops) {
+        //log_msg("set_ecmp_select --- ecmp_group_id={}", {ecmp_group_id});
         hash(meta.ecmp_hash,
             HashAlgorithm.crc16,
             (bit<1>)0,
@@ -124,21 +150,10 @@ control MyIngress(inout headers hdr,
     }
 
     action set_nhop(macAddr_t dstAddr, egressSpec_t port) {
+        //log_msg("set_nhop --- dstAddr={}", {dstAddr});
         standard_metadata.egress_spec = port;
         hdr.ethernet.srcAddr = hdr.ethernet.dstAddr;
         hdr.ethernet.dstAddr = dstAddr;
-        hdr.ipv4.ttl = hdr.ipv4.ttl - 1;
-    }
-
-    table ecmp_group {
-        key = {
-            hdr.ipv4.dstAddr: lpm;
-        }
-        actions = {
-            drop;
-            set_ecmp_select;
-        }
-        size = 1024;
     }
 
     table ecmp_nhop {
@@ -158,6 +173,7 @@ control MyIngress(inout headers hdr,
             hdr.ipv4.dstAddr: lpm;
         }
         actions = {
+            set_ecmp_select;
             set_nhop;
             drop;
         }
@@ -166,12 +182,39 @@ control MyIngress(inout headers hdr,
     }
 
     apply {
-        if (hdr.ipv4.isValid() && hdr.ipv4.ttl > 0) {
-            if (!ipv4_lpm.apply().hit) {
-                ecmp_group.apply();
-                ecmp_nhop.apply();
+        
+        timer.get_time_ns(meta.t1);
+        if (hdr.ipv4.isValid() &&
+                  (hdr.ipv4.protocol == TYPE_TCP ||
+                   hdr.ipv4.protocol == TYPE_UDP)) {
+            packet_counter.count(0);
+            // Conteggio dei pacchetti in ingresso
+            hdr.ipv4.ttl = hdr.ipv4.ttl - 1;
+            if (hdr.ipv4.ttl == 0) {
+                drop();
             }
+            switch (ipv4_lpm.apply().action_run){
+                set_ecmp_select: {
+                    ecmp_nhop.apply();
+                }
+            }
+            // Alla fine dell'ingress, registriamo il timestamp finale
+            timer.get_time_ns(meta.t_ing_end);
+            // Contiamo i pacchetti che completano l'ingress
+            ingress_packet_counter.count(0);
+            // Salviamo il tempo di elaborazione ingress 
+            bit<64> ing_process_time = meta.t_ing_end - meta.t1;
+            bit<64> ing_sum;
+            reg_ing_sum.read(ing_sum, 0);
+            ing_sum = ing_sum + ing_process_time;
+            reg_ing_sum.write(0, ing_sum);
 
+            // Aggiorniamo il tempo massimo di ingress
+            bit<64> ing_max_time;
+            reg_ing_max_time.read(ing_max_time, 0);
+            if (ing_process_time > ing_max_time) {
+                reg_ing_max_time.write(0, ing_process_time);
+            }
         }
     }
 }
@@ -179,7 +222,57 @@ control MyIngress(inout headers hdr,
 control MyEgress(inout headers hdr,
                  inout metadata meta,
                  inout standard_metadata_t standard_metadata) {
-    apply { }
+    
+    // Aggiunta Time extern, counter e registri per tempi
+    Time() timer;
+    counter(1, CounterType.packets) egress_packet_counter;
+    register<bit<64>>(1) reg_sum;
+    // Registro per memorizzare il tempo di processamento massimo
+    register<bit<64>>(1) reg_max_time;
+
+    register<bit<64>>(1) reg_egr_sum;
+    register<bit<64>>(1) reg_egr_max_time;
+    
+    apply {
+        // Acquisizione timestamp in ingresso nell'egress
+        timer.get_time_ns(meta.t_egr_start);
+        
+        if (hdr.ipv4.isValid() &&
+                  (hdr.ipv4.protocol == TYPE_TCP ||
+                   hdr.ipv4.protocol == TYPE_UDP)) {
+            // Conteggio dei pacchetti in uscita
+            egress_packet_counter.count(0);
+            
+            // Calcolo del tempo di attraversamento del pacchetto
+            timer.get_time_ns(meta.t2);
+            bit<64> process_time;
+            bit<64> sum;
+            reg_sum.read(sum, 0);
+            process_time = meta.t2 - meta.t1;
+            sum = sum + process_time;
+            reg_sum.write(0, sum);
+
+            // Tempo di elaborazione egress
+            bit<64> egr_process_time = meta.t2 - meta.t_egr_start;
+            bit<64> egr_sum;
+            reg_egr_sum.read(egr_sum, 0);
+            egr_sum = egr_sum + egr_process_time;
+            reg_egr_sum.write(0, egr_sum);
+            
+            // Aggiornamento del tempo massimo
+            bit<64> max_time;
+            reg_max_time.read(max_time, 0);
+            if (process_time > max_time) {
+                reg_max_time.write(0, process_time);
+            }
+
+            bit<64> egr_max_time;
+            reg_egr_max_time.read(egr_max_time, 0);
+            if (egr_process_time > egr_max_time) {
+                reg_egr_max_time.write(0, egr_process_time);
+            }
+        }
+    }
 }
 
 control MyComputeChecksum(inout headers hdr, inout metadata meta) {

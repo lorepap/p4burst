@@ -8,7 +8,7 @@ def update_p4_consts(p4_file, queue_size, logaritmic_deflecting_margin, alpha, m
         if line.strip().startswith('const'):
             # Extract const name
             const_name = line.split('=')[0].split()[-1]
-            if const_name == 'QUEUE_SIZE':
+            if const_name == 'QUEUE_SIZE' or const_name == 'QUEUE_CAPACITY':
                 base = line.split('=')[0]
                 lines[i] = f"{base}= {queue_size - 1};    // Value overriden\n"
                 

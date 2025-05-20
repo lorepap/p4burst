@@ -131,7 +131,13 @@ struct metadata_t {
 
     bit<16> port_idx_in_reg;
     bit<1> is_fw_port_full;
-
+    
+    // Campi per il calcolo dei tempi
+    bit<64> t1;          // Ingresso pacchetto ingress
+    bit<64> t_ing_end;   // Uscita pacchetto ingress
+    bit<64> t_egr_start; // Ingresso pacchetto egress
+    bit<64> t2;          // Uscita pacchetto egress
+    bit<1> dropped;
 }
 
 struct header_t {

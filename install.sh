@@ -3,7 +3,7 @@
 # Author: Edgar Costa Molero
 # Email: cedgar@ethz.ch
 
-/home/ubuntu/p4-tools/p4-utils# This scripts installs all the required software to learn and prototype P4
+#/home/ubuntu/p4-tools/p4-utils# This scripts installs all the required software to learn and prototype P4
 # programs using the p4lang software suite. 
 
 # Furthermore, we install p4-utils and p4-learning and ffr routers.

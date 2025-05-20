@@ -10,30 +10,32 @@ from utils.stats import calculate_fct, calculate_qct
 # --- Configurazione ---
 OUTPUT_DIR = "./results/load"
 POLICIES = [
-    'simple_deflection',
+    #'simple_deflection',
     'ecmp',
-    'dist_preemptive_deflection',
-    'quantile_preemptive_deflection'
+    #'dist_preemptive_deflection',
+    #'quantile_preemptive_deflection'
 ]
 N_RUNS = 10
 COMMON_ARGS = [
     "sudo", "-E", "python3", "experiment_runner.py",
-    "--duration", "30",
+    "--duration", "40",
     "--n_hosts", "20",
-    "--n_leaf", "4",
+    "--n_leaf", "2",
     "--n_spine", "2",
-    "--bw", "10",
-    "--delay", "0.0001",
-    "--n_clients", "20",
+    "--bw", "100",
+    "--delay", "0",
+    "--n_clients", "10",
     "--n_servers", "10",
-    "--flow_iat", "0.001",
-    "--flow_size", "1000",
-    "--bursty_reply_size", "10000",
-    "--burst_interval", "0.05",
-    "--burst_servers", "20",
-    "--burst_clients", "20",
-    "--queue_rate", "10",
-    "--queue_depth", "10",
+    "--flow_iat", "0.01",
+    "--flow_size", "10000",
+    "--bursty_reply_size", "100000",
+    "--burst_interval", "0.1",
+    "--burst_servers", "10",
+    "--burst_clients", "4",
+    "--queue_rate", "1000",
+    "--queue_depth", "64",
+    "--disable_logging",
+    "--disable_pcap",
     "--exp_id"
 ]
 
@@ -89,12 +91,13 @@ def run_experiments():
                 # Termina eventuali python3 rimasti
                 kill_other_python3()
 
-        print(f"\n*** Riepilogo per policy '{policy}' salvato in {summary_csv} ***")
+    '''
+    print(f"\n*** Riepilogo per policy '{policy}' salvato in {summary_csv} ***")
     print("\n=== Generazione grafici di confronto ===")
     plot_cmd = ["python3", "plot_policies_bars.py", "--data-dir", OUTPUT_DIR]
     print("Eseguo:", " ".join(plot_cmd))
     plot_result = subprocess.run(plot_cmd, check=True)
     print("Grafici generati con successo!")
-
+    '''
 if __name__ == "__main__":
     run_experiments()
