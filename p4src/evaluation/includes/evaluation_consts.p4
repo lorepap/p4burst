@@ -6,7 +6,7 @@ const bit<16> ETHERTYPE_IPV4  = 0x0800;
 const bit<8> IP_PROTOCOLS_TCP = 6;
 const bit<8> IP_PROTOCOLS_UDP = 17;
 const bit<16> BEE_PORT        = 9999;
-const bit<16> QUEUE_CAPACITY  = 1; // TODO: verifico, forse necessari 19 bit su tofino
+const bit<16> QUEUE_CAPACITY  = 63;    // Value overriden
 const bit<32> TABLE_SIZE      = 256;
 
 #endif

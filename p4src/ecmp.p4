@@ -1,6 +1,6 @@
 #include <core.p4>
 #include <v1model.p4>
-#include "/home/ubuntu/extern_lib/declaration.p4"
+#include "extern_lib/declaration.p4"
 
 const bit<16> TYPE_IPV4 = 0x800;
 const bit<8>  TYPE_TCP  = 6;
@@ -118,11 +118,11 @@ control MyIngress(inout headers hdr,
     counter(1, CounterType.packets) implicitely_dropped;
 
     // Counter per i pacchetti processati completamente dall'ingress
-    counter(1, CounterType.packets) ingress_packet_counter;
+    //counter(1, CounterType.packets) ingress_packet_counter;
 
     // Registro per tempistica ingress
-    register<bit<64>>(1) reg_ing_sum;
-    register<bit<64>>(1) reg_ing_max_time;
+    //register<bit<64>>(1) reg_ing_sum;
+    //register<bit<64>>(1) reg_ing_max_time;
     
     action drop() {
         /*log_msg("dropped --- dst={}.{}.{}.{}",
@@ -187,6 +187,7 @@ control MyIngress(inout headers hdr,
         if (hdr.ipv4.isValid() &&
                   (hdr.ipv4.protocol == TYPE_TCP ||
                    hdr.ipv4.protocol == TYPE_UDP)) {
+            
             packet_counter.count(0);
             // Conteggio dei pacchetti in ingresso
             hdr.ipv4.ttl = hdr.ipv4.ttl - 1;
@@ -198,12 +199,13 @@ control MyIngress(inout headers hdr,
                     ecmp_nhop.apply();
                 }
             }
+            //timer.sleep(1);
             // Alla fine dell'ingress, registriamo il timestamp finale
-            timer.get_time_ns(meta.t_ing_end);
+            //timer.get_time_ns(meta.t_ing_end);
             // Contiamo i pacchetti che completano l'ingress
-            ingress_packet_counter.count(0);
+            //ingress_packet_counter.count(0);
             // Salviamo il tempo di elaborazione ingress 
-            bit<64> ing_process_time = meta.t_ing_end - meta.t1;
+            /*bit<64> ing_process_time = meta.t_ing_end - meta.t1;
             bit<64> ing_sum;
             reg_ing_sum.read(ing_sum, 0);
             ing_sum = ing_sum + ing_process_time;
@@ -214,7 +216,7 @@ control MyIngress(inout headers hdr,
             reg_ing_max_time.read(ing_max_time, 0);
             if (ing_process_time > ing_max_time) {
                 reg_ing_max_time.write(0, ing_process_time);
-            }
+            }*/
         }
     }
 }
@@ -230,8 +232,8 @@ control MyEgress(inout headers hdr,
     // Registro per memorizzare il tempo di processamento massimo
     register<bit<64>>(1) reg_max_time;
 
-    register<bit<64>>(1) reg_egr_sum;
-    register<bit<64>>(1) reg_egr_max_time;
+    //register<bit<64>>(1) reg_egr_sum;
+    //register<bit<64>>(1) reg_egr_max_time;
     
     apply {
         // Acquisizione timestamp in ingresso nell'egress
@@ -244,33 +246,42 @@ control MyEgress(inout headers hdr,
             egress_packet_counter.count(0);
             
             // Calcolo del tempo di attraversamento del pacchetto
-            timer.get_time_ns(meta.t2);
             bit<64> process_time;
             bit<64> sum;
+            bit<64> max_time;
+            reg_max_time.read(max_time, 0);
             reg_sum.read(sum, 0);
+            //reg_egr_sum.read(egr_sum, 0);
+            //reg_max_time.read(max_time, 0);
+            timer.sleep(250000);
+            timer.get_time_ns(meta.t2);
             process_time = meta.t2 - meta.t1;
+            /*
+            bit<64> sleep_time = 7000000 - process_time;
+            if (sleep_time > 0) {
+                timer.sleep(sleep_time);
+            }
+            timer.get_time_ns(meta.t2);
+            process_time = meta.t2 - meta.t1;
+            */
             sum = sum + process_time;
             reg_sum.write(0, sum);
 
             // Tempo di elaborazione egress
-            bit<64> egr_process_time = meta.t2 - meta.t_egr_start;
+            /*bit<64> egr_process_time = meta.t2 - meta.t_egr_start;
             bit<64> egr_sum;
-            reg_egr_sum.read(egr_sum, 0);
             egr_sum = egr_sum + egr_process_time;
-            reg_egr_sum.write(0, egr_sum);
+            reg_egr_sum.write(0, egr_sum);*/
             
-            // Aggiornamento del tempo massimo
-            bit<64> max_time;
-            reg_max_time.read(max_time, 0);
             if (process_time > max_time) {
                 reg_max_time.write(0, process_time);
             }
 
-            bit<64> egr_max_time;
+            /*bit<64> egr_max_time;
             reg_egr_max_time.read(egr_max_time, 0);
             if (egr_process_time > egr_max_time) {
                 reg_egr_max_time.write(0, egr_process_time);
-            }
+            }*/
         }
     }
 }

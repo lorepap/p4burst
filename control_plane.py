@@ -467,10 +467,12 @@ class DistPreemptiveDeflectionControlPlane(BasePreemptiveDeflectionControlPlane)
 
     
 class RLDeflectionControlPlane(BaseControlPlane):
-    def __init__(self, topology, cmd_path='p4cli', queue_rate=100, queue_depth=100):
-        super().__init__(topology, cmd_path)
-        self.queue_rate = queue_rate
-        self.queue_depth = queue_depth
+    
+    def __init__(self, topology, rl_forward_queue_max, rl_deflect_queue_max, cmd_path='p4cli', queue_rate=100, queue_depth=100, burst_port=12346, bg_port=12345):
+        super().__init__(topology, cmd_path, queue_rate, queue_depth, burst_port, bg_port)
+        self.rl_forward_queue_max = int(queue_depth * rl_forward_queue_max)
+        self.rl_deflect_queue_max = int(queue_depth * rl_deflect_queue_max)
+        
 
     @staticmethod
     def send_bee_packets(switch):
@@ -525,30 +527,12 @@ class RLDeflectionControlPlane(BaseControlPlane):
             ]
 
             leaf_defaults = [
-                "table_set_default SwitchIngress.routing.get_fw_port_idx_table drop",
+                "table_set_default SwitchIngress.routing.get_fw_port_idx_table SwitchIngress.routing.drop",
                 "table_set_default SwitchIngress.routing.fw_l2_table broadcast",
+                f"table_set_default SwitchIngress.set_max_port_occupancies_table set_max_port_occupancies {self.rl_forward_queue_max} {self.rl_deflect_queue_max}",
             ]
-
-            tree_commands = [
-                    f"table_set_default SwitchIngress.BDT_table_lev0_cond0 decision_meta_switch_id_action 1",
-                    f"table_set_default SwitchIngress.BDT_table_lev1_cond0 forward",
-                    f"table_set_default SwitchIngress.BDT_table_lev1_cond1 decision_meta_queue_lenght_7_action 0",
-                    f"table_set_default SwitchIngress.BDT_table_lev2_cond2 forward",
-                    f"table_set_default SwitchIngress.BDT_table_lev2_cond3 decision_meta_queue_lenght_6_action 0",
-                    f"table_set_default SwitchIngress.BDT_table_lev3_cond6 forward",
-                    f"table_set_default SwitchIngress.BDT_table_lev3_cond7 decision_meta_queue_lenght_4_action 0",
-                    f"table_set_default SwitchIngress.BDT_table_lev4_cond14 forward",
-                    f"table_set_default SwitchIngress.BDT_table_lev4_cond15 deflect",
-                    #f"table_set_default SwitchIngress.BDT_table_lev4_cond8 decision_meta_queue_lenght_5_action => 0",
-                    #f"table_set_default SwitchIngress.BDT_table_lev4_cond9 forward",
-                    #f"table_set_default SwitchIngress.BDT_table_lev5_cond16 deflect",
-                    #f"table_set_default SwitchIngress.BDT_table_lev5_cond17 forward"
-            ]
-            print(f"AAAAAAAAAA leaf: {len(leaf_switches)}, spines: {len(spine_switches)}")
+            
             for i, leaf in enumerate(leaf_switches):
-
-                switch_id_command = [f"table_set_default SwitchIngress.set_switch_id_table set_switch_id {i}"]
-
                 spine_logical_ports = {port_mappings[leaf][port] for port in self.topology.get_spine_ports(leaf)}
 
                 register_commands = [
@@ -556,27 +540,13 @@ class RLDeflectionControlPlane(BaseControlPlane):
                     for logical_port in range(32) if logical_port not in spine_logical_ports
                 ]
                     
-                deflection_table_commands = [
-                    f"table_add SwitchIngress.set_physical_deflect_port_from_id_table set_physical_deflect_port_from_id {logical_port} => {physical_port}" 
-                    for physical_port, logical_port in port_mappings[leaf].items()
-                ]
-                    
-                port_index_commands = [
-                    f"table_add SwitchEgress.get_eg_port_id_table get_eg_port_id_action {physical_port} => {logical_port}"
-                    for physical_port, logical_port in port_mappings[leaf].items()
-                ]
-
                 queue_commands = [f"set_queue_rate {self.queue_rate}", f"set_queue_depth {self.queue_depth}"]
 
                 commands = (
-                    switch_id_command +
                     leaf_defaults + 
                     list(switch_commands[leaf]) +
                     register_commands +
-                    deflection_table_commands +
-                    port_index_commands +
-                    queue_commands +
-                    tree_commands
+                    queue_commands
                 )
                 
                 self.save_commands(leaf[1:], commands)

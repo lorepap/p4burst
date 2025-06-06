@@ -53,3 +53,5 @@ results/
 *.pcap
 
 *.p4i
+
+*.json

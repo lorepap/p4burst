@@ -106,6 +106,8 @@ class CollectionRunner:
         self.alpha = args.alpha
         self.disable_pcap = args.disable_pcap
         self.disable_logging = args.disable_logging
+        self.rl_queue_max = args.rl_forward_queue_max if args.policy == 'rl_deflection' else None
+        self.rl_deflect_queue_max = args.rl_deflect_queue_max if args.policy == 'rl_deflection' else None
         
         self.exp_id = args.exp_id or datetime.now().strftime("%Y%m%d_%H%M%S")
         self.exp_dir = f'tmp/{self.exp_id}'
@@ -137,6 +139,10 @@ class CollectionRunner:
                                                           queue_depth=self.queue_depth, burst_port=self.burst_port, bg_port=self.bg_port, alpha=self.alpha,
                                                           m_prio_num_entries=self.m_prio_num_entries, m_newm_num_entries=self.m_prio_num_entries,
                                                           m_prio_rank_entries=self.m_prio_rank_entries, m_newm_rank_entries=self.m_prio_rank_entries)
+        elif self.policy == 'rl_deflection':
+            self.control_plane = p4_control_plane[self.policy](self.topology, queue_rate=self.queue_rate, 
+                                                          queue_depth=self.queue_depth, burst_port=self.burst_port, bg_port=self.bg_port,
+                                                          rl_forward_queue_max=self.rl_queue_max, rl_deflect_queue_max=self.rl_deflect_queue_max)
         else:    
             self.control_plane = p4_control_plane[self.policy](self.topology, queue_rate=self.queue_rate, 
                                                           queue_depth=self.queue_depth, burst_port=self.burst_port, bg_port=self.bg_port)
@@ -619,6 +625,10 @@ def parse_args():
                         help='Disable metrics collection')
     parser.add_argument('--policy', type=str, choices=['simple_deflection', 'ecmp', 'dist_preemptive_deflection', 'quantile_preemptive_deflection', 'rl_deflection'], 
                     default='simple_deflection', help='P4 program to use (default: simple_deflection)')
+    parser.add_argument('--rl_forward_queue_max', type=float, default=0.8,
+                        help='RL forward queue threshold (0-1, only used with rl_deflection policy)')
+    parser.add_argument('--rl_deflect_queue_max', type=float, default=0.8,
+                        help='RL deflect queue threshold (0-1, only used with rl_deflection policy)')
     parser.add_argument('--burst_port', type=int, default=12346)
     parser.add_argument('--bg_port', type=int, default=12345)
     parser.add_argument('--logaritmic_deflecting_margin', type=int, default=1,
@@ -631,7 +641,24 @@ def parse_args():
                         help='Alpha value for preemptive deflections (default: 0.5)')
     parser.add_argument('--disable_logging', action='store_true')
     
-    return parser.parse_args()
+    args = parser.parse_args()
+    
+    # Verifica se i parametri RL sono stati esplicitamente passati
+    rl_forward_passed = '--rl_forward_queue_max' in sys.argv
+    rl_deflect_passed = '--rl_deflect_queue_max' in sys.argv
+    
+    if args.policy == 'rl_deflection':
+        # Verifica che i valori siano validi
+        if not (0 <= args.rl_forward_queue_max <= 1):
+            raise ValueError("Il parametro rl_forward_queue_max deve essere compreso tra 0 e 1")
+        if not (0 <= args.rl_deflect_queue_max <= 1):
+            raise ValueError("Il parametro rl_deflect_queue_max deve essere compreso tra 0 e 1")
+    elif rl_forward_passed or rl_deflect_passed:
+        # Avviso se i parametri sono stati specificati ma la policy non è rl_deflection
+        print("AVVISO: I parametri rl_forward_queue_max e rl_deflect_queue_max vengono ignorati quando policy non è rl_deflection")
+    
+    return args
+    
 
 
 def main():

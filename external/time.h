@@ -1,10 +1,10 @@
-// examples/custom_extern/extern.cpp
+// time.h
+#ifndef BM_EXT_TIME_H_
+#define BM_EXT_TIME_H_
 
 #include <chrono>
 #include <cstdint>
-#include <thread> 
 #include <bm/bm_sim/extern.h>
-
 using bm::Data;
 
 class Time : public bm::ExternType {
@@ -22,26 +22,10 @@ class Time : public bm::ExternType {
     ).count();
     dst.set(ns);
   }
-
-  
-  void sleep(const Data &dst) {
-    uint64_t ns = dst.get<uint64_t>();
-    std::this_thread::sleep_for(std::chrono::nanoseconds(ns));
-  }
-  /*
-  // sleep with busy wait
-  void sleep(const Data &dst) {
-    uint64_t ns = dst.get<uint64_t>();
-    auto start = std::chrono::high_resolution_clock::now();
-    while (std::chrono::high_resolution_clock::now() - start < std::chrono::nanoseconds(ns)) {
-      // busy wait
-    }
-  }
-    */
-
 };
 
 // registro l’extern e il suo metodo (con parametro Data&)
 BM_REGISTER_EXTERN(Time);
 BM_REGISTER_EXTERN_METHOD(Time, get_time_ns, Data &);
-BM_REGISTER_EXTERN_METHOD(Time, sleep, const Data &);
+
+#endif

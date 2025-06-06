@@ -18,10 +18,11 @@ CONFIDENCE_LEVEL = 0.95  # Intervallo di confidenza al 95%
 
 # Mappatura di nomi policy (codici) a label più significative
 POLICY_LABELS = {
-    'dist_preemptive_deflection': 'Defl. Pred. Distribuita',
-    'quantile_preemptive_deflection': 'Defl. Pred. Quantili',
-    'simple_deflection': 'Deflessione Semplice',
+    'dist_preemptive_deflection': 'Dist. Preemptive',
+    'quantile_preemptive_deflection': 'Quant. Preemptive',
+    'simple_deflection': 'Simple',
     'ecmp': 'ECMP',
+    'rl_deflection': 'RL',
 }
 
 
@@ -158,12 +159,13 @@ def main():
 
     # Grafici run-level
     run_metrics = [
-        ('fct', 'Tempo completamento flusso (s)', 'Media FCT per policy (CI 95%)', 'fct_comparison.png', False),
-        ('qct', 'Tempo completamento coda (s)', 'Media QCT per policy (CI 95%)', 'qct_comparison.png', False),
-        ('dropped_packets_percentage', '% pacchetti scartati', '% scarti (CI 95%)', 'dropped_packets_comparison.png', True),
-        ('deflected_packets_percentage', '% pacchetti deviati', '% deviazioni (CI 95%)', 'deflected_packets_comparison.png', True),
-        ('lost_packets', 'Pacchetti persi', 'Pacchetti persi (CI 95%)', 'lost_packets_comparison.png', False)
+        ('fct', 'Flow Completion Time (s)', 'Mean FCT per policy (95% CI)', 'fct_comparison.png', False),
+        ('qct', 'Query Completion Time (s)', 'Mean QCT per policy (95% CI)', 'qct_comparison.png', False),
+        ('dropped_packets_percentage', '% dropped packets', '% drops (95% CI)', 'dropped_packets_comparison.png', True),
+        ('deflected_packets_percentage', '% deflected packets', '% deflections (95% CI)', 'deflected_packets_comparison.png', True),
+        ('lost_packets', 'Lost packets', 'Lost packets (95% CI)', 'lost_packets_comparison.png', False)
     ]
+
     for metric, ylabel, title, fname, pct in run_metrics:
         plot_metric_with_ci(df, metric, ylabel, title, os.path.join(data_dir, fname), pct)
 

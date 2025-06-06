@@ -5,4 +5,5 @@ extern Time {
   Time();
   // OUT parameter invece di return
   void get_time_ns(out bit<64> t);
+  void sleep(in bit<64> t);
 }

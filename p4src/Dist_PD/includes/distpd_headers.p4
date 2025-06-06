@@ -85,7 +85,7 @@ struct metadata_t {
     bit<64> t_ing_end;   // Uscita pacchetto ingress
     bit<64> t_egr_start; // Ingresso pacchetto egress
     bit<64> t2;          // Uscita pacchetto egress
-
+    bit<1> needs_drop;  // Manteniamo solo questo campo
 }
 
 

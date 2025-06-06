@@ -1,0 +1,263 @@
+pkg_info {
+  arch: "v1model"
+}
+tables {
+  preamble {
+    id: 36647066
+    name: "SwitchIngress.routing.get_fw_port_idx_table"
+    alias: "get_fw_port_idx_table"
+  }
+  match_fields {
+    id: 1
+    name: "hdr.ipv4.dstAddr"
+    bitwidth: 32
+    match_type: LPM
+  }
+  action_refs {
+    id: 26639958
+  }
+  action_refs {
+    id: 17589638
+  }
+  size: 256
+}
+tables {
+  preamble {
+    id: 47494223
+    name: "SwitchIngress.routing.fw_l2_table"
+    alias: "fw_l2_table"
+  }
+  match_fields {
+    id: 1
+    name: "hdr.ethernet.dstAddr"
+    bitwidth: 48
+    match_type: EXACT
+  }
+  action_refs {
+    id: 24635637
+  }
+  action_refs {
+    id: 25017214
+  }
+  action_refs {
+    id: 17589638
+  }
+  size: 256
+}
+tables {
+  preamble {
+    id: 35258270
+    name: "SwitchIngress.set_deflect_eggress_port_table"
+    alias: "set_deflect_eggress_port_table"
+  }
+  match_fields {
+    id: 1
+    name: "meta.output_port_idx"
+    bitwidth: 32
+    match_type: EXACT
+  }
+  action_refs {
+    id: 16831173
+  }
+  action_refs {
+    id: 23258667
+  }
+  size: 256
+}
+tables {
+  preamble {
+    id: 42846232
+    name: "SwitchIngress.debug_enq_qdepth_table"
+    alias: "debug_enq_qdepth_table"
+  }
+  match_fields {
+    id: 1
+    name: "standard_metadata.enq_qdepth"
+    bitwidth: 19
+    match_type: EXACT
+  }
+  action_refs {
+    id: 21257015
+  }
+  size: 1024
+}
+tables {
+  preamble {
+    id: 47721753
+    name: "SwitchEgress.get_eg_port_idx_in_reg_table"
+    alias: "get_eg_port_idx_in_reg_table"
+  }
+  match_fields {
+    id: 1
+    name: "standard_metadata.egress_port"
+    bitwidth: 9
+    match_type: EXACT
+  }
+  action_refs {
+    id: 31003783
+  }
+  action_refs {
+    id: 21257015
+    annotations: "@defaultonly"
+    scope: DEFAULT_ONLY
+  }
+  size: 256
+}
+tables {
+  preamble {
+    id: 35685999
+    name: "SwitchEgress.debug_deq_qdepth_table"
+    alias: "debug_deq_qdepth_table"
+  }
+  match_fields {
+    id: 1
+    name: "standard_metadata.deq_qdepth"
+    bitwidth: 19
+    match_type: EXACT
+  }
+  action_refs {
+    id: 21257015
+  }
+  size: 1024
+}
+actions {
+  preamble {
+    id: 21257015
+    name: "NoAction"
+    alias: "NoAction"
+    annotations: "@noWarn(\"unused\")"
+  }
+}
+actions {
+  preamble {
+    id: 17589638
+    name: "SwitchIngress.routing.drop"
+    alias: "routing.drop"
+  }
+}
+actions {
+  preamble {
+    id: 26639958
+    name: "SwitchIngress.routing.get_fw_port_idx_action"
+    alias: "get_fw_port_idx_action"
+  }
+  params {
+    id: 1
+    name: "port"
+    bitwidth: 9
+  }
+  params {
+    id: 2
+    name: "fw_port_idx"
+    bitwidth: 16
+  }
+  params {
+    id: 3
+    name: "dst_mac"
+    bitwidth: 48
+  }
+}
+actions {
+  preamble {
+    id: 24635637
+    name: "SwitchIngress.routing.fw_l2_action"
+    alias: "fw_l2_action"
+  }
+  params {
+    id: 1
+    name: "port"
+    bitwidth: 9
+  }
+}
+actions {
+  preamble {
+    id: 25017214
+    name: "SwitchIngress.routing.broadcast"
+    alias: "broadcast"
+  }
+}
+actions {
+  preamble {
+    id: 23258667
+    name: "SwitchIngress.drop"
+    alias: "SwitchIngress.drop"
+  }
+}
+actions {
+  preamble {
+    id: 28794301
+    name: "SwitchIngress.generate_random"
+    alias: "generate_random"
+  }
+}
+actions {
+  preamble {
+    id: 16831173
+    name: "SwitchIngress.set_deflect_eggress_port_action"
+    alias: "set_deflect_eggress_port_action"
+  }
+  params {
+    id: 1
+    name: "idx"
+    bitwidth: 9
+  }
+}
+actions {
+  preamble {
+    id: 31003783
+    name: "SwitchEgress.get_eg_port_idx_in_reg_action"
+    alias: "get_eg_port_idx_in_reg_action"
+  }
+  params {
+    id: 1
+    name: "index"
+    bitwidth: 16
+  }
+}
+registers {
+  preamble {
+    id: 370998266
+    name: "SwitchIngress.queue_occupancy_info"
+    alias: "SwitchIngress.queue_occupancy_info"
+  }
+  type_spec {
+    bitstring {
+      bit {
+        bitwidth: 1
+      }
+    }
+  }
+  size: 32
+}
+registers {
+  preamble {
+    id: 384558126
+    name: "SwitchIngress.neighbor_switch_indicator"
+    alias: "neighbor_switch_indicator"
+  }
+  type_spec {
+    bitstring {
+      bit {
+        bitwidth: 1
+      }
+    }
+  }
+  size: 32
+}
+registers {
+  preamble {
+    id: 376803851
+    name: "SwitchEgress.queue_occupancy_info"
+    alias: "SwitchEgress.queue_occupancy_info"
+  }
+  type_spec {
+    bitstring {
+      bit {
+        bitwidth: 1
+      }
+    }
+  }
+  size: 32
+}
+type_info {
+}

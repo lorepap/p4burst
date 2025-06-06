@@ -9,7 +9,7 @@ control Routing(inout header_t hdr,
                inout standard_metadata_t standard_metadata) {
     
     action drop() {
-        mark_to_drop(standard_metadata);
+        meta.needs_drop = 1;  // Solo imposta il flag, non fa mark_to_drop
     }
 
     action get_fw_port_idx_action(bit<9> port, bit<16> fw_port_idx, bit<48> dst_mac) {

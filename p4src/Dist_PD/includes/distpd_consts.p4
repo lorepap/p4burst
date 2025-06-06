@@ -12,6 +12,6 @@ const bit<16> NUM_PREFIXES    = 500;
 const bit<32> QUEUE_SIZE      = 63;    // Value overriden
 const bit<16> SAMPLE_COUNT    = 1;
 const bit<32> NUM_LOGICAL_PORTS = 32;
-const bit<8> PRIO_SHIFT                                                                                                       = 0;    // Value overriden
+const bit<8> PRIO_SHIFT                                                                                                                    = 0;    // Value overriden
 
 #endif

@@ -1,7 +1,7 @@
 #include <core.p4>
 #include <v1model.p4>
 
-#include "/home/ubuntu/extern_lib/declaration.p4"
+#include "../extern_lib/declaration.p4"
 #include "includes/sd_consts.p4"
 #include "includes/sd_headers.p4"
 #include "includes/sd_parser.p4"
@@ -30,11 +30,11 @@ control SwitchIngress(inout header_t hdr,
     counter(1, CounterType.packets) packet_counter;
     counter(1, CounterType.packets) implicitely_dropped;
     // Counter per i pacchetti processati completamente dall'ingress
-    counter(1, CounterType.packets) ingress_packet_counter;
+    //counter(1, CounterType.packets) ingress_packet_counter;
 
     // Registro per tempistica ingress
-    register<bit<64>>(1) reg_ing_sum;
-    register<bit<64>>(1) reg_ing_max_time;
+    //register<bit<64>>(1) reg_ing_sum;
+    //register<bit<64>>(1) reg_ing_max_time;
 
     action drop() {
         implicitely_dropped.count(0);
@@ -68,12 +68,16 @@ control SwitchIngress(inout header_t hdr,
         
         if (hdr.bee.isValid()) {
             queue_occupancy_info.write((bit<32>)hdr.bee.port_idx_in_reg, hdr.bee.queue_occ_info);
-            //meta.is_recirculated = 1;
-            //resubmit_preserving_field_list((bit<8>)1);
         } else if (hdr.ipv4.isValid() && (hdr.ipv4.protocol == IP_PROTOCOLS_TCP || hdr.ipv4.protocol == IP_PROTOCOLS_UDP)) {
             packet_counter.count(0);
-            //ingress_ctr.count(ingress_ctr_index);
+            
+            meta.needs_drop = 0;
+            
             routing.apply(hdr, meta, standard_metadata);
+            
+            if (meta.needs_drop == 1) {
+                drop(); 
+            }
                 
             queue_occupancy_info.read(meta.is_queue_full_0, (bit<32>)0);
             queue_occupancy_info.read(meta.is_queue_full_1, (bit<32>)1);
@@ -325,11 +329,11 @@ control SwitchIngress(inout header_t hdr,
                 }
             }
             // Alla fine dell'ingress, registriamo il timestamp finale
-            timer.get_time_ns(meta.t_ing_end);
+            //timer.get_time_ns(meta.t_ing_end);
             // Contiamo i pacchetti che completano l'ingress
-            ingress_packet_counter.count(0);
+            //ingress_packet_counter.count(0);
             // Salviamo il tempo di elaborazione ingress 
-            bit<64> ing_process_time = meta.t_ing_end - meta.t1;
+            /*bit<64> ing_process_time = meta.t_ing_end - meta.t1;
             bit<64> ing_sum;
             reg_ing_sum.read(ing_sum, 0);
             ing_sum = ing_sum + ing_process_time;
@@ -340,25 +344,8 @@ control SwitchIngress(inout header_t hdr,
             reg_ing_max_time.read(ing_max_time, 0);
             if (ing_process_time > ing_max_time) {
                 reg_ing_max_time.write(0, ing_process_time);
-            }
+            }*/
         }
-        // Alla fine dell'ingress, registriamo il timestamp finale
-        timer.get_time_ns(meta.t_ing_end);
-        // Contiamo i pacchetti che completano l'ingress
-        ingress_packet_counter.count(0);
-        // Salviamo il tempo di elaborazione ingress 
-        bit<64> ing_process_time = meta.t_ing_end - meta.t1;
-        bit<64> ing_sum;
-        reg_ing_sum.read(ing_sum, 0);
-        ing_sum = ing_sum + ing_process_time;
-        reg_ing_sum.write(0, ing_sum);
-            
-            // Aggiorniamo il tempo massimo di ingress
-        bit<64> ing_max_time;
-        reg_ing_max_time.read(ing_max_time, 0);
-        if (ing_process_time > ing_max_time) {
-            reg_ing_max_time.write(0, ing_process_time);
-        } 
     }  
 }
 
@@ -377,8 +364,8 @@ control SwitchEgress(inout header_t hdr,
     // Registro per memorizzare il tempo di processamento massimo
     register<bit<64>>(1) reg_max_time;
     // Registro per tempistica egress
-    register<bit<64>>(1) reg_egr_sum;
-    register<bit<64>>(1) reg_egr_max_time;
+    //register<bit<64>>(1) reg_egr_sum;
+    //register<bit<64>>(1) reg_egr_max_time;
 
     // TODO: Following action and table can be avoided if we unify output_port_idx and fw_port_idx.
     //       This would avoid a table lookup, but like that we can count the number of deflected packets.
@@ -399,7 +386,7 @@ control SwitchEgress(inout header_t hdr,
 
     apply {
 
-        timer.get_time_ns(meta.t_egr_start);
+        //timer.get_time_ns(meta.t_egr_start);
 
         if (hdr.bee.isValid()) {
             // At the egress, worker packets should only read from the queue occupancy register array
@@ -409,7 +396,9 @@ control SwitchEgress(inout header_t hdr,
             recirculate_preserving_field_list(0);
             
         } else if (hdr.ipv4.isValid() && (hdr.ipv4.protocol == IP_PROTOCOLS_TCP || hdr.ipv4.protocol == IP_PROTOCOLS_UDP)) {
-        
+            
+            egress_packet_counter.count(0);
+
             if (standard_metadata.deq_qdepth < QUEUE_CAPACITY) {
                 meta.is_fw_port_full = 0; // Possible to write the register directly, but this is more readable
             } else {
@@ -424,32 +413,44 @@ control SwitchEgress(inout header_t hdr,
             // Tempo totale di elaborazione
             bit<64> process_time;
             bit<64> sum;
+            bit<64> max_time;
+            reg_max_time.read(max_time, 0);
             reg_sum.read(sum, 0);
             process_time = meta.t2 - meta.t1;
+            timer.sleep(200000);
+            /*
+            log_msg("Process time before sleep: {}", {process_time});
+            if (process_time < 10000000) {
+                bit<64> sleep_time = 10000000 - process_time;
+                log_msg("Sleeping for {} ns", {sleep_time});
+                timer.sleep(sleep_time);
+            } else {
+                log_msg("No sleep needed", {});
+            }
+            
+            timer.get_time_ns(meta.t2);
+            process_time = meta.t2 - meta.t1;
+            log_msg("Process time after sleep: {}", {process_time});*/
             sum = sum + process_time;
             reg_sum.write(0, sum);
                 
-                // Tempo di elaborazione egress
-            bit<64> egr_process_time = meta.t2 - meta.t_egr_start;
+            // Tempo di elaborazione egress
+            /*bit<64> egr_process_time = meta.t2 - meta.t_egr_start;
             bit<64> egr_sum;
             reg_egr_sum.read(egr_sum, 0);
             egr_sum = egr_sum + egr_process_time;
-            reg_egr_sum.write(0, egr_sum);
+            reg_egr_sum.write(0, egr_sum);*/
                 
-                // Aggiorniamo i tempi massimi
-            bit<64> max_time;
-            reg_max_time.read(max_time, 0);
             if (process_time > max_time) {
                 reg_max_time.write(0, process_time);
             }
                 
-            bit<64> egr_max_time;
+            /*bit<64> egr_max_time;
             reg_egr_max_time.read(egr_max_time, 0);
             if (egr_process_time > egr_max_time) {
                 reg_egr_max_time.write(0, egr_process_time);
-            }
+            }*/
                 
-            egress_packet_counter.count(0);
         }
     }
     

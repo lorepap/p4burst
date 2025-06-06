@@ -10,10 +10,11 @@ from utils.stats import calculate_fct, calculate_qct
 # --- Configurazione ---
 OUTPUT_DIR = "./results/load"
 POLICIES = [
+    #'rl_deflection',
     #'simple_deflection',
-    'ecmp',
-    #'dist_preemptive_deflection',
-    #'quantile_preemptive_deflection'
+    #'ecmp',
+    'dist_preemptive_deflection',
+    'quantile_preemptive_deflection'
 ]
 N_RUNS = 10
 COMMON_ARGS = [
