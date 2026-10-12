@@ -51,6 +51,12 @@ sudo python runner.py -t leafspine -l 2 -s 2 -n 4 --cli
 
 This command creates a leaf-spine topology with 2 leaf switches, 2 spine switches, and 4 hosts, and launches a client-server application to generate incast traffic using ECMP algorithm.
 
+Choose the forwarding scheme with `-c`: `ecmp` (default), `simple_deflection`, `simple_deflection_fl`, `quantile_preemptive_deflection` or `dist_preemptive_deflection`. For example:
+
+```bash
+sudo python runner.py -t leafspine -l 2 -s 2 -n 4 -c simple_deflection --cli
+```
+
 ## Incast Application
 
 The bursty application in p4burst is implemented by reproducing the concepts presented in [1]. The application simulates a scenario where a client performs queries to a set of servers that will reply simultaneously, creating an incast traffic pattern.
@@ -61,7 +67,19 @@ The bursty application in p4burst is implemented by reproducing the concepts pre
 
 This implementation allows us to study and optimize network performance under bursty, incast-prone workloads.
 
-[1] [Vertigo](https://dl.acm.org/doi/pdf/10.1145/3629147)
+## Deflection Algorithms
+
+When the output queue of a switch is full, packet deflection sends a packet through another port instead of dropping it. The repository implements four variants in P4, each in its own folder under `p4src/`:
+
+- `Simple_Deflection`: deflects to a random port when the output queue is full.
+- `Simple_Deflection_FL`: picks the alternative port pseudo-randomly per flow, so that packets of the same flow tend to follow the same path and arrive in order.
+- `Quantile_PD` and `Dist_PD`: two forms of preemptive deflection [1], which deflect some packets before the queue is full, based on its occupancy.
+
+BMv2 does not expose egress queue lengths at ingress, where the forwarding decision is taken. The switches therefore exchange small "bee" packets that copy the queue state from egress to ingress registers (`bee_packets_generator.py`).
+
+Further experiments (asynchronous traffic generators, timing externs, data collection for a learned deflection policy) are in the `evaluation` and `data-collection` branches.
+
+[1] S. Abdous, E. Sharafzadeh, S. Ghorbani, [Practical Packet Deflection in Datacenters](https://dl.acm.org/doi/pdf/10.1145/3629147), CoNEXT 2023.
 
 ## Project Structure
 
@@ -84,16 +102,3 @@ To add a new topology:
 2. Implement the corresponding control plane logic in `control_plane.py`
 3. Add a new p4 source program (by default, all sources are located in `p4src`)
 4. Update `runner.py` to support the new topology option
-
-## Troubleshooting
-
-If you encounter any issues, please check the following:
-- Ensure all dependencies are correctly installed
-- Verify that you're running the commands with sudo privileges
-- Check the log files for any error messages (switches log files are automatically generated in `log`)
-
-For more detailed information or if you encounter persistent issues, please open an issue on the GitHub repository.
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
